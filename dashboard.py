@@ -118,6 +118,11 @@ status = {
     'peak_equity': 0.0
 }
 
+# Exclude stablecoin-vs-quote pairs from the dynamic universe
+STABLE_BASES = {
+    'USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'USDP', 'DAI', 'SUSD', 'UST', 'PAX'
+}
+
 # --- Config persistence helpers ---
 DATA_DIR = os.getenv('DATA_DIR', os.path.dirname(__file__))
 CONFIG_PATH = os.path.join(DATA_DIR, 'config.json')
@@ -365,11 +370,20 @@ def bot_loop():
                             continue
                         if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
                             continue
+                        # Exclude stablecoin base vs selected quote (e.g., USDC/USDT, FDUSD/USDT)
+                        try:
+                            base, quote = sym.split('/')
+                            if base.upper() in STABLE_BASES:
+                                continue
+                        except Exception:
+                            continue
                         qvol = data.get('quoteVolume') or 0
                         if qvol >= status['config']['min_quote_vol']:
                             candidates.append((sym, qvol))
                     candidates.sort(key=lambda x: x[1], reverse=True)
                     symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
+                    # Final sanitize to ensure no stable/quote slips through
+                    symbols = [s for s in symbols if s.split('/')[0].upper() not in STABLE_BASES]
                 except Exception as e:
                     status['logs'].append(f"Universe error: {e}")
             status['universe'] = symbols
@@ -669,6 +683,7 @@ def dashboard():
                                         <th class="text-left py-2">Entry</th>
                                         <th class="text-left py-2">Qty</th>
                                         <th class="text-left py-2">P&L</th>
+                                        <th class="text-left py-2">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -679,6 +694,13 @@ def dashboard():
                                         <td class="py-2">{{ pos['entry'] }}</td>
                                         <td class="py-2">{{ pos['qty'] }}</td>
                                         <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) }}</td>
+                                        <td class="py-2">
+                                            <form method="post" action="/close" class="inline-flex">
+                                                <input type="hidden" name="symbol" value="{{ pos['symbol'] }}">
+                                                <input type="hidden" name="qty" value="{{ pos['qty'] }}">
+                                                <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
+                                            </form>
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
