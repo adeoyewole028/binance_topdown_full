@@ -2,9 +2,9 @@ name: CI & Deploy
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, staging ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, staging ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,13 +59,24 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    env:
-      HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
     steps:
-      - name: Trigger Render deploy
-        if: ${{ env.HOOK != '' }}
+      - name: Deploy to Render (main)
         run: |
-          curl -fsS -X POST "$HOOK"
-      - name: Skip (no deploy hook configured)
-        if: ${{ env.HOOK == '' }}
-        run: echo "RENDER_DEPLOY_HOOK_URL not set; skipping deploy."
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          else
+            echo "RENDER_DEPLOY_HOOK_URL not set; skipping deploy."
+          fi
+
+  deploy-staging:
+    needs: build-test
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Render (staging)
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}" ]; then
+            curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}"
+          else
+            echo "RENDER_DEPLOY_HOOK_URL_STAGING not set; skipping staging deploy."
+          fi
