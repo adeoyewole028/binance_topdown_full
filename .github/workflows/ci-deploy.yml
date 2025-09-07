@@ -59,12 +59,13 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
     steps:
       - name: Trigger Render deploy
-        env:
-          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        if: ${{ env.HOOK != '' }}
         run: |
-          if [ -z "$HOOK" ]; then
-            echo "RENDER_DEPLOY_HOOK_URL secret is not set" && exit 1
-          fi
           curl -fsS -X POST "$HOOK"
+      - name: Skip (no deploy hook configured)
+        if: ${{ env.HOOK == '' }}
+        run: echo "RENDER_DEPLOY_HOOK_URL not set; skipping deploy."
