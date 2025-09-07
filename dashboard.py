@@ -1016,15 +1016,14 @@ def dashboard():
     ''', status=status)
 
 if __name__ == '__main__':
+    # Local/dev run: start bot and Flask dev server
     threading.Thread(target=bot_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=True)
 else:
-    # When run by a WSGI server (e.g., gunicorn), start the bot once
-    @app.before_first_request
-    def _start_bot_once():
-        try:
-            if not getattr(app, '_bot_started', False):
-                threading.Thread(target=bot_loop, daemon=True).start()
-                app._bot_started = True
-        except Exception:
-            pass
+    # Production (WSGI): Flask 3.x removed before_first_request; start once at import time.
+    try:
+        if not globals().get('_bot_started', False):
+            threading.Thread(target=bot_loop, daemon=True).start()
+            globals()['_bot_started'] = True
+    except Exception:
+        pass
