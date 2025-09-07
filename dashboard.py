@@ -331,144 +331,163 @@ local_broker = LocalBroker(status)
 def bot_loop():
     symbols = ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
     global exchange
-    exchange = ccxt.binance({
-        'apiKey': os.getenv('API_KEY'),
-        'secret': os.getenv('API_SECRET'),
-        'enableRateLimit': True,
-        'options': {'defaultType': 'spot'}
-    })
+    status['logs'].append('Bot thread starting...')
+    print('Bot thread starting...')
     while True:
-        now = time.strftime('%Y-%m-%d %H:%M:%S')
-        status['last_scan'] = now
-        # Dynamic universe selection from top quote volume
-        if status['config']['use_dynamic_universe']:
-            try:
-                tickers_all = exchange.fetch_tickers()
-                candidates = []
-                for sym, data in tickers_all.items():
-                    if not sym.endswith('/' + status['config']['base_quote']):
-                        continue
-                    if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
-                        continue
-                    qvol = data.get('quoteVolume') or 0
-                    if qvol >= status['config']['min_quote_vol']:
-                        candidates.append((sym, qvol))
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
-            except Exception as e:
-                status['logs'].append(f"Universe error: {e}")
-        status['universe'] = symbols
-        # Fetch live prices (with retries)
         try:
-            def _fetch():
-                return exchange.fetch_tickers(symbols)
-            tickers = None
-            delay = 0.5
-            for attempt in range(3):
+            # Lazy init/retryable exchange creation
+            if exchange is None:
+                print('Initializing exchange...')
+                status['logs'].append('Initializing exchange...')
+                exchange = ccxt.binance({
+                    'apiKey': os.getenv('API_KEY'),
+                    'secret': os.getenv('API_SECRET'),
+                    'enableRateLimit': True,
+                    'options': {'defaultType': 'spot'}
+                })
+
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
+            status['last_scan'] = now
+            # Dynamic universe selection from top quote volume
+            if status['config']['use_dynamic_universe']:
                 try:
-                    tickers = _fetch()
-                    break
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    time.sleep(delay)
-                    delay *= 2
-            status['live_prices'] = {s: tickers[s]['last'] for s in symbols}
-        except Exception as e:
-            status['live_prices'] = {s: 'N/A' for s in symbols}
-            status['logs'].append(f"Error fetching prices: {e}")
-        # Update P&L for local open positions
-        for pos in status['open_positions']:
-            sym = pos['symbol']
-            price = status['live_prices'].get(sym)
-            try:
-                if isinstance(price, (int, float)):
-                    pos['pnl'] = (float(price) - float(pos['entry'])) * float(pos['qty'])
-            except Exception:
-                pos['pnl'] = 0
-    # Balances disabled (no-op)
-        # recent_trades retained in memory (trim occasionally)
-        if len(status.get('recent_trades', [])) > 50:
-            status['recent_trades'] = status['recent_trades'][:50]
-        
-        # Update performance metrics (live)
-        try:
-            closed = [t for t in status.get('recent_trades', []) if t.get('side') == 'sell' and t.get('status') == 'filled']
-            wins = sum(1 for t in closed if (t.get('pnl') or 0) > 0)
-            total = len(closed)
-            win_rate = (wins / total) if total else 0.0
+                    tickers_all = exchange.fetch_tickers()
+                    candidates = []
+                    for sym, data in tickers_all.items():
+                        if not sym.endswith('/' + status['config']['base_quote']):
+                            continue
+                        if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
+                            continue
+                        qvol = data.get('quoteVolume') or 0
+                        if qvol >= status['config']['min_quote_vol']:
+                            candidates.append((sym, qvol))
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                    symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
+                except Exception as e:
+                    status['logs'].append(f"Universe error: {e}")
+            status['universe'] = symbols
 
-            realized = sum(float(t.get('pnl') or 0.0) for t in closed)
-            unreal = 0.0
-            for pos in status.get('open_positions', []):
-                price = status['live_prices'].get(pos['symbol'])
-                if isinstance(price, (int, float)):
+            # Fetch live prices (with retries)
+            try:
+                def _fetch():
+                    return exchange.fetch_tickers(symbols)
+                tickers = None
+                delay = 0.5
+                for attempt in range(3):
                     try:
-                        unreal += (float(price) - float(pos['entry'])) * float(pos['qty'])
+                        tickers = _fetch()
+                        break
                     except Exception:
-                        pass
-            total_profit = realized + unreal
-
-            # equity tracking (relative)
-            equity = total_profit
-            status['equity_history'].append(equity)
-            if len(status['equity_history']) > 1000:
-                status['equity_history'] = status['equity_history'][-1000:]
-            if equity > status['peak_equity']:
-                status['peak_equity'] = equity
-            peak = status['peak_equity'] or 0.0
-            drawdown = ((peak - equity) / peak * 100.0) if peak > 0 else 0.0
-
-            status['performance']['win_rate'] = win_rate
-            status['performance']['total_profit'] = round(total_profit, 4)
-            status['performance']['drawdown'] = round(drawdown, 2)
-        except Exception as e:
-            status['logs'].append(f"Perf calc error: {e}")
-        # Multi-timeframe signal gating: 4h trend + 1h bias + 15m execution
-        detected_signals = []
-        for symbol in symbols:
-            try:
-                df_4h_trend = fetch_ohlcv_df(exchange, symbol, '4h', 200)
-                df_1h = fetch_ohlcv_df(exchange, symbol, '1h', 200)
-                df_15m = fetch_ohlcv_df(exchange, symbol, '15m', 100)
-                # Use the same structure logic on 4h for trend
-                trend4h = daily_trend_check(df_4h_trend)
-                bias1h = bias_check_1h(df_1h)
-                exec15 = execution_check_15m(df_15m)
-                if trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal']:
-                    detected_signals.append({
-                        'symbol': symbol,
-                        'type': exec15.get('type', 'entry'),
-                        'time': now,
-                        'trend4h': trend4h,
-                        'bias1h': bias1h
-                    })
-                else:
-                    status['logs'].append(
-                        f"NoSignal {symbol}: 4hTrend={trend4h['bullish']} nearEMA1h={bias1h['near_ma']} RSI1h={bias1h['rsi']:.2f} exec={exec15['signal']}"
-                    )
+                        if attempt == 2:
+                            raise
+                        time.sleep(delay)
+                        delay *= 2
+                status['live_prices'] = {s: tickers[s]['last'] for s in symbols}
             except Exception as e:
-                status['logs'].append(f"Signal error for {symbol}: {e}")
-        status['signals'] = detected_signals
-        # Simulate cooldowns
-        # Build exit signals for open positions
-        exit_sigs = []
-        for pos in status['open_positions']:
-            sym = pos['symbol']
-            entry = float(pos['entry'])
-            qty = float(pos['qty'])
-            res = compute_exit_reasons(sym, entry, qty, exchange)
-            if res['should_exit']:
-                pnl = (res['price'] - entry) * qty
-                exit_sigs.append({'symbol': sym, 'reasons': res['reasons'], 'price': res['price'], 'pnl': pnl})
-        status['exit_signals'] = exit_sigs
+                status['live_prices'] = {s: 'N/A' for s in symbols}
+                status['logs'].append(f"Error fetching prices: {e}")
 
-        # Simulate cooldowns
-        status['cooldowns'] = {s: 0 for s in symbols}
-        # Logs
-        status['logs'].append(f"Scanned at {now}")
-        if len(status['logs']) > 20:
-            status['logs'] = status['logs'][-20:]
+            # Update P&L for local open positions
+            for pos in status['open_positions']:
+                sym = pos['symbol']
+                price = status['live_prices'].get(sym)
+                try:
+                    if isinstance(price, (int, float)):
+                        pos['pnl'] = (float(price) - float(pos['entry'])) * float(pos['qty'])
+                except Exception:
+                    pos['pnl'] = 0
+            # recent_trades retained in memory (trim occasionally)
+            if len(status.get('recent_trades', [])) > 50:
+                status['recent_trades'] = status['recent_trades'][:50]
+
+            # Update performance metrics (live)
+            try:
+                closed = [t for t in status.get('recent_trades', []) if t.get('side') == 'sell' and t.get('status') == 'filled']
+                wins = sum(1 for t in closed if (t.get('pnl') or 0) > 0)
+                total = len(closed)
+                win_rate = (wins / total) if total else 0.0
+
+                realized = sum(float(t.get('pnl') or 0.0) for t in closed)
+                unreal = 0.0
+                for pos in status.get('open_positions', []):
+                    price = status['live_prices'].get(pos['symbol'])
+                    if isinstance(price, (int, float)):
+                        try:
+                            unreal += (float(price) - float(pos['entry'])) * float(pos['qty'])
+                        except Exception:
+                            pass
+                total_profit = realized + unreal
+
+                # equity tracking (relative)
+                equity = total_profit
+                status['equity_history'].append(equity)
+                if len(status['equity_history']) > 1000:
+                    status['equity_history'] = status['equity_history'][-1000:]
+                if equity > status['peak_equity']:
+                    status['peak_equity'] = equity
+                peak = status['peak_equity'] or 0.0
+                drawdown = ((peak - equity) / peak * 100.0) if peak > 0 else 0.0
+
+                status['performance']['win_rate'] = win_rate
+                status['performance']['total_profit'] = round(total_profit, 4)
+                status['performance']['drawdown'] = round(drawdown, 2)
+            except Exception as e:
+                status['logs'].append(f"Perf calc error: {e}")
+
+            # Multi-timeframe signal gating: 4h trend + 1h bias + 15m execution
+            detected_signals = []
+            for symbol in symbols:
+                try:
+                    df_4h_trend = fetch_ohlcv_df(exchange, symbol, '4h', 200)
+                    df_1h = fetch_ohlcv_df(exchange, symbol, '1h', 200)
+                    df_15m = fetch_ohlcv_df(exchange, symbol, '15m', 100)
+                    # Use the same structure logic on 4h for trend
+                    trend4h = daily_trend_check(df_4h_trend)
+                    bias1h = bias_check_1h(df_1h)
+                    exec15 = execution_check_15m(df_15m)
+                    if trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal']:
+                        detected_signals.append({
+                            'symbol': symbol,
+                            'type': exec15.get('type', 'entry'),
+                            'time': now,
+                            'trend4h': trend4h,
+                            'bias1h': bias1h
+                        })
+                    else:
+                        status['logs'].append(
+                            f"NoSignal {symbol}: 4hTrend={trend4h['bullish']} nearEMA1h={bias1h['near_ma']} RSI1h={bias1h['rsi']:.2f} exec={exec15['signal']}"
+                        )
+                except Exception as e:
+                    status['logs'].append(f"Signal error for {symbol}: {e}")
+            status['signals'] = detected_signals
+
+            # Build exit signals for open positions
+            exit_sigs = []
+            for pos in status['open_positions']:
+                sym = pos['symbol']
+                entry = float(pos['entry'])
+                qty = float(pos['qty'])
+                res = compute_exit_reasons(sym, entry, qty, exchange)
+                if res['should_exit']:
+                    pnl = (res['price'] - entry) * qty
+                    exit_sigs.append({'symbol': sym, 'reasons': res['reasons'], 'price': res['price'], 'pnl': pnl})
+            status['exit_signals'] = exit_sigs
+
+            # Simulate cooldowns
+            status['cooldowns'] = {s: 0 for s in symbols}
+            # Logs
+            status['logs'].append(f"Scanned at {now}")
+            if len(status['logs']) > 20:
+                status['logs'] = status['logs'][-20:]
+        except Exception as e:
+            # Surface errors to UI and stdout, then backoff and retry
+            msg = f"Bot error: {e}"
+            status['logs'].append(msg)
+            print(msg)
+            # Reset exchange so we re-init on next loop if needed
+            exchange = None
+            time.sleep(5)
+            continue
         time.sleep(10)
 
 @app.route('/trade', methods=['POST'])
