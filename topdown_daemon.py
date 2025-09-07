@@ -2,7 +2,6 @@
 import os, signal, time, math
 from datetime import datetime, timedelta
 import ccxt, pandas as pd
-from dotenv import load_dotenv
 from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv
 
 running = True
@@ -100,8 +99,12 @@ class Broker:
         return {'tp': tp, 'sl': sl}
 
 def main_loop():
-    load_dotenv = __import__('dotenv').load_dotenv
-    load_dotenv()
+    # Load environment from .env if present
+    try:
+        from dotenv import load_dotenv as _ld
+        _ld()
+    except Exception:
+        pass
     cfg = {
         'BASE_QUOTE': os.getenv('BASE_QUOTE','USDT'),
         'UNIVERSE_SIZE': int(os.getenv('UNIVERSE_SIZE','12')),

@@ -368,7 +368,7 @@ def bot_loop():
                 try:
                     tickers = _fetch()
                     break
-                except Exception as e:
+                except Exception:
                     if attempt == 2:
                         raise
                     time.sleep(delay)

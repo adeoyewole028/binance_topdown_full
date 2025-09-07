@@ -1,6 +1,5 @@
-import math, os, csv
+import os
 import pandas as pd
-import numpy as np
 
 def ema(series: pd.Series, span: int) -> pd.Series:
     return series.ewm(span=span, adjust=False).mean()
@@ -14,11 +13,9 @@ def rsi(series: pd.Series, period: int = 14) -> pd.Series:
 
 def is_higher_highs_lows(close: pd.Series) -> bool:
     def get_high(x):
-        import numpy as np
-        return x[1] if x[1] == np.max(x) else float('nan')
+        return x[1] if x[1] == max(x) else float('nan')
     def get_low(x):
-        import numpy as np
-        return x[1] if x[1] == np.min(x) else float('nan')
+        return x[1] if x[1] == min(x) else float('nan')
     highs = close.rolling(window=3, center=True).apply(get_high, raw=True).dropna()
     lows  = close.rolling(window=3, center=True).apply(get_low, raw=True).dropna()
     try:
@@ -27,7 +24,6 @@ def is_higher_highs_lows(close: pd.Series) -> bool:
         return len(hh)==3 and len(ll)==3 and hh[0]<hh[1]<hh[2] and ll[0]<ll[1]<ll[2]
     except Exception:
         return False
-    import numpy as np
 
 def detect_bullish_engulfing(df):
     if len(df) < 2: return False
