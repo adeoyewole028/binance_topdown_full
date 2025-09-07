@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.coverage
+.coverage*
+.pytest_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+.env
+# .env.*
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and data
+logs/
+*.log
+config.json
+positions.json
+/data/
+
+# Build/packaging
+build/
+dist/
+*.egg-info/
+
+# Notebooks
+.ipynb_checkpoints/
