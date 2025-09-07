@@ -384,6 +384,10 @@ def bot_loop():
                     symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
                     # Final sanitize to ensure no stable/quote slips through
                     symbols = [s for s in symbols if s.split('/')[0].upper() not in STABLE_BASES]
+                    if not symbols:
+                        # Fallback to a safe default universe
+                        symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
+                    status['logs'].append(f"Universe size now {len(symbols)}")
                 except Exception as e:
                     status['logs'].append(f"Universe error: {e}")
             status['universe'] = symbols
@@ -403,7 +407,27 @@ def bot_loop():
                             raise
                         time.sleep(delay)
                         delay *= 2
-                status['live_prices'] = {s: tickers[s]['last'] for s in symbols}
+                # Build from bulk if available; otherwise, fall back per symbol
+                live = {}
+                if isinstance(tickers, dict):
+                    for s in symbols:
+                        try:
+                            live[s] = tickers.get(s, {}).get('last', 'N/A')
+                        except Exception:
+                            live[s] = 'N/A'
+                else:
+                    # Per-symbol fallback
+                    for s in symbols:
+                        try:
+                            t = exchange.fetch_ticker(s)
+                            live[s] = t.get('last')
+                        except Exception:
+                            live[s] = 'N/A'
+                            continue
+                        time.sleep(0.1)
+                status['live_prices'] = live
+                ok = sum(1 for v in live.values() if isinstance(v, (int, float)))
+                status['logs'].append(f"Prices fetched {ok}/{len(symbols)}")
             except Exception as e:
                 status['live_prices'] = {s: 'N/A' for s in symbols}
                 status['logs'].append(f"Error fetching prices: {e}")
