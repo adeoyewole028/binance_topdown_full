@@ -90,7 +90,7 @@ DEFAULT_CONFIG = {
     'trailing_pct': float(os.getenv('TRAILING_PCT', '0.03')),
     'universe_size': int(os.getenv('UNIVERSE_SIZE', '12')),
     'base_quote': os.getenv('BASE_QUOTE', 'USDT'),
-    'use_dynamic_universe': True,
+    'use_dynamic_universe': os.getenv('USE_DYNAMIC_UNIVERSE', 'true').lower() in ('1','true','yes','y'),
     'min_quote_vol': float(os.getenv('MIN_24H_QUOTE_VOLUME', '10000000')),
     # proxy account equity for risk sizing
     'equity_proxy': float(os.getenv('EQUITY_PROXY', '1000')),
@@ -343,14 +343,21 @@ def bot_loop():
                     'apiKey': os.getenv('API_KEY'),
                     'secret': os.getenv('API_SECRET'),
                     'enableRateLimit': True,
-                    'options': {'defaultType': 'spot'}
+                    'timeout': int(os.getenv('CCXT_TIMEOUT_MS', '10000')),
+                    'options': {'defaultType': 'spot', 'adjustForTimeDifference': True}
                 })
+                try:
+                    # Ensure timeout is applied even if constructed without it
+                    exchange.timeout = int(os.getenv('CCXT_TIMEOUT_MS', '10000'))
+                except Exception:
+                    pass
 
             now = time.strftime('%Y-%m-%d %H:%M:%S')
             status['last_scan'] = now
             # Dynamic universe selection from top quote volume
             if status['config']['use_dynamic_universe']:
                 try:
+                    status['logs'].append('Fetching tickers for dynamic universe...')
                     tickers_all = exchange.fetch_tickers()
                     candidates = []
                     for sym, data in tickers_all.items():
