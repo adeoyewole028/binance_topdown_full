@@ -93,7 +93,7 @@ DEFAULT_CONFIG = {
     'use_dynamic_universe': os.getenv('USE_DYNAMIC_UNIVERSE', 'true').lower() in ('1','true','yes','y'),
     'min_quote_vol': float(os.getenv('MIN_24H_QUOTE_VOLUME', '10000000')),
     # proxy account equity for risk sizing
-    'equity_proxy': float(os.getenv('EQUITY_PROXY', '1000')),
+    'equity_proxy': float(os.getenv('EQUITY_PROXY', '100')),
 }
 
 status = {
@@ -114,6 +114,7 @@ status = {
     },
     'live_prices': {},
     'cooldowns': {},
+    'last_loop_ts': time.time(),
     'equity_history': [],
     'peak_equity': 0.0
 }
@@ -166,6 +167,7 @@ def coerce_config_types(incoming: dict) -> dict:
         'base_quote': str,
         'use_dynamic_universe': bool,
         'min_quote_vol': float,
+    'equity_proxy': float,
     }
     out = {}
     for k, caster in type_map.items():
@@ -321,6 +323,15 @@ class LocalBroker:
             log_trade_csv(self.trade_log_path, [trade['time'], trade['symbol'], trade['side'], trade['qty'], price, '', '', 'local', 'paper'])
         except Exception:
             pass
+        # Apply per-symbol cooldown after a filled order
+        try:
+            cd = int(max(0, self.status['config'].get('cooldown', 0)))
+            if cd > 0:
+                current = float(self.status.get('cooldowns', {}).get(symbol, 0))
+                self.status.setdefault('cooldowns', {})
+                self.status['cooldowns'][symbol] = max(current, float(cd))
+        except Exception:
+            pass
         # Persist positions
         try:
             save_positions(self.status['open_positions'])
@@ -456,6 +467,21 @@ def bot_loop():
             # Recompute universe and prices each loop so config changes reflect immediately
             symbols = recompute_universe_and_prices()
 
+            # Cooldowns: decrement based on elapsed time and preserve across loops
+            try:
+                now_ts = time.time()
+                prev_ts = float(status.get('last_loop_ts') or now_ts)
+                dt = max(0.0, now_ts - prev_ts)
+                new_cds = {}
+                for s in symbols:
+                    rem = float(status.get('cooldowns', {}).get(s, 0))
+                    rem = max(0.0, rem - dt)
+                    new_cds[s] = int(round(rem))
+                status['cooldowns'] = new_cds
+                status['last_loop_ts'] = now_ts
+            except Exception as e:
+                status['logs'].append(f"Cooldown update error: {e}")
+
             # Update P&L for local open positions
             for pos in status['open_positions']:
                 sym = pos['symbol']
@@ -529,6 +555,11 @@ def bot_loop():
                 except Exception as e:
                     status['logs'].append(f"Signal error for {symbol}: {e}")
             status['signals'] = detected_signals
+            # Surface just the symbol list for easy UI checks
+            try:
+                status['signal_symbols'] = [d.get('symbol') for d in detected_signals]
+            except Exception:
+                status['signal_symbols'] = []
 
             # Build exit signals for open positions
             exit_sigs = []
@@ -542,8 +573,7 @@ def bot_loop():
                     exit_sigs.append({'symbol': sym, 'reasons': res['reasons'], 'price': res['price'], 'pnl': pnl})
             status['exit_signals'] = exit_sigs
 
-            # Simulate cooldowns
-            status['cooldowns'] = {s: 0 for s in symbols}
+            # (cooldowns updated above)
             # Logs
             status['logs'].append(f"Scanned at {now}")
             if len(status['logs']) > 20:
@@ -675,6 +705,7 @@ def dashboard():
                 <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
                     <h1 class="text-xl font-semibold">Binance Topdown Bot</h1>
                     <div class="flex items-center gap-2">
+                        <div id="candleClock" class="px-2 py-1 rounded border border-slate-700 text-xs text-slate-200">15m closes in --:--</div>
                         <button id="soundToggle" class="px-2 py-1 rounded border border-slate-700 text-xs text-slate-200 hover:bg-slate-800">Sound: Off</button>
                         <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['bot_status']=='Running' else 'bg-rose-600 text-white' }}">
                             {{ status['bot_status'] }}
@@ -725,50 +756,19 @@ def dashboard():
                                         <span class="text-slate-200">{{ p|round(6) }}</span>
                                     {% endif %}
                                 </div>
+                                {% set sigsyms = status.get('signal_symbols', []) %}
+                                {% if symbol in sigsyms and (status['cooldowns'].get(symbol, 0) | int) == 0 %}
+                                    <div class="mt-2">
+                                        <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-semibold">TAKE TRADE</span>
+                                    </div>
+                                {% endif %}
                             </div>
                             {% endfor %}
                         </div>
                     </div>
                 </section>
-
-                <section class="grid grid-cols-1 gap-4">
-                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Open Positions</h2>
-                        <div class="overflow-x-auto mt-2">
-                            <table class="min-w-full text-sm">
-                                <thead class="text-slate-400">
-                                    <tr class="border-b border-slate-800">
-                                        <th class="text-left py-2">Symbol</th>
-                                        <th class="text-left py-2">Entry</th>
-                                        <th class="text-left py-2">Qty</th>
-                                        <th class="text-left py-2">P&L</th>
-                                        <th class="text-left py-2">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for pos in status['open_positions'] %}
-                                    {% set pnlpos = 'text-emerald-400' if pos['pnl']>0 else ('text-rose-400' if pos['pnl']<0 else 'text-slate-200') %}
-                                    <tr class="border-b border-slate-800/60">
-                                        <td class="py-2">{{ pos['symbol'] }}</td>
-                                        <td class="py-2">{{ pos['entry'] }}</td>
-                                        <td class="py-2">{{ pos['qty'] }}</td>
-                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) }}</td>
-                                        <td class="py-2">
-                                            <form method="post" action="/close" class="inline-flex">
-                                                <input type="hidden" name="symbol" value="{{ pos['symbol'] }}">
-                                                <input type="hidden" name="qty" value="{{ pos['qty'] }}">
-                                                <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                
+                  <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                         <h2 class="text-sm font-semibold text-slate-300">Signals</h2>
                         {% if status['signals'] %}
@@ -849,10 +849,95 @@ def dashboard():
                     </div>
                 </section>
 
+                <section class="grid grid-cols-1 gap-4">
+                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Open Positions</h2>
+                        <div class="overflow-x-auto mt-2">
+                            <table class="min-w-full text-sm">
+                                <thead class="text-slate-400">
+                                    <tr class="border-b border-slate-800">
+                                        <th class="text-left py-2">Symbol</th>
+                                        <th class="text-left py-2">Entry</th>
+                                        <th class="text-left py-2">Qty</th>
+                                        <th class="text-left py-2">P&L</th>
+                                        <th class="text-left py-2">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for pos in status['open_positions'] %}
+                                    {% set pnlpos = 'text-emerald-400' if pos['pnl']>0 else ('text-rose-400' if pos['pnl']<0 else 'text-slate-200') %}
+                                    <tr class="border-b border-slate-800/60">
+                                        <td class="py-2">{{ pos['symbol'] }}</td>
+                                        <td class="py-2">{{ pos['entry'] }}</td>
+                                        <td class="py-2">{{ pos['qty'] }}</td>
+                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) }}</td>
+                                        <td class="py-2">
+                                            <form method="post" action="/close" class="inline-flex">
+                                                <input type="hidden" name="symbol" value="{{ pos['symbol'] }}">
+                                                <input type="hidden" name="qty" value="{{ pos['qty'] }}">
+                                                <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+               
+
                 <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                         <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
-                                    <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                        {% set eq = status['config']['equity_proxy'] %}
+                        {% set risk = status['config']['risk'] %}
+                        {% set sl = status['config']['stop_loss_pct'] %}
+                        {% set cds = status['cooldowns'] %}
+                        {% set sigs = status['signals'] %}
+                        {% set usd_risk = (eq * risk) %}
+                        {% if sigs %}
+                        <div class="mt-2">
+                            <h3 class="text-xs font-semibold text-slate-400">Ready to take</h3>
+                            <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {% for sig in sigs %}
+                                    {% set sym = sig['symbol'] %}
+                                    {% set cd = cds.get(sym, 0) %}
+                                    {% if cd == 0 %}
+                                    {% set p = status['live_prices'].get(sym) %}
+                                    <div class="rounded border border-slate-800 bg-slate-900/70 p-3">
+                                        <div class="flex items-center justify-between">
+                                            <div class="text-sm font-medium">{{ sym }}</div>
+                                            <div class="text-xs text-slate-400">{{ sig['type'] }}</div>
+                                        </div>
+                                        <div class="mt-1 text-xs text-slate-400">Price:
+                                            {% if p is string or p is none %}
+                                                <span class="italic">N/A</span>
+                                            {% else %}
+                                                {{ p|round(6) }}
+                                            {% endif %}
+                                        </div>
+                                        {% if p is number and p > 0 %}
+                                            {% set den = p * (sl if sl > 0 else 0.000001) %}
+                                            {% set qty = (eq * risk) / den %}
+                                            <div class="mt-1 text-xs text-slate-400">Risk: ${{ usd_risk|round(2) }} • Qty: <span class="text-slate-200">{{ (qty if qty>0 else 0)|round(6) }}</span></div>
+                                            <form method="post" action="/trade" class="mt-2">
+                                                <input type="hidden" name="symbol" value="{{ sym }}">
+                                                <input type="hidden" name="side" value="buy">
+                                                <input type="hidden" name="qty" value="{{ (qty if qty>0 else 0)|round(6) }}">
+                                                <button type="submit" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-medium">Trade {{ sym }}</button>
+                                            </form>
+                                        {% else %}
+                                            <div class="mt-1 text-xs text-amber-400">Waiting for price to size order…</div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                                    <form method="post" action="/trade" class="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
                                         <label class="text-sm">Symbol
                                             {% if status['universe'] %}
                                                 <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol">
@@ -1117,6 +1202,65 @@ def dashboard():
                                 if (inp) inp.value = (Math.max(qty, 0)).toFixed(6);
                             });
                         }
+                    </script>
+                    <script>
+                        // 15m candle-close countdown and cue
+                        (function(){
+                            const clockEl = document.getElementById('candleClock');
+                            const header = document.querySelector('header');
+                            const PERIOD_MS = 15 * 60 * 1000;
+
+                            function nextBoundaryMs(now){
+                                return Math.ceil(now / PERIOD_MS) * PERIOD_MS;
+                            }
+
+                            function fmt(ms){
+                                const s = Math.max(0, Math.floor(ms / 1000));
+                                const m = Math.floor(s / 60);
+                                const ss = String(s % 60).padStart(2, '0');
+                                return `${m}:${ss}`;
+                            }
+
+                            function flashHeader(){
+                                if (!header) return;
+                                header.classList.add('ring-2','ring-emerald-500','ring-offset-0');
+                                setTimeout(()=> header.classList.remove('ring-2','ring-emerald-500','ring-offset-0'), 1200);
+                            }
+
+                            function getLastFired(){
+                                try { return parseInt(localStorage.getItem('last15mBoundaryFired') || '0', 10); } catch { return 0; }
+                            }
+                            function setLastFired(v){
+                                try { localStorage.setItem('last15mBoundaryFired', String(v)); } catch {}
+                            }
+
+                            // Initialize to current boundary to avoid double-fire on first paint
+                            setLastFired(Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS);
+
+                            function tick(){
+                                const now = Date.now();
+                                const next = nextBoundaryMs(now);
+                                const remain = next - now;
+                                if (clockEl) clockEl.textContent = `15m closes in ${fmt(remain)}`;
+
+                                if (remain <= 1000){
+                                    const thisBoundary = next;
+                                    if (getLastFired() !== thisBoundary){
+                                        setLastFired(thisBoundary);
+                                        flashHeader();
+                                        if (typeof showToast === 'function') {
+                                            showToast('<span class="font-semibold">15m candle closed</span> — new bar started');
+                                        }
+                                        if (typeof playBeep === 'function') {
+                                            playBeep();
+                                        }
+                                    }
+                                }
+                            }
+
+                            tick();
+                            setInterval(tick, 500);
+                        })();
                     </script>
         </body>
         </html>
