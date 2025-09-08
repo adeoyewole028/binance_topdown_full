@@ -39,9 +39,9 @@ def bias_check_1h(df_1h: pd.DataFrame):
 def execution_check_15m(df_15m: pd.DataFrame):
     # Candlestick entries
     if detect_bullish_engulfing(df_15m):
-        return {'signal': True, 'type': 'bullish_engulfing'}
+        return {'signal': True, 'type': 'bullish_engulfing', 'direction': 'up'}
     if detect_hammer(df_15m):
-        return {'signal': True, 'type': 'hammer'}
+        return {'signal': True, 'type': 'hammer', 'direction': 'up'}
 
     # Indicator-based entry
     df = df_15m.copy()
@@ -50,9 +50,12 @@ def execution_check_15m(df_15m: pd.DataFrame):
     if len(df) >= 2:
         last, prev = df.iloc[-1], df.iloc[-2]
         price_above = bool(last['close'] > last['ema21'])
-        rsi_cross = bool((prev['rsi'] <= status['config']['rsi_exec_threshold']) and (last['rsi'] > status['config']['rsi_exec_threshold']))
-        if price_above and rsi_cross:
-            return {'signal': True, 'type': 'ema21_rsi_cross'}
+        rsi_cross_up = bool((prev['rsi'] <= status['config']['rsi_exec_threshold']) and (last['rsi'] > status['config']['rsi_exec_threshold']))
+        rsi_cross_down = bool((prev['rsi'] >= status['config']['rsi_exec_threshold']) and (last['rsi'] < status['config']['rsi_exec_threshold']))
+        if price_above and rsi_cross_up:
+            return {'signal': True, 'type': 'ema21_rsi_cross_up', 'direction': 'up'}
+        if (last['close'] < last['ema21']) and rsi_cross_down:
+            return {'signal': True, 'type': 'ema21_rsi_cross_down', 'direction': 'down'}
     return {'signal': False}
 
 def fetch_ohlcv_df(exchange, symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
@@ -94,6 +97,10 @@ DEFAULT_CONFIG = {
     'min_quote_vol': float(os.getenv('MIN_24H_QUOTE_VOLUME', '10000000')),
     # proxy account equity for risk sizing
     'equity_proxy': float(os.getenv('EQUITY_PROXY', '100')),
+    # trading market type: 'spot' or 'future' (Binance USD-M futures)
+    'market_type': os.getenv('MARKET_TYPE', 'spot'),
+    # enable bearish entries (shorts in paper; requires futures for live shorts)
+    'enable_bearish': os.getenv('ENABLE_BEARISH', 'false').lower() in ('1','true','yes','y'),
 }
 
 status = {
@@ -166,8 +173,10 @@ def coerce_config_types(incoming: dict) -> dict:
         'universe_size': int,
         'base_quote': str,
         'use_dynamic_universe': bool,
-        'min_quote_vol': float,
+    'min_quote_vol': float,
     'equity_proxy': float,
+    'market_type': str,
+    'enable_bearish': bool,
     }
     out = {}
     for k, caster in type_map.items():
@@ -204,7 +213,7 @@ def load_positions(path: str = POSITIONS_PATH):
                     out = []
                     for p in data:
                         try:
-                            out.append({'symbol': p['symbol'], 'entry': float(p['entry']), 'qty': float(p['qty']), 'pnl': float(p.get('pnl', 0))})
+                            out.append({'symbol': p['symbol'], 'entry': float(p['entry']), 'qty': float(p['qty']), 'pnl': float(p.get('pnl', 0)), 'side': p.get('side', 'long')})
                         except Exception:
                             continue
                     return out
@@ -297,24 +306,43 @@ class LocalBroker:
 
         if side.lower() == 'buy':
             if pos:
-                new_qty = pos['qty'] + qty
-                # Weighted average entry
-                pos['entry'] = (pos['entry'] * pos['qty'] + price * qty) / max(new_qty, 1e-12)
-                pos['qty'] = new_qty
+                if pos.get('side', 'long') == 'short':
+                    # buy reduces short
+                    cover_qty = min(qty, pos['qty'])
+                    pnl = (pos['entry'] - price) * cover_qty
+                    pos['qty'] -= cover_qty
+                    if pos['qty'] <= 1e-12:
+                        self.status['open_positions'] = [p for p in self.status['open_positions'] if p['symbol'] != symbol]
+                    trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': cover_qty, 'price': price, 'status': 'filled', 'pnl': pnl}
+                else:
+                    new_qty = pos['qty'] + qty
+                    # Weighted average entry
+                    pos['entry'] = (pos['entry'] * pos['qty'] + price * qty) / max(new_qty, 1e-12)
+                    pos['qty'] = new_qty
+                    trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
             else:
-                self.status['open_positions'].append({'symbol': symbol, 'entry': price, 'qty': qty, 'pnl': 0})
-            trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
+                self.status['open_positions'].append({'symbol': symbol, 'entry': price, 'qty': qty, 'pnl': 0, 'side': 'long'})
+                trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
         else:  # sell
             if pos:
-                sell_qty = min(qty, pos['qty'])
-                pnl = (price - pos['entry']) * sell_qty
-                pos['qty'] -= sell_qty
-                if pos['qty'] <= 1e-12:
-                    # close position fully
-                    self.status['open_positions'] = [p for p in self.status['open_positions'] if p['symbol'] != symbol]
-                trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': sell_qty, 'price': price, 'status': 'filled', 'pnl': pnl}
+                if pos.get('side', 'long') == 'long':
+                    sell_qty = min(qty, pos['qty'])
+                    pnl = (price - pos['entry']) * sell_qty
+                    pos['qty'] -= sell_qty
+                    if pos['qty'] <= 1e-12:
+                        # close position fully
+                        self.status['open_positions'] = [p for p in self.status['open_positions'] if p['symbol'] != symbol]
+                    trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': sell_qty, 'price': price, 'status': 'filled', 'pnl': pnl}
+                else:
+                    # add to short
+                    new_qty = pos['qty'] + qty
+                    pos['entry'] = (pos['entry'] * pos['qty'] + price * qty) / max(new_qty, 1e-12)
+                    pos['qty'] = new_qty
+                    trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
             else:
-                trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': 0, 'price': price, 'status': 'rejected', 'pnl': 0}
+                # open short in paper mode
+                self.status['open_positions'].append({'symbol': symbol, 'entry': price, 'qty': qty, 'pnl': 0, 'side': 'short'})
+                trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
 
         # Record trade in memory and CSV
         self.status.setdefault('recent_trades', []).insert(0, trade)
@@ -340,25 +368,37 @@ class LocalBroker:
         return trade
 
     def close_position(self, symbol: str, qty: float):
-        return self.create_order(symbol, 'sell', qty)
+        # side-aware close: if short, buy to close; if long, sell to close
+        pos = self._find_position(symbol)
+        close_side = 'sell'
+        if pos and pos.get('side', 'long') == 'short':
+            close_side = 'buy'
+        return self.create_order(symbol, close_side, qty)
 
 exchange = None
 local_broker = LocalBroker(status)
-def ensure_exchange():
-    """Create the global exchange instance if missing, with expected options."""
+def ensure_exchange(force: bool = False):
+    """Create or recreate the global exchange instance with expected options.
+    Honours status['config']['market_type'] (spot|future).
+    """
     global exchange
-    if exchange is None:
+    if exchange is None or force:
         status['logs'].append('Initializing exchange...')
         print('Initializing exchange...')
+        default_type = 'future' if str(status['config'].get('market_type', 'spot')).lower() == 'future' else 'spot'
         exchange = ccxt.binance({
             'apiKey': os.getenv('API_KEY'),
             'secret': os.getenv('API_SECRET'),
             'enableRateLimit': True,
             'timeout': int(os.getenv('CCXT_TIMEOUT_MS', '10000')),
-            'options': {'defaultType': 'spot', 'adjustForTimeDifference': True}
+            'options': {'defaultType': default_type, 'adjustForTimeDifference': True}
         })
         try:
             exchange.timeout = int(os.getenv('CCXT_TIMEOUT_MS', '10000'))
+        except Exception:
+            pass
+        try:
+            exchange.load_markets()
         except Exception:
             pass
 
@@ -369,15 +409,45 @@ def recompute_universe_and_prices():
     ensure_exchange()
     # Mark immediate refresh time
     status['last_scan'] = time.strftime('%Y-%m-%d %H:%M:%S')
-    symbols = status.get('universe') or ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
+    mtype = str(status['config'].get('market_type', 'spot')).lower()
+    try:
+        mkts = exchange.markets if getattr(exchange, 'markets', None) else exchange.load_markets()
+    except Exception:
+        mkts = {}
+    # Build sensible defaults based on available markets to avoid bad symbol forms
+    default_pool_spot = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
+    default_pool_fut = []
+    if mkts:
+        wanted_bases = ['BTC','ETH','BNB','SOL']
+        for base in wanted_bases:
+            # find a linear USDT contract symbol for each base
+            for sym, m in mkts.items():
+                try:
+                    if m.get('base') == base and m.get('quote') == status['config']['base_quote'] and m.get('contract', False) and m.get('linear', False):
+                        default_pool_fut.append(sym)
+                        break
+                except Exception:
+                    continue
+    if not default_pool_fut:
+        # fallback to unified guesses; ccxt will error if invalid, but we will fallback per-symbol later
+        default_pool_fut = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT']
+    symbols = status.get('universe') or (default_pool_fut if mtype == 'future' else default_pool_spot)
     try:
         if status['config']['use_dynamic_universe']:
             status['logs'].append('Refreshing dynamic universe...')
             tickers_all = exchange.fetch_tickers()
             candidates = []
             for sym, data in tickers_all.items():
-                if not sym.endswith('/' + status['config']['base_quote']):
+                m = mkts.get(sym) or {}
+                # Filter by desired market type and quote
+                if m.get('quote') != status['config']['base_quote']:
                     continue
+                if mtype == 'future':
+                    if not (m.get('contract', False) and m.get('linear', False)):
+                        continue
+                else:
+                    if not m.get('spot', True):
+                        continue
                 if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
                     continue
                 try:
@@ -394,11 +464,11 @@ def recompute_universe_and_prices():
             symbols = [s for s, _ in candidates[:size]] or symbols
             symbols = [s for s in symbols if s.split('/')[0].upper() not in STABLE_BASES]
             if not symbols:
-                symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
+                symbols = (default_pool_fut if mtype == 'future' else default_pool_spot)
             status['logs'].append(f"Universe size now {len(symbols)}")
         else:
             # Static mode: just respect size over existing/default pool
-            pool = symbols or ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
+            pool = symbols or (default_pool_fut if mtype == 'future' else ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT'])
             size = max(int(status['config']['universe_size']), 1)
             symbols = pool[:size]
         status['universe'] = symbols
@@ -418,7 +488,9 @@ def recompute_universe_and_prices():
                 break
             except Exception:
                 if attempt == 2:
-                    raise
+                    # fall back to per-symbol fetch below
+                    tickers = None
+                    break
                 time.sleep(delay)
                 delay *= 2
         live = {}
@@ -482,13 +554,16 @@ def bot_loop():
             except Exception as e:
                 status['logs'].append(f"Cooldown update error: {e}")
 
-            # Update P&L for local open positions
+            # Update P&L for local open positions (long/short aware)
             for pos in status['open_positions']:
                 sym = pos['symbol']
                 price = status['live_prices'].get(sym)
                 try:
                     if isinstance(price, (int, float)):
-                        pos['pnl'] = (float(price) - float(pos['entry'])) * float(pos['qty'])
+                        if pos.get('side', 'long') == 'short':
+                            pos['pnl'] = (float(pos['entry']) - float(price)) * float(pos['qty'])
+                        else:
+                            pos['pnl'] = (float(price) - float(pos['entry'])) * float(pos['qty'])
                 except Exception:
                     pos['pnl'] = 0
             # recent_trades retained in memory (trim occasionally)
@@ -508,7 +583,10 @@ def bot_loop():
                     price = status['live_prices'].get(pos['symbol'])
                     if isinstance(price, (int, float)):
                         try:
-                            unreal += (float(price) - float(pos['entry'])) * float(pos['qty'])
+                            if pos.get('side', 'long') == 'short':
+                                unreal += (float(pos['entry']) - float(price)) * float(pos['qty'])
+                            else:
+                                unreal += (float(price) - float(pos['entry'])) * float(pos['qty'])
                         except Exception:
                             pass
                 total_profit = realized + unreal
@@ -540,12 +618,30 @@ def bot_loop():
                     trend4h = daily_trend_check(df_4h_trend)
                     bias1h = bias_check_1h(df_1h)
                     exec15 = execution_check_15m(df_15m)
-                    if trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal']:
+                    # bearish trend proxy: price below 21 and 50 EMA on 4h
+                    df4 = df_4h_trend.copy()
+                    df4['ema21'] = ema(df4['close'], 21)
+                    df4['ema50'] = ema(df4['close'], 50)
+                    last4 = df4.iloc[-1]
+                    bearish_trend = bool((last4['close'] < last4['ema21']) and (last4['close'] < last4['ema50']))
+                    momentum_down = bool(bias1h['rsi'] < status['config']['rsi_threshold'])
+
+                    if trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal'] and exec15.get('direction') == 'up':
                         detected_signals.append({
                             'symbol': symbol,
                             'type': exec15.get('type', 'entry'),
+                            'side': 'buy',
                             'time': now,
                             'trend4h': trend4h,
+                            'bias1h': bias1h
+                        })
+                    elif status['config'].get('enable_bearish') and bearish_trend and bias1h['near_ma'] and momentum_down and exec15['signal'] and exec15.get('direction') == 'down':
+                        detected_signals.append({
+                            'symbol': symbol,
+                            'type': exec15.get('type', 'entry'),
+                            'side': 'sell',
+                            'time': now,
+                            'trend4h': {'bullish': False, 'above21': False, 'hhll': False},
                             'bias1h': bias1h
                         })
                     else:
@@ -558,6 +654,7 @@ def bot_loop():
             # Surface just the symbol list for easy UI checks
             try:
                 status['signal_symbols'] = [d.get('symbol') for d in detected_signals]
+                status['signal_sides'] = {d.get('symbol'): d.get('side', 'buy') for d in detected_signals}
             except Exception:
                 status['signal_symbols'] = []
 
@@ -569,7 +666,10 @@ def bot_loop():
                 qty = float(pos['qty'])
                 res = compute_exit_reasons(sym, entry, qty, exchange)
                 if res['should_exit']:
-                    pnl = (res['price'] - entry) * qty
+                    if pos.get('side', 'long') == 'short':
+                        pnl = (entry - res['price']) * qty
+                    else:
+                        pnl = (res['price'] - entry) * qty
                     exit_sigs.append({'symbol': sym, 'reasons': res['reasons'], 'price': res['price'], 'pnl': pnl})
             status['exit_signals'] = exit_sigs
 
@@ -595,6 +695,12 @@ def trade():
     side = request.form.get('side')
     qty = request.form.get('qty')
     try:
+        # basic guards
+        cd = int(status.get('cooldowns', {}).get(symbol, 0))
+        if cd > 0:
+            raise Exception(f"{symbol} on cooldown ({cd}s)")
+        if (not status['config']['paper_trading']) and status['config'].get('market_type','spot')=='spot' and str(side).lower()=='sell':
+            raise Exception('Live short only supported on Futures. Switch market_type to future or enable paper_trading.')
         if status['config']['paper_trading']:
             order = local_broker.create_order(symbol, side, float(qty))
         else:
@@ -620,10 +726,19 @@ def close_position():
                 q = float(pos['qty'])
                 break
     try:
+        # determine side to close
+        pos = None
+        for p in status['open_positions']:
+            if p['symbol'] == symbol:
+                pos = p
+                break
+        close_side = 'sell'
+        if pos and pos.get('side', 'long') == 'short':
+            close_side = 'buy'
         if status['config']['paper_trading']:
-            order = local_broker.close_position(symbol, q)
+            order = local_broker.create_order(symbol, close_side, q)
         else:
-            order = exchange.create_order(symbol, 'market', 'sell', q)
+            order = exchange.create_order(symbol, 'market', close_side, q)
         flash(f"Closed {symbol}: {order}", 'success')
         status['logs'].append(f"Closed {symbol}: {order}")
     except Exception as e:
@@ -654,12 +769,15 @@ def update_config():
     form = request.form.to_dict(flat=True)
     # Only accept known keys, but handle booleans even if unchecked (missing => False)
     updates = {k: v for k, v in form.items() if k in status['config']}
-    for bk in ('paper_trading', 'use_dynamic_universe'):
+    for bk in ('paper_trading', 'use_dynamic_universe', 'enable_bearish'):
         if bk in status['config']:
             updates[bk] = '1' if form.get(bk) is not None else '0'
     coerced = coerce_config_types(updates)
     # Merge into status
+    # Detect if market_type changed to re-init exchange
+    prev_mtype = str(status['config'].get('market_type', 'spot')).lower()
     status['config'].update(coerced)
+    new_mtype = str(status['config'].get('market_type', 'spot')).lower()
     ok = save_persisted_config(status['config'])
     if ok:
         flash('Configuration saved.', 'success')
@@ -667,6 +785,9 @@ def update_config():
         flash('Failed to save configuration; using in-memory values.', 'error')
     # Apply config immediately to universe and prices so UI reflects changes without waiting
     try:
+        # Re-init exchange if market type flipped
+        if new_mtype != prev_mtype:
+            ensure_exchange(force=True)
         recompute_universe_and_prices()
     except Exception as e:
         status['logs'].append(f"Immediate refresh after config failed: {e}")
@@ -741,7 +862,7 @@ def dashboard():
                     <div class="col-span-1 xl:col-span-3 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                         <h2 class="text-sm font-semibold text-slate-300">Universe</h2>
                         {% set uni = status['universe_sorted'] if 'universe_sorted' in status else status['universe'] %}
-                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 mt-3">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 mt-3">
                             {% for symbol in uni[:status['config']['universe_size']] %}
                             <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                                 <div class="flex items-center justify-between">
@@ -758,8 +879,13 @@ def dashboard():
                                 </div>
                                 {% set sigsyms = status.get('signal_symbols', []) %}
                                 {% if symbol in sigsyms and (status['cooldowns'].get(symbol, 0) | int) == 0 %}
+                                    {% set sside = (status.get('signal_sides', {}).get(symbol) or 'buy') %}
                                     <div class="mt-2">
-                                        <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-semibold">TAKE TRADE</span>
+                                        {% if sside == 'sell' %}
+                                            <span class="inline-flex items-center rounded-full bg-rose-600 text-white px-2 py-0.5 text-xs font-semibold">TAKE TRADE (sell)</span>
+                                        {% else %}
+                                            <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-semibold">TAKE TRADE (buy)</span>
+                                        {% endif %}
                                     </div>
                                 {% endif %}
                             </div>
@@ -909,7 +1035,7 @@ def dashboard():
                                     <div class="rounded border border-slate-800 bg-slate-900/70 p-3">
                                         <div class="flex items-center justify-between">
                                             <div class="text-sm font-medium">{{ sym }}</div>
-                                            <div class="text-xs text-slate-400">{{ sig['type'] }}</div>
+                                            <div class="text-xs text-slate-400">{{ sig['type'] }}{% if sig.get('side')=='sell' %} • sell{% endif %}</div>
                                         </div>
                                         <div class="mt-1 text-xs text-slate-400">Price:
                                             {% if p is string or p is none %}
@@ -924,7 +1050,7 @@ def dashboard():
                                             <div class="mt-1 text-xs text-slate-400">Risk: ${{ usd_risk|round(2) }} • Qty: <span class="text-slate-200">{{ (qty if qty>0 else 0)|round(6) }}</span></div>
                                             <form method="post" action="/trade" class="mt-2">
                                                 <input type="hidden" name="symbol" value="{{ sym }}">
-                                                <input type="hidden" name="side" value="buy">
+                                                <input type="hidden" name="side" value="{{ sig.get('side','buy') }}">
                                                 <input type="hidden" name="qty" value="{{ (qty if qty>0 else 0)|round(6) }}">
                                                 <button type="submit" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-medium">Trade {{ sym }}</button>
                                             </form>
@@ -1045,11 +1171,23 @@ def dashboard():
                                 <label>equity_proxy
                                     <input name="equity_proxy" type="number" step="0.01" min="0" value="{{ status['config']['equity_proxy'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
+                                <label>market_type
+                                    <select name="market_type" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                        <option value="spot" {% if status['config']['market_type']=='spot' %}selected{% endif %}>spot</option>
+                                        <option value="future" {% if status['config']['market_type']=='future' %}selected{% endif %}>future</option>
+                                    </select>
+                                </label>
+                                <label class="flex items-center gap-2">enable_bearish
+                                    <input name="enable_bearish" type="checkbox" value="1" {% if status['config']['enable_bearish'] %}checked{% endif %} class="mt-1 rounded border-slate-700" />
+                                </label>
 
                                 <div class="sm:col-span-2 flex items-center justify-end gap-2">
                                     <button type="submit" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-medium">Save</button>
                                 </div>
                             </form>
+                            {% if (not status['config']['paper_trading']) and status['config']['market_type']=='spot' and status['config']['enable_bearish'] %}
+                                <div class="mt-2 text-xs text-amber-400">Warning: Live short selling requires Futures. Switch market_type to future or keep paper_trading on.</div>
+                            {% endif %}
                         </div>
                     </div>
                 </section>
