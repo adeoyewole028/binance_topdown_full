@@ -333,6 +333,114 @@ class LocalBroker:
 
 exchange = None
 local_broker = LocalBroker(status)
+def ensure_exchange():
+    """Create the global exchange instance if missing, with expected options."""
+    global exchange
+    if exchange is None:
+        status['logs'].append('Initializing exchange...')
+        print('Initializing exchange...')
+        exchange = ccxt.binance({
+            'apiKey': os.getenv('API_KEY'),
+            'secret': os.getenv('API_SECRET'),
+            'enableRateLimit': True,
+            'timeout': int(os.getenv('CCXT_TIMEOUT_MS', '10000')),
+            'options': {'defaultType': 'spot', 'adjustForTimeDifference': True}
+        })
+        try:
+            exchange.timeout = int(os.getenv('CCXT_TIMEOUT_MS', '10000'))
+        except Exception:
+            pass
+
+def recompute_universe_and_prices():
+    """Rebuild the trading universe based on current config and refresh live prices immediately.
+    Returns the list of symbols in the refreshed universe.
+    """
+    ensure_exchange()
+    # Mark immediate refresh time
+    status['last_scan'] = time.strftime('%Y-%m-%d %H:%M:%S')
+    symbols = status.get('universe') or ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
+    try:
+        if status['config']['use_dynamic_universe']:
+            status['logs'].append('Refreshing dynamic universe...')
+            tickers_all = exchange.fetch_tickers()
+            candidates = []
+            for sym, data in tickers_all.items():
+                if not sym.endswith('/' + status['config']['base_quote']):
+                    continue
+                if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
+                    continue
+                try:
+                    base, _quote = sym.split('/')
+                    if base.upper() in STABLE_BASES:
+                        continue
+                except Exception:
+                    continue
+                qvol = data.get('quoteVolume') or 0
+                if qvol >= status['config']['min_quote_vol']:
+                    candidates.append((sym, qvol))
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            size = max(int(status['config']['universe_size']), 1)
+            symbols = [s for s, _ in candidates[:size]] or symbols
+            symbols = [s for s in symbols if s.split('/')[0].upper() not in STABLE_BASES]
+            if not symbols:
+                symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
+            status['logs'].append(f"Universe size now {len(symbols)}")
+        else:
+            # Static mode: just respect size over existing/default pool
+            pool = symbols or ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
+            size = max(int(status['config']['universe_size']), 1)
+            symbols = pool[:size]
+        status['universe'] = symbols
+    except Exception as e:
+        status['logs'].append(f"Universe error: {e}")
+        status['universe'] = symbols
+
+    # Fetch live prices for the refreshed set (with retries and per-symbol fallback)
+    try:
+        def _fetch_bulk():
+            return exchange.fetch_tickers(symbols)
+        tickers = None
+        delay = 0.5
+        for attempt in range(3):
+            try:
+                tickers = _fetch_bulk()
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(delay)
+                delay *= 2
+        live = {}
+        if isinstance(tickers, dict):
+            for s in symbols:
+                try:
+                    live[s] = tickers.get(s, {}).get('last', 'N/A')
+                except Exception:
+                    live[s] = 'N/A'
+        else:
+            for s in symbols:
+                try:
+                    t = exchange.fetch_ticker(s)
+                    live[s] = t.get('last')
+                except Exception:
+                    live[s] = 'N/A'
+                    continue
+                time.sleep(0.1)
+        status['live_prices'] = live
+        ok = sum(1 for v in live.values() if isinstance(v, (int, float)))
+        status['logs'].append(f"Prices fetched {ok}/{len(symbols)}")
+        # Prepare display order: sort symbols by highest price first
+        def _pval(x):
+            v = live.get(x)
+            return float(v) if isinstance(v, (int, float)) else float('-inf')
+        status['universe_sorted'] = sorted(symbols, key=_pval, reverse=True)
+    except Exception as e:
+        status['live_prices'] = {s: 'N/A' for s in symbols}
+        status['logs'].append(f"Error fetching prices: {e}")
+        status['universe_sorted'] = symbols
+
+    return symbols
+
 def bot_loop():
     symbols = ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
     global exchange
@@ -341,96 +449,12 @@ def bot_loop():
     while True:
         try:
             # Lazy init/retryable exchange creation
-            if exchange is None:
-                print('Initializing exchange...')
-                status['logs'].append('Initializing exchange...')
-                exchange = ccxt.binance({
-                    'apiKey': os.getenv('API_KEY'),
-                    'secret': os.getenv('API_SECRET'),
-                    'enableRateLimit': True,
-                    'timeout': int(os.getenv('CCXT_TIMEOUT_MS', '10000')),
-                    'options': {'defaultType': 'spot', 'adjustForTimeDifference': True}
-                })
-                try:
-                    # Ensure timeout is applied even if constructed without it
-                    exchange.timeout = int(os.getenv('CCXT_TIMEOUT_MS', '10000'))
-                except Exception:
-                    pass
+            ensure_exchange()
 
             now = time.strftime('%Y-%m-%d %H:%M:%S')
             status['last_scan'] = now
-            # Dynamic universe selection from top quote volume
-            if status['config']['use_dynamic_universe']:
-                try:
-                    status['logs'].append('Fetching tickers for dynamic universe...')
-                    tickers_all = exchange.fetch_tickers()
-                    candidates = []
-                    for sym, data in tickers_all.items():
-                        if not sym.endswith('/' + status['config']['base_quote']):
-                            continue
-                        if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
-                            continue
-                        # Exclude stablecoin base vs selected quote (e.g., USDC/USDT, FDUSD/USDT)
-                        try:
-                            base, quote = sym.split('/')
-                            if base.upper() in STABLE_BASES:
-                                continue
-                        except Exception:
-                            continue
-                        qvol = data.get('quoteVolume') or 0
-                        if qvol >= status['config']['min_quote_vol']:
-                            candidates.append((sym, qvol))
-                    candidates.sort(key=lambda x: x[1], reverse=True)
-                    symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
-                    # Final sanitize to ensure no stable/quote slips through
-                    symbols = [s for s in symbols if s.split('/')[0].upper() not in STABLE_BASES]
-                    if not symbols:
-                        # Fallback to a safe default universe
-                        symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT']
-                    status['logs'].append(f"Universe size now {len(symbols)}")
-                except Exception as e:
-                    status['logs'].append(f"Universe error: {e}")
-            status['universe'] = symbols
-
-            # Fetch live prices (with retries)
-            try:
-                def _fetch():
-                    return exchange.fetch_tickers(symbols)
-                tickers = None
-                delay = 0.5
-                for attempt in range(3):
-                    try:
-                        tickers = _fetch()
-                        break
-                    except Exception:
-                        if attempt == 2:
-                            raise
-                        time.sleep(delay)
-                        delay *= 2
-                # Build from bulk if available; otherwise, fall back per symbol
-                live = {}
-                if isinstance(tickers, dict):
-                    for s in symbols:
-                        try:
-                            live[s] = tickers.get(s, {}).get('last', 'N/A')
-                        except Exception:
-                            live[s] = 'N/A'
-                else:
-                    # Per-symbol fallback
-                    for s in symbols:
-                        try:
-                            t = exchange.fetch_ticker(s)
-                            live[s] = t.get('last')
-                        except Exception:
-                            live[s] = 'N/A'
-                            continue
-                        time.sleep(0.1)
-                status['live_prices'] = live
-                ok = sum(1 for v in live.values() if isinstance(v, (int, float)))
-                status['logs'].append(f"Prices fetched {ok}/{len(symbols)}")
-            except Exception as e:
-                status['live_prices'] = {s: 'N/A' for s in symbols}
-                status['logs'].append(f"Error fetching prices: {e}")
+            # Recompute universe and prices each loop so config changes reflect immediately
+            symbols = recompute_universe_and_prices()
 
             # Update P&L for local open positions
             for pos in status['open_positions']:
@@ -611,6 +635,11 @@ def update_config():
         flash('Configuration saved.', 'success')
     else:
         flash('Failed to save configuration; using in-memory values.', 'error')
+    # Apply config immediately to universe and prices so UI reflects changes without waiting
+    try:
+        recompute_universe_and_prices()
+    except Exception as e:
+        status['logs'].append(f"Immediate refresh after config failed: {e}")
     return redirect(url_for('dashboard'))
 
 @app.route('/reset-config', methods=['POST'])
@@ -622,6 +651,11 @@ def reset_config():
         flash('Configuration reset to defaults.', 'success')
     else:
         flash('Reset failed to save; defaults applied in memory.', 'error')
+    # Also refresh universe/prices immediately
+    try:
+        recompute_universe_and_prices()
+    except Exception as e:
+        status['logs'].append(f"Immediate refresh after reset failed: {e}")
     return redirect(url_for('dashboard'))
 
 @app.route('/', methods=['GET'])
@@ -675,16 +709,17 @@ def dashboard():
 
                     <div class="col-span-1 xl:col-span-3 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                         <h2 class="text-sm font-semibold text-slate-300">Universe</h2>
+                        {% set uni = status['universe_sorted'] if 'universe_sorted' in status else status['universe'] %}
                         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 mt-3">
-                            {% for symbol in status['universe'][:12] %}
+                            {% for symbol in uni[:status['config']['universe_size']] %}
                             <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                                 <div class="flex items-center justify-between">
                                     <div class="font-semibold text-sm">{{ symbol }}</div>
-                                    <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['cooldowns'][symbol] }}s</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['cooldowns'].get(symbol, 0) }}s</span>
                                 </div>
                                 <div class="mt-2 text-sm">
-                                    {% set p = status['live_prices'][symbol] %}
-                                    {% if p == 'N/A' %}
+                                    {% set p = status['live_prices'].get(symbol, 'N/A') %}
+                                    {% if p is string or p is none %}
                                         <span class="italic text-slate-400">N/A</span>
                                     {% else %}
                                         <span class="text-slate-200">{{ p|round(6) }}</span>
