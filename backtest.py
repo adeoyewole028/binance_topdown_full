@@ -29,6 +29,7 @@ EPS = 1e-9             # numerical stability epsilon
 @dataclass
 class Trade:
     symbol: str
+    position_id: int
     entry_time: int
     exit_time: int
     entry: float
@@ -108,6 +109,8 @@ class Backtester:
             'fail_momentum': 0,
         }
         self.verbose = False
+        self._next_position_id = 1
+        self.realized_pnl = 0.0
 
     def _prep(self):
         """Compute indicator columns (EMA, RSI, ATR)."""
@@ -225,20 +228,60 @@ class Backtester:
                         'side': direction,
                         'entry_price': row['close'], 'sl': sl, 'tp': tp, 'qty': qty, 'open_index': i,
                         'partial_done': False, 'trail_active': False, 'risk_unit': risk_unit,
+                        'original_risk_unit': risk_unit,
                         'partial_target': (row['close'] + self.cfg.partial_tp_r_multiple * risk_unit) if direction=='long' else (row['close'] - self.cfg.partial_tp_r_multiple * risk_unit),
-                        'atr_at_entry': atr_val
+                        'atr_at_entry': atr_val,
+                        'position_id': self._next_position_id
                     }
+                    self._next_position_id += 1
             else:
                 # Manage position
                 price = row['close']
                 pos = self.position
                 # Partial
-                if pos['side']=='long' and (not pos['partial_done']) and price >= pos['partial_target']:
-                    pos['partial_done'] = True
-                    pos['sl'] = max(pos['sl'], pos['entry_price'])
-                if pos['side']=='short' and (not pos['partial_done']) and price <= pos['partial_target']:
-                    pos['partial_done'] = True
-                    pos['sl'] = min(pos['sl'], pos['entry_price'])
+                if not pos['partial_done']:
+                    partial_hit = (pos['side']=='long' and price >= pos['partial_target']) or (pos['side']=='short' and price <= pos['partial_target'])
+                    if partial_hit:
+                        fraction = min(max(self.cfg.partial_tp_fraction, 0), 1)
+                        if fraction > 0:
+                            partial_qty = pos['qty'] * fraction
+                            if partial_qty > 0:
+                                if pos['side']=='long':
+                                    realized_pnl = (price - pos['entry_price']) * partial_qty
+                                else:
+                                    realized_pnl = (pos['entry_price'] - price) * partial_qty
+                                # R multiple based on original risk distance (price risk unit)
+                                r_mult = None
+                                if pos['risk_unit'] > 0:
+                                    if pos['side']=='long':
+                                        r_mult = (price - pos['entry_price']) / pos['original_risk_unit']
+                                    else:
+                                        r_mult = (pos['entry_price'] - price) / pos['original_risk_unit']
+                                self.equity += realized_pnl
+                                self.realized_pnl += realized_pnl
+                                self.trades.append(Trade(
+                                    symbol=self.symbol,
+                                    position_id=pos['position_id'],
+                                    entry_time=int(self.df15.index[pos['open_index']].timestamp()),
+                                    exit_time=int(self.df15.index[i].timestamp()),
+                                    entry=pos['entry_price'], exit=price, side=pos['side'], qty=partial_qty,
+                                    pnl=realized_pnl, r_multiple=r_mult, exit_reason='partial', equity_after=self.equity
+                                ))
+                                # Reduce remaining position size
+                                pos['qty'] -= partial_qty
+                                # Recompute risk_unit for remaining size: distance stays same in price terms
+                                # but R calculations for remaining trade should still reference original risk distance
+                                # We keep pos['risk_unit'] as price risk of remaining position (entry - sl distance)
+                                if pos['side']=='long':
+                                    pos['risk_unit'] = pos['entry_price'] - (pos['entry_price'] - pos['original_risk_unit'])  # unchanged price distance placeholder
+                                else:
+                                    pos['risk_unit'] = (pos['entry_price'] + pos['original_risk_unit']) - pos['entry_price']
+                        pos['partial_done'] = True
+                        # Move stop to breakeven (entry)
+                        if pos['side']=='long':
+                            pos['sl'] = max(pos['sl'], pos['entry_price'])
+                        else:
+                            pos['sl'] = min(pos['sl'], pos['entry_price'])
                 # Trail activation
                 if pos['side']=='long' and (not pos['trail_active']) and pos['risk_unit'] > 0 and (price - pos['entry_price']) / pos['risk_unit'] >= self.cfg.trail_activate_r_multiple:
                     pos['trail_active'] = True
@@ -287,6 +330,7 @@ class Backtester:
                     self.equity += pnl
                     self.trades.append(Trade(
                         symbol=self.symbol,
+                        position_id=pos['position_id'],
                         entry_time=int(self.df15.index[pos['open_index']].timestamp()),
                         exit_time=int(self.df15.index[i].timestamp()),
                         entry=pos['entry_price'], exit=price, side=pos['side'], qty=pos['qty'], pnl=pnl, r_multiple=r_mult, exit_reason=exit_reason, equity_after=self.equity
@@ -308,6 +352,7 @@ class Backtester:
             self.equity += pnl
             self.trades.append(Trade(
                 symbol=self.symbol,
+                position_id=pos['position_id'],
                 entry_time=int(self.df15.index[pos['open_index']].timestamp()),
                 exit_time=int(self.df15.index[-1].timestamp()),
                 entry=pos['entry_price'], exit=price, side=pos['side'], qty=pos['qty'], pnl=pnl, r_multiple=r_mult, exit_reason='eod', equity_after=self.equity
@@ -333,9 +378,9 @@ class Backtester:
         wins = [p for p in pnl_series if p > 0]
         losses = [abs(p) for p in pnl_series if p < 0]
         profit_factor = (sum(wins)/sum(losses)) if wins and losses else (float('inf') if wins and not losses else 0)
-        rs = [t.r_multiple for t in self.trades if t.r_multiple is not None]
+        rs = [t.r_multiple for t in self.trades if t.r_multiple is not None and t.exit_reason != 'partial']
         avg_r = sum(rs)/len(rs) if rs else 0
-        win_rate = (len(wins)/len(pnl_series))*100
+        win_rate = (len(wins)/len(pnl_series))*100 if pnl_series else 0
         # Simple Sharpe: mean(daily PnL)/std(PnL) * sqrt(n) with n = trades (proxy)
         sharpe = 0
         if len(pnl_series) > 1:
@@ -346,13 +391,27 @@ class Backtester:
         median_r = statistics.median(rs) if rs else 0
         best_r = max(rs) if rs else 0
         worst_r = min(rs) if rs else 0
-        # Expectancy in R
-        avg_win_r = statistics.mean([t.r_multiple for t in self.trades if t.r_multiple and t.r_multiple > 0]) if any(t.r_multiple and t.r_multiple>0 for t in self.trades) else 0
-        avg_loss_r = statistics.mean([t.r_multiple for t in self.trades if t.r_multiple is not None and t.r_multiple < 0]) if any(t.r_multiple is not None and t.r_multiple<0 for t in self.trades) else 0
+        # Expectancy in R excludes partial exits
+        non_partial = [t for t in self.trades if t.exit_reason != 'partial' and t.r_multiple is not None]
+        avg_win_r = statistics.mean([t.r_multiple for t in non_partial if t.r_multiple > 0]) if any(t.r_multiple and t.r_multiple>0 for t in non_partial) else 0
+        avg_loss_r = statistics.mean([t.r_multiple for t in non_partial if t.r_multiple is not None and t.r_multiple < 0]) if any(t.r_multiple is not None and t.r_multiple<0 for t in non_partial) else 0
         expectancy_r = (win_rate/100)*avg_win_r + (1-win_rate/100)*avg_loss_r
+        final_equity = self.equity
+        return_pct = ((final_equity - self.cfg.base_capital) / self.cfg.base_capital)*100 if self.cfg.base_capital else 0
+        unrealized_pnl = 0.0
+        if self.position:
+            last_price = self.df15.iloc[-1]['close']
+            if self.position['side'] == 'long':
+                unrealized_pnl = (last_price - self.position['entry_price']) * self.position['qty']
+            else:
+                unrealized_pnl = (self.position['entry_price'] - last_price) * self.position['qty']
         return {
             'trades': len(self.trades),
             'total_pnl': sum(pnl_series),
+            'realized_pnl': self.realized_pnl,
+            'unrealized_pnl': unrealized_pnl,
+            'final_equity': final_equity,
+            'return_pct': return_pct,
             'avg_r': avg_r,
             'median_r': median_r,
             'best_r': best_r,
