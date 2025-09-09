@@ -56,3 +56,18 @@ def log_trade_csv(path, row):
         if write_header:
             w.writerow(['time','symbol','side','qty','entry','tp','sl','reason','mode'])
         w.writerow(row)
+
+def atr(df, period: int = 14):
+    """Compute Average True Range. df must have columns: high, low, close."""
+    if df is None or len(df) == 0:
+        import pandas as pd
+        return pd.Series(dtype=float)
+    high = df['high']
+    low = df['low']
+    close = df['close']
+    prev_close = close.shift(1)
+    tr = (high - low).abs()
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    true_range = tr.combine(tr2, max).combine(tr3, max)
+    return true_range.rolling(window=period).mean()

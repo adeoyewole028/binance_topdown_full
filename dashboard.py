@@ -6,33 +6,38 @@ import os
 import json
 import ccxt
 import pandas as pd
-from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv
+from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv, atr
 from datetime import datetime
 
 # --- Strategy helpers (mirrors topdown_daemon) ---
 def daily_trend_check(df_daily: pd.DataFrame):
     df = df_daily.copy()
-    df['ema21'] = ema(df['close'], 21)
-    df['ema50'] = ema(df['close'], 50)
-    above_ma = bool((df['close'].iloc[-1] > df['ema21'].iloc[-1]) and (df['close'].iloc[-1] > df['ema50'].iloc[-1]))
+    fast = int(status['config'].get('ema_fast', 21))
+    slow = int(status['config'].get('ema_slow', 50))
+    df['ema_fast'] = ema(df['close'], fast)
+    df['ema_slow'] = ema(df['close'], slow)
+    above_ma = bool((df['close'].iloc[-1] > df['ema_fast'].iloc[-1]) and (df['close'].iloc[-1] > df['ema_slow'].iloc[-1]))
     hhll = bool(is_higher_highs_lows(df['close']))
-    return {'bullish': bool(above_ma and hhll), 'above21': above_ma, 'hhll': hhll}
+    # Include legacy key names for existing template references
+    return {'bullish': bool(above_ma and hhll), 'above_fast': above_ma, 'above21': above_ma, 'hhll': hhll}
 
 def bias_check_4h(df_4h: pd.DataFrame):
     df = df_4h.copy()
-    df['ema21'] = ema(df['close'], 21)
+    fast = int(status['config'].get('ema_fast', 21))
+    df['ema_fast'] = ema(df['close'], fast)
     df['rsi'] = rsi(df['close'], 14)
     last = df.iloc[-1]
-    near_ma = bool(abs(last['close'] - df['ema21'].iloc[-1]) / max(float(last['close']), 1e-12) <= status['config']['near_ema_pct'])
+    near_ma = bool(abs(last['close'] - df['ema_fast'].iloc[-1]) / max(float(last['close']), 1e-12) <= status['config']['near_ema_pct'])
     momentum_ok = bool(last['rsi'] > status['config']['rsi_threshold'])
     return {'near_ma': near_ma, 'momentum_ok': momentum_ok, 'rsi': float(last['rsi'])}
 
 def bias_check_1h(df_1h: pd.DataFrame):
     df = df_1h.copy()
-    df['ema21'] = ema(df['close'], 21)
+    fast = int(status['config'].get('ema_fast', 21))
+    df['ema_fast'] = ema(df['close'], fast)
     df['rsi'] = rsi(df['close'], 14)
     last = df.iloc[-1]
-    near_ma = bool(abs(last['close'] - df['ema21'].iloc[-1]) / max(float(last['close']), 1e-12) <= status['config']['near_ema_pct'])
+    near_ma = bool(abs(last['close'] - df['ema_fast'].iloc[-1]) / max(float(last['close']), 1e-12) <= status['config']['near_ema_pct'])
     momentum_ok = bool(last['rsi'] > status['config']['rsi_threshold'])
     return {'near_ma': near_ma, 'momentum_ok': momentum_ok, 'rsi': float(last['rsi'])}
 
@@ -45,20 +50,29 @@ def execution_check_15m(df_15m: pd.DataFrame):
 
     # Indicator-based entry
     df = df_15m.copy()
-    df['ema21'] = ema(df['close'], 21)
+    fast = int(status['config'].get('ema_fast', 21))
+    df['ema_fast'] = ema(df['close'], fast)
     df['rsi'] = rsi(df['close'], 14)
     if len(df) >= 2:
         last, prev = df.iloc[-1], df.iloc[-2]
-        price_above = bool(last['close'] > last['ema21'])
+        price_above = bool(last['close'] > last['ema_fast'])
         rsi_cross_up = bool((prev['rsi'] <= status['config']['rsi_exec_threshold']) and (last['rsi'] > status['config']['rsi_exec_threshold']))
         rsi_cross_down = bool((prev['rsi'] >= status['config']['rsi_exec_threshold']) and (last['rsi'] < status['config']['rsi_exec_threshold']))
         if price_above and rsi_cross_up:
-            return {'signal': True, 'type': 'ema21_rsi_cross_up', 'direction': 'up'}
-        if (last['close'] < last['ema21']) and rsi_cross_down:
-            return {'signal': True, 'type': 'ema21_rsi_cross_down', 'direction': 'down'}
+            return {'signal': True, 'type': f'ema{fast}_rsi_cross_up', 'direction': 'up'}
+        if (last['close'] < last['ema_fast']) and rsi_cross_down:
+            return {'signal': True, 'type': f'ema{fast}_rsi_cross_down', 'direction': 'down'}
     return {'signal': False}
 
 def fetch_ohlcv_df(exchange, symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+    # Basic in-memory cache (per process) to avoid repeated identical pulls inside loop
+    cache = status.setdefault('_ohlcv_cache', {})
+    key = (symbol, timeframe, limit)
+    now_ts = time.time()
+    rec = cache.get(key)
+    ttl = 30  # seconds
+    if rec and (now_ts - rec['ts'] < ttl):
+        return rec['df'].copy()
     delay = 0.5
     last_err = None
     for attempt in range(3):
@@ -66,6 +80,7 @@ def fetch_ohlcv_df(exchange, symbol: str, timeframe: str, limit: int = 200) -> p
             ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp','open','high','low','close','volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+            cache[key] = {'df': df, 'ts': now_ts}
             return df
         except Exception as e:
             last_err = e
@@ -101,6 +116,59 @@ DEFAULT_CONFIG = {
     'market_type': os.getenv('MARKET_TYPE', 'spot'),
     # enable bearish entries (shorts in paper; requires futures for live shorts)
     'enable_bearish': os.getenv('ENABLE_BEARISH', 'false').lower() in ('1','true','yes','y'),
+    # Dynamic strategy parameters (Phase 1 additions)
+    'ema_fast': int(os.getenv('EMA_FAST', '21')),
+    'ema_slow': int(os.getenv('EMA_SLOW', '50')),
+    'atr_period': int(os.getenv('ATR_PERIOD', '14')),
+    'atr_stop_mult': float(os.getenv('ATR_STOP_MULT', '1.5')),
+    'atr_tp_mult': float(os.getenv('ATR_TP_MULT', '2.5')),
+    'min_stop_pct': float(os.getenv('MIN_STOP_PCT', '0.004')),  # 0.4% floor
+    # Advanced position management
+    'partial_tp_r_multiple': float(os.getenv('PARTIAL_TP_R_MULTIPLE', '1.0')),  # take partial at 1R
+    'partial_tp_fraction': float(os.getenv('PARTIAL_TP_FRACTION', '0.5')),      # fraction to close
+    'breakeven_after_partial': os.getenv('BREAKEVEN_AFTER_PARTIAL', 'true').lower() in ('1','true','yes','y'),
+    'trail_activate_r_multiple': float(os.getenv('TRAIL_ACTIVATE_R_MULTIPLE', '1.5')),
+    'trail_atr_mult': float(os.getenv('TRAIL_ATR_MULT', '1.0')),
+    'daily_loss_limit_pct': float(os.getenv('DAILY_LOSS_LIMIT_PCT', '0.05')),  # 5% of equity_proxy
+    'enable_daily_loss_guard': os.getenv('ENABLE_DAILY_LOSS_GUARD', 'true').lower() in ('1','true','yes','y'),
+    # Volatility regime filter: minimum ATR/price ratio on 15m to consider entries
+    'min_atr_rel': float(os.getenv('MIN_ATR_REL', '0.001')),
+}
+
+# Human-readable descriptions for each config parameter (for legend display)
+CONFIG_PARAM_DESCRIPTIONS = {
+    'risk': 'Fraction of equity_proxy risked per trade (not fully enforced yet).',
+    'max_positions': 'Maximum simultaneous open positions.',
+    'cooldown': 'Seconds to wait after a filled trade before re-entering same symbol.',
+    'paper_trading': 'Simulate locally instead of sending live orders.',
+    'near_ema_pct': 'Max % distance from fast EMA (1h) to count as near for gating.',
+    'rsi_threshold': 'Minimum 1h RSI for momentum gating.',
+    'rsi_exec_threshold': '15m RSI cross level required to trigger execution signal.',
+    'rsi_overbought': 'RSI level considered overbought for exit conditions.',
+    'take_profit_pct': 'Static TP percent (fallback if ATR TP absent).',
+    'stop_loss_pct': 'Static SL percent (fallback if ATR SL absent).',
+    'trailing_pct': 'Legacy static trailing stop percent (superseded by ATR trailing).',
+    'universe_size': 'Number of symbols maintained in active universe.',
+    'base_quote': 'Quote currency filter (e.g. USDT).',
+    'use_dynamic_universe': 'Rebuild universe each loop using top volume symbols.',
+    'min_quote_vol': 'Minimum 24h quote volume for inclusion in dynamic universe.',
+    'equity_proxy': 'Synthetic account size used for sizing & daily loss guard.',
+    'market_type': 'Market type: spot or future (USD-M).',
+    'enable_bearish': 'Enable short (bearish) entries.',
+    'ema_fast': 'Fast EMA period.',
+    'ema_slow': 'Slow EMA period.',
+    'atr_period': 'ATR period for volatility / stop sizing.',
+    'atr_stop_mult': 'ATR multiple applied to derive initial stop distance.',
+    'atr_tp_mult': 'Relative ATR multiple for take profit vs stop.',
+    'min_stop_pct': 'Floor for stop percent if ATR-implied stop is too small.',
+    'partial_tp_r_multiple': 'R multiple at which partial profit executes.',
+    'partial_tp_fraction': 'Fraction of position closed at partial target.',
+    'breakeven_after_partial': 'Move stop to entry after partial.',
+    'trail_activate_r_multiple': 'R threshold to activate ATR trailing.',
+    'trail_atr_mult': 'ATR multiple behind price for trailing stop.',
+    'daily_loss_limit_pct': 'Daily realized loss limit (pct of equity_proxy) triggering pause.',
+    'enable_daily_loss_guard': 'Enable daily loss guard mechanism.',
+    'min_atr_rel': 'Minimum ATR/price ratio (15m) required to allow new entries.',
 }
 
 status = {
@@ -123,8 +191,14 @@ status = {
     'cooldowns': {},
     'last_loop_ts': time.time(),
     'equity_history': [],
-    'peak_equity': 0.0
+    'peak_equity': 0.0,
+    # Daily loss guard tracking
+    'current_day': '',
+    'daily_realized_pnl': 0.0,
+    'daily_guard_active': False,
+    'bot_pause_reason': ''
 }
+status['atr_info'] = {}
 
 # Exclude stablecoin-vs-quote pairs from the dynamic universe
 STABLE_BASES = {
@@ -173,10 +247,24 @@ def coerce_config_types(incoming: dict) -> dict:
         'universe_size': int,
         'base_quote': str,
         'use_dynamic_universe': bool,
-    'min_quote_vol': float,
-    'equity_proxy': float,
-    'market_type': str,
-    'enable_bearish': bool,
+        'min_quote_vol': float,
+        'equity_proxy': float,
+        'market_type': str,
+        'enable_bearish': bool,
+    'ema_fast': int,
+    'ema_slow': int,
+    'atr_period': int,
+    'atr_stop_mult': float,
+    'atr_tp_mult': float,
+    'min_stop_pct': float,
+    'partial_tp_r_multiple': float,
+    'partial_tp_fraction': float,
+    'breakeven_after_partial': bool,
+    'trail_activate_r_multiple': float,
+    'trail_atr_mult': float,
+    'daily_loss_limit_pct': float,
+    'enable_daily_loss_guard': bool,
+    'min_atr_rel': float,
     }
     out = {}
     for k, caster in type_map.items():
@@ -185,7 +273,6 @@ def coerce_config_types(incoming: dict) -> dict:
         v = incoming[k]
         try:
             if caster is bool:
-                # Accept truthy strings or existing bool
                 if isinstance(v, str):
                     out[k] = v.strip().lower() in ('1','true','on','yes','y')
                 else:
@@ -213,7 +300,25 @@ def load_positions(path: str = POSITIONS_PATH):
                     out = []
                     for p in data:
                         try:
-                            out.append({'symbol': p['symbol'], 'entry': float(p['entry']), 'qty': float(p['qty']), 'pnl': float(p.get('pnl', 0)), 'side': p.get('side', 'long')})
+                            rec = {
+                                'symbol': p['symbol'],
+                                'entry': float(p['entry']),
+                                'qty': float(p['qty']),
+                                'pnl': float(p.get('pnl', 0)),
+                                'side': p.get('side', 'long'),
+                                'sl_price': float(p.get('sl_price')) if p.get('sl_price') is not None else None,
+                                'tp_price': float(p.get('tp_price')) if p.get('tp_price') is not None else None,
+                                'atr_stop_pct': float(p.get('atr_stop_pct')) if p.get('atr_stop_pct') is not None else None,
+                                'atr_tp_pct': float(p.get('atr_tp_pct')) if p.get('atr_tp_pct') is not None else None,
+                                # Advanced management fields (may be absent in legacy saves)
+                                'initial_risk_per_unit': float(p.get('initial_risk_per_unit')) if p.get('initial_risk_per_unit') is not None else None,
+                                'target1_price': float(p.get('target1_price')) if p.get('target1_price') is not None else None,
+                                'partial_filled': bool(p.get('partial_filled', False)),
+                                'trailing_active': bool(p.get('trailing_active', False)),
+                                'atr_at_entry': float(p.get('atr_at_entry')) if p.get('atr_at_entry') is not None else None,
+                                'r_multiple': float(p.get('r_multiple')) if p.get('r_multiple') not in (None, '') else None,
+                            }
+                            out.append(rec)
                         except Exception:
                             continue
                     return out
@@ -223,8 +328,16 @@ def load_positions(path: str = POSITIONS_PATH):
 
 def save_positions(positions: list, path: str = POSITIONS_PATH):
     try:
+        # Persist only required keys (defensive against non-serializable additions)
+        serializable = []
+        keep = {'symbol','entry','qty','pnl','side','sl_price','tp_price','atr_stop_pct','atr_tp_pct','initial_risk_per_unit','target1_price','partial_filled','trailing_active','atr_at_entry','r_multiple'}
+        for p in positions:
+            try:
+                serializable.append({k: p.get(k) for k in keep})
+            except Exception:
+                continue
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(positions, f, indent=2)
+            json.dump(serializable, f, indent=2)
         return True
     except Exception as e:
         status['logs'].append(f"Positions save error: {e}")
@@ -236,7 +349,7 @@ if _pos:
     status['open_positions'] = _pos
 
 # --- Exit strategy helpers ---
-def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dict:
+def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange, pos: dict | None = None) -> dict:
     reasons = []
     try:
         price = exchange.fetch_ticker(symbol)['last']
@@ -245,37 +358,71 @@ def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dic
     if not isinstance(price, (int, float)) or price is None:
         return {'should_exit': False, 'reasons': [], 'price': None}
 
-    tp_price = entry * (1 + status['config']['take_profit_pct'])
-    sl_price = entry * (1 - status['config']['stop_loss_pct'])
-    if price >= tp_price:
-        reasons.append('take_profit')
-    if price <= sl_price:
-        reasons.append('stop_loss')
+    side = (pos or {}).get('side', 'long')
+    sl_price = (pos or {}).get('sl_price')
+    tp_price = (pos or {}).get('tp_price')
+    # Fallback to static percentages if dynamic not present
+    if sl_price is None or tp_price is None:
+        if side == 'short':
+            tp_price = entry * (1 - status['config']['take_profit_pct']) if tp_price is None else tp_price
+            sl_price = entry * (1 + status['config']['stop_loss_pct']) if sl_price is None else sl_price
+        else:
+            tp_price = entry * (1 + status['config']['take_profit_pct']) if tp_price is None else tp_price
+            sl_price = entry * (1 - status['config']['stop_loss_pct']) if sl_price is None else sl_price
 
-    # Indicator-based exits on 15m
+    if side == 'short':
+        if price <= tp_price:
+            reasons.append('take_profit')
+        if price >= sl_price:
+            reasons.append('stop_loss')
+    else:
+        if price >= tp_price:
+            reasons.append('take_profit')
+        if price <= sl_price:
+            reasons.append('stop_loss')
+
+    # Indicator-based exits using configurable EMAs
     try:
-        df15 = fetch_ohlcv_df(exchange, symbol, '15m', 100)
-        df15['ema21'] = ema(df15['close'], 21)
+        fast_p = int(status['config'].get('ema_fast', 21))
+        slow_p = int(status['config'].get('ema_slow', 50))
+    except Exception:
+        fast_p, slow_p = 21, 50
+
+    # 15m checks
+    try:
+        df15 = fetch_ohlcv_df(exchange, symbol, '15m', 120)
+        df15['ema_fast'] = ema(df15['close'], fast_p)
+        df15['ema_slow'] = ema(df15['close'], slow_p)
         df15['rsi'] = rsi(df15['close'], 14)
         if len(df15) >= 2:
             last, prev = df15.iloc[-1], df15.iloc[-2]
-            if (prev['close'] >= prev['ema21']) and (last['close'] < last['ema21']):
-                reasons.append('ema21_cross_down_15m')
+            if (prev['close'] >= prev['ema_fast']) and (last['close'] < last['ema_fast']):
+                reasons.append(f'ema{fast_p}_cross_down_15m')
+            if (prev['close'] <= prev['ema_fast']) and (last['close'] > last['ema_fast']):
+                reasons.append(f'ema{fast_p}_cross_up_15m')
+            # Fast/slow cross
+            if prev['ema_fast'] >= prev['ema_slow'] and last['ema_fast'] < last['ema_slow']:
+                reasons.append(f'ema{fast_p}_{slow_p}_bear_cross_15m')
+            if prev['ema_fast'] <= prev['ema_slow'] and last['ema_fast'] > last['ema_slow']:
+                reasons.append(f'ema{fast_p}_{slow_p}_bull_cross_15m')
             if (prev['rsi'] >= status['config']['rsi_overbought']) and (last['rsi'] < status['config']['rsi_overbought']):
                 reasons.append('rsi_overbought_cross_down_15m')
     except Exception as e:
         status['logs'].append(f"Exit check 15m error {symbol}: {e}")
 
-    # 1h momentum weakening
+    # 1h momentum weakening & EMA fast break
     try:
-        df1h = fetch_ohlcv_df(exchange, symbol, '1h', 100)
-        df1h['ema21'] = ema(df1h['close'], 21)
+        df1h = fetch_ohlcv_df(exchange, symbol, '1h', 120)
+        df1h['ema_fast'] = ema(df1h['close'], fast_p)
+        df1h['ema_slow'] = ema(df1h['close'], slow_p)
         df1h['rsi'] = rsi(df1h['close'], 14)
         if len(df1h) >= 2:
             l1, p1 = df1h.iloc[-1], df1h.iloc[-2]
-            # 1h close below EMA21 with RSI falling
-            if (p1['close'] >= p1['ema21']) and (l1['close'] < l1['ema21']) and (l1['rsi'] < p1['rsi']):
-                reasons.append('ema21_break_1h_rsi_down')
+            if (p1['close'] >= p1['ema_fast']) and (l1['close'] < l1['ema_fast']) and (l1['rsi'] < p1['rsi']):
+                reasons.append(f'ema{fast_p}_break_1h_rsi_down')
+            # Fast below slow with RSI weakening
+            if (p1['ema_fast'] >= p1['ema_slow']) and (l1['ema_fast'] < l1['ema_slow']) and (l1['rsi'] < p1['rsi']):
+                reasons.append(f'ema{fast_p}_{slow_p}_bear_cross_rsi_down_1h')
     except Exception as e:
         status['logs'].append(f"Exit check 1h error {symbol}: {e}")
 
@@ -321,7 +468,48 @@ class LocalBroker:
                     pos['qty'] = new_qty
                     trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
             else:
-                self.status['open_positions'].append({'symbol': symbol, 'entry': price, 'qty': qty, 'pnl': 0, 'side': 'long'})
+                # Determine dynamic sl/tp and ATR from latest signal if present
+                sl_price = None; tp_price = None; atr_stop_pct=None; atr_tp_pct=None; atr_at_entry=None
+                partial_target_price = None; initial_risk_per_unit = None
+                try:
+                    for sig in self.status.get('signals', []):
+                        if sig.get('symbol') == symbol:
+                            atr_stop_pct = sig.get('atr_stop_pct')
+                            atr_tp_pct = sig.get('atr_tp_pct')
+                            atr_at_entry = sig.get('atr')
+                            if atr_stop_pct and price > 0:
+                                sl_price = price * (1 - atr_stop_pct)
+                            if atr_tp_pct and price > 0:
+                                tp_price = price * (1 + atr_tp_pct)
+                            break
+                except Exception:
+                    pass
+                # Compute initial risk per unit (R) using chosen stop
+                if sl_price and price:
+                    initial_risk_per_unit = price - sl_price
+                # Compute partial target using configured R multiple if possible
+                try:
+                    r_mult = float(self.status['config'].get('partial_tp_r_multiple', 1.0))
+                    if initial_risk_per_unit and r_mult > 0:
+                        partial_target_price = price + initial_risk_per_unit * r_mult
+                except Exception:
+                    partial_target_price = None
+                self.status['open_positions'].append({
+                    'symbol': symbol,
+                    'entry': price,
+                    'qty': qty,
+                    'pnl': 0,
+                    'side': 'long',
+                    'sl_price': sl_price,
+                    'tp_price': tp_price,
+                    'atr_stop_pct': atr_stop_pct,
+                    'atr_tp_pct': atr_tp_pct,
+                    'initial_risk_per_unit': initial_risk_per_unit,
+                    'target1_price': partial_target_price,
+                    'partial_filled': False,
+                    'trailing_active': False,
+                    'atr_at_entry': atr_at_entry,
+                })
                 trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
         else:  # sell
             if pos:
@@ -340,15 +528,68 @@ class LocalBroker:
                     pos['qty'] = new_qty
                     trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
             else:
-                # open short in paper mode
-                self.status['open_positions'].append({'symbol': symbol, 'entry': price, 'qty': qty, 'pnl': 0, 'side': 'short'})
+                # open short in paper mode with dynamic sl/tp + advanced fields
+                sl_price = None; tp_price = None; atr_stop_pct=None; atr_tp_pct=None; atr_at_entry=None
+                partial_target_price = None; initial_risk_per_unit = None
+                try:
+                    for sig in self.status.get('signals', []):
+                        if sig.get('symbol') == symbol:
+                            atr_stop_pct = sig.get('atr_stop_pct')
+                            atr_tp_pct = sig.get('atr_tp_pct')
+                            atr_at_entry = sig.get('atr')
+                            if atr_stop_pct and price > 0:
+                                sl_price = price * (1 + atr_stop_pct)  # stop above entry for short
+                            if atr_tp_pct and price > 0:
+                                tp_price = price * (1 - atr_tp_pct)    # target below entry
+                            break
+                except Exception:
+                    pass
+                if sl_price and price:
+                    initial_risk_per_unit = sl_price - price
+                try:
+                    r_mult = float(self.status['config'].get('partial_tp_r_multiple', 1.0))
+                    if initial_risk_per_unit and r_mult > 0:
+                        partial_target_price = price - initial_risk_per_unit * r_mult
+                except Exception:
+                    partial_target_price = None
+                self.status['open_positions'].append({
+                    'symbol': symbol,
+                    'entry': price,
+                    'qty': qty,
+                    'pnl': 0,
+                    'side': 'short',
+                    'sl_price': sl_price,
+                    'tp_price': tp_price,
+                    'atr_stop_pct': atr_stop_pct,
+                    'atr_tp_pct': atr_tp_pct,
+                    'initial_risk_per_unit': initial_risk_per_unit,
+                    'target1_price': partial_target_price,
+                    'partial_filled': False,
+                    'trailing_active': False,
+                    'atr_at_entry': atr_at_entry,
+                })
                 trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
 
         # Record trade in memory and CSV
         self.status.setdefault('recent_trades', []).insert(0, trade)
         self.status['recent_trades'] = self.status['recent_trades'][:20]
         try:
-            log_trade_csv(self.trade_log_path, [trade['time'], trade['symbol'], trade['side'], trade['qty'], price, '', '', 'local', 'paper'])
+            # Insert dynamic sl/tp if opening new position
+            slp = ''
+            tpp = ''
+            if pos is None:  # new position attempt
+                # fetch last inserted (if any)
+                try:
+                    lastp = None
+                    for p0 in self.status['open_positions']:
+                        if p0['symbol'] == symbol:
+                            lastp = p0
+                    if lastp:
+                        slp = lastp.get('sl_price') or ''
+                        tpp = lastp.get('tp_price') or ''
+                except Exception:
+                    pass
+            log_trade_csv(self.trade_log_path, [trade['time'], trade['symbol'], trade['side'], trade['qty'], price, tpp, slp, 'local', 'paper'])
         except Exception:
             pass
         # Apply per-symbol cooldown after a filled order
@@ -564,8 +805,143 @@ def bot_loop():
                             pos['pnl'] = (float(pos['entry']) - float(price)) * float(pos['qty'])
                         else:
                             pos['pnl'] = (float(price) - float(pos['entry'])) * float(pos['qty'])
+                        # R multiple tracking
+                        risk_unit = pos.get('initial_risk_per_unit')
+                        if risk_unit and risk_unit > 0:
+                            if pos.get('side','long') == 'short':
+                                pos['r_multiple'] = (float(pos['entry']) - float(price)) / risk_unit
+                            else:
+                                pos['r_multiple'] = (float(price) - float(pos['entry'])) / risk_unit
+                        else:
+                            pos['r_multiple'] = None
                 except Exception:
                     pos['pnl'] = 0
+
+            # --- Partial profit execution (Phase 2) ---
+            try:
+                partial_fraction = float(status['config'].get('partial_tp_fraction', 0.5))
+                r_mult_cfg = float(status['config'].get('partial_tp_r_multiple', 1.0))
+                breakeven_flag = bool(status['config'].get('breakeven_after_partial', True))
+                if partial_fraction > 0 and r_mult_cfg > 0:
+                    # Iterate over a snapshot to allow modifications via order execution
+                    for pos in list(status['open_positions']):
+                        if pos.get('partial_filled'):
+                            continue
+                        t1 = pos.get('target1_price')
+                        if not t1:
+                            continue
+                        sym = pos['symbol']
+                        price = status['live_prices'].get(sym)
+                        if not isinstance(price, (int, float)):
+                            continue
+                        side = pos.get('side', 'long')
+                        hit = False
+                        if side == 'long' and price >= t1:
+                            hit = True
+                        elif side == 'short' and price <= t1:
+                            hit = True
+                        if not hit:
+                            continue
+                        # Determine close quantity
+                        close_frac = max(0.0, min(1.0, partial_fraction))
+                        qty_close = float(pos['qty']) * close_frac
+                        if qty_close <= 1e-12:
+                            continue
+                        close_side = 'sell' if side == 'long' else 'buy'
+                        # Execute partial/full close
+                        local_broker.create_order(sym, close_side, qty_close)
+                        # If still open (partial), mark flags & adjust stop to breakeven if configured
+                        remaining = None
+                        for p2 in status['open_positions']:
+                            if p2['symbol'] == sym:
+                                remaining = p2
+                                break
+                        if remaining:
+                            remaining['partial_filled'] = True
+                            if breakeven_flag:
+                                # Move stop to entry (breakeven) only if improves protection
+                                try:
+                                    if side == 'long':
+                                        if (remaining.get('sl_price') or 0) < remaining['entry']:
+                                            remaining['sl_price'] = remaining['entry']
+                                    else:  # short
+                                        if (remaining.get('sl_price') or 1e12) > remaining['entry']:
+                                            remaining['sl_price'] = remaining['entry']
+                                except Exception:
+                                    pass
+                            status['logs'].append(f"Partial filled {sym} at ~R{r_mult_cfg} qty {qty_close:.6f}")
+                        else:
+                            status['logs'].append(f"Full exit via partial target {sym} (fraction {close_frac:.2f})")
+                    # Persist after potential modifications
+                    try:
+                        save_positions(status['open_positions'])
+                    except Exception:
+                        pass
+            except Exception as e:
+                status['logs'].append(f"Partial exec error: {e}")
+
+            # --- Trailing stop logic (Phase 2) ---
+            try:
+                trail_activate_r = float(status['config'].get('trail_activate_r_multiple', 1.5))
+                trail_atr_mult = float(status['config'].get('trail_atr_mult', 1.0))
+                if trail_activate_r > 0 and trail_atr_mult >= 0:
+                    for pos in status['open_positions']:
+                        try:
+                            sym = pos['symbol']
+                            price = status['live_prices'].get(sym)
+                            if not isinstance(price, (int, float)):
+                                continue
+                            side = pos.get('side', 'long')
+                            entry = float(pos['entry'])
+                            risk_unit = pos.get('initial_risk_per_unit')
+                            if not risk_unit or risk_unit <= 0:
+                                continue
+                            # Determine current R multiple achieved
+                            if side == 'long':
+                                r_now = (price - entry) / risk_unit
+                            else:
+                                r_now = (entry - price) / risk_unit
+                            # Activate trailing after threshold and partial taken (optional; allow even if no partial)
+                            if r_now >= trail_activate_r and not pos.get('trailing_active'):
+                                pos['trailing_active'] = True
+                                status['logs'].append(f"Trailing activated {sym} at R={r_now:.2f}")
+                            if not pos.get('trailing_active'):
+                                continue
+                            # Need an ATR for dynamic trail; fall back to atr_at_entry if fresh ATR unavailable
+                            atr_val = None
+                            # Recompute a small ATR on 15m if possible for fresher trailing
+                            try:
+                                df_15m_tmp = fetch_ohlcv_df(exchange, sym, '15m', 60)
+                                ap = int(status['config'].get('atr_period', 14))
+                                a_tmp = atr(df_15m_tmp.copy(), ap)
+                                if len(a_tmp.dropna()):
+                                    atr_val = float(a_tmp.iloc[-1])
+                            except Exception:
+                                atr_val = None
+                            if atr_val is None:
+                                atr_val = pos.get('atr_at_entry')
+                            if not atr_val or atr_val <= 0:
+                                continue
+                            # Proposed new stop using ATR multiple
+                            if side == 'long':
+                                new_sl = price - atr_val * trail_atr_mult
+                                # Only ratchet upward (never loosen)
+                                if new_sl > (pos.get('sl_price') or 0):
+                                    pos['sl_price'] = new_sl
+                            else:
+                                new_sl = price + atr_val * trail_atr_mult
+                                # Only ratchet downward (never loosen)
+                                cur_sl = pos.get('sl_price') or 1e12
+                                if new_sl < cur_sl:
+                                    pos['sl_price'] = new_sl
+                        except Exception:
+                            continue
+                    try:
+                        save_positions(status['open_positions'])
+                    except Exception:
+                        pass
+            except Exception as e:
+                status['logs'].append(f"Trailing logic error: {e}")
             # recent_trades retained in memory (trim occasionally)
             if len(status.get('recent_trades', [])) > 50:
                 status['recent_trades'] = status['recent_trades'][:50]
@@ -593,9 +969,16 @@ def bot_loop():
 
                 # equity tracking (relative)
                 equity = total_profit
-                status['equity_history'].append(equity)
-                if len(status['equity_history']) > 1000:
-                    status['equity_history'] = status['equity_history'][-1000:]
+                try:
+                    # Append tuple (ts, equity) for new entries
+                    status['equity_history'].append((time.time(), equity))
+                except Exception:
+                    try:
+                        status['equity_history'].append(equity)
+                    except Exception:
+                        pass
+                if len(status['equity_history']) > 1500:
+                    status['equity_history'] = status['equity_history'][-1500:]
                 if equity > status['peak_equity']:
                     status['peak_equity'] = equity
                 peak = status['peak_equity'] or 0.0
@@ -607,49 +990,131 @@ def bot_loop():
             except Exception as e:
                 status['logs'].append(f"Perf calc error: {e}")
 
-            # Multi-timeframe signal gating: 4h trend + 1h bias + 15m execution
-            detected_signals = []
-            for symbol in symbols:
-                try:
-                    df_4h_trend = fetch_ohlcv_df(exchange, symbol, '4h', 200)
-                    df_1h = fetch_ohlcv_df(exchange, symbol, '1h', 200)
-                    df_15m = fetch_ohlcv_df(exchange, symbol, '15m', 100)
-                    # Use the same structure logic on 4h for trend
-                    trend4h = daily_trend_check(df_4h_trend)
-                    bias1h = bias_check_1h(df_1h)
-                    exec15 = execution_check_15m(df_15m)
-                    # bearish trend proxy: price below 21 and 50 EMA on 4h
-                    df4 = df_4h_trend.copy()
-                    df4['ema21'] = ema(df4['close'], 21)
-                    df4['ema50'] = ema(df4['close'], 50)
-                    last4 = df4.iloc[-1]
-                    bearish_trend = bool((last4['close'] < last4['ema21']) and (last4['close'] < last4['ema50']))
-                    momentum_down = bool(bias1h['rsi'] < status['config']['rsi_threshold'])
+            # --- Daily loss guard update ---
+            try:
+                day_str = datetime.utcnow().strftime('%Y-%m-%d')
+                if status.get('current_day') != day_str:
+                    # New day: reset counters and guard
+                    status['current_day'] = day_str
+                    status['daily_realized_pnl'] = 0.0
+                    status['daily_guard_active'] = False
+                    if status.get('bot_status') != 'Running':
+                        status['bot_status'] = 'Running'
+                        status['bot_pause_reason'] = ''
+                # Recompute realized from trade history for robustness
+                realized_today = 0.0
+                for t in status.get('recent_trades', []):
+                    try:
+                        # parse trade time date portion
+                        tday = t.get('time', '')[:10]
+                        if tday == day_str and isinstance(t.get('pnl'), (int, float)):
+                            realized_today += float(t.get('pnl'))
+                    except Exception:
+                        continue
+                status['daily_realized_pnl'] = realized_today
+                if bool(status['config'].get('enable_daily_loss_guard')):
+                    limit_pct = float(status['config'].get('daily_loss_limit_pct', 0.05))
+                    equity_proxy = float(status['config'].get('equity_proxy', 0))
+                    loss_limit_abs = equity_proxy * limit_pct
+                    if realized_today <= -abs(loss_limit_abs) and not status.get('daily_guard_active'):
+                        status['daily_guard_active'] = True
+                        status['bot_status'] = 'Paused'
+                        status['bot_pause_reason'] = f"Daily loss limit hit (<= -{loss_limit_abs:.2f})"
+                        status['logs'].append('Daily loss guard activated.')
+                else:
+                    # Ensure guard not stuck if disabled mid-day
+                    if status.get('daily_guard_active'):
+                        status['daily_guard_active'] = False
+                        status['bot_status'] = 'Running'
+                        status['bot_pause_reason'] = ''
+            except Exception as e:
+                status['logs'].append(f"Daily guard error: {e}")
 
-                    if trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal'] and exec15.get('direction') == 'up':
-                        detected_signals.append({
-                            'symbol': symbol,
-                            'type': exec15.get('type', 'entry'),
-                            'side': 'buy',
-                            'time': now,
-                            'trend4h': trend4h,
-                            'bias1h': bias1h
-                        })
-                    elif status['config'].get('enable_bearish') and bearish_trend and bias1h['near_ma'] and momentum_down and exec15['signal'] and exec15.get('direction') == 'down':
-                        detected_signals.append({
-                            'symbol': symbol,
-                            'type': exec15.get('type', 'entry'),
-                            'side': 'sell',
-                            'time': now,
-                            'trend4h': {'bullish': False, 'above21': False, 'hhll': False},
-                            'bias1h': bias1h
-                        })
-                    else:
-                        status['logs'].append(
-                            f"NoSignal {symbol}: 4hTrend={trend4h['bullish']} nearEMA1h={bias1h['near_ma']} RSI1h={bias1h['rsi']:.2f} exec={exec15['signal']}"
-                        )
-                except Exception as e:
-                    status['logs'].append(f"Signal error for {symbol}: {e}")
+            # Multi-timeframe signal gating: 1d + 4h trend alignment, 1h bias, 15m execution
+            detected_signals = []
+            if status.get('daily_guard_active'):
+                status['signals'] = []
+                status['logs'].append('Signals suppressed (daily loss guard active)')
+            else:
+                for symbol in symbols:
+                    try:
+                        df_1d = fetch_ohlcv_df(exchange, symbol, '1d', 200)
+                        df_4h = fetch_ohlcv_df(exchange, symbol, '4h', 200)
+                        df_1h = fetch_ohlcv_df(exchange, symbol, '1h', 200)
+                        df_15m = fetch_ohlcv_df(exchange, symbol, '15m', 120)
+                        # ATR (15m) for dynamic stop sizing
+                        try:
+                            ap = int(status['config'].get('atr_period', 14))
+                            stop_mult = float(status['config'].get('atr_stop_mult', 1.5))
+                            tp_mult = float(status['config'].get('atr_tp_mult', 2.5))
+                            min_stop_pct = float(status['config'].get('min_stop_pct', 0.004))
+                            df_calc = df_15m.copy()
+                            a = atr(df_calc, ap)
+                            cur_atr = float(a.iloc[-1]) if len(a.dropna()) else None
+                            if cur_atr and cur_atr > 0 and df_calc['close'].iloc[-1] > 0:
+                                atr_stop_pct = max(cur_atr * stop_mult / df_calc['close'].iloc[-1], min_stop_pct)
+                                atr_tp_pct = atr_stop_pct * (tp_mult / max(stop_mult, 1e-9))
+                            else:
+                                atr_stop_pct = None
+                                atr_tp_pct = None
+                        except Exception as e:
+                            cur_atr = None
+                            atr_stop_pct = None
+                            atr_tp_pct = None
+                            status['logs'].append(f"ATR err {symbol}: {e}")
+                        trend1d = daily_trend_check(df_1d)
+                        trend4h = daily_trend_check(df_4h)
+                        bias1h = bias_check_1h(df_1h)
+                        exec15 = execution_check_15m(df_15m)
+                        # Bearish proxy using 4h EMAs
+                        df4 = df_4h.copy()
+                        df4['ema21'] = ema(df4['close'], 21)
+                        df4['ema50'] = ema(df4['close'], 50)
+                        last4 = df4.iloc[-1]
+                        bearish_trend4h = bool((last4['close'] < last4['ema21']) and (last4['close'] < last4['ema50']))
+                        momentum_down = bool(bias1h['rsi'] < status['config']['rsi_threshold'])
+                        daily_bearish_align = (not trend1d['bullish']) and (not trend4h['bullish']) and bearish_trend4h
+
+                        # Long: daily + 4h both bullish
+                        atr_ok = True
+                        try:
+                            if cur_atr and df_15m['close'].iloc[-1] > 0:
+                                atr_ok = (cur_atr / df_15m['close'].iloc[-1]) >= float(status['config'].get('min_atr_rel', 0.0))
+                        except Exception:
+                            atr_ok = True
+                        if atr_ok and trend1d['bullish'] and trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal'] and exec15.get('direction') == 'up':
+                            detected_signals.append({
+                                'symbol': symbol,
+                                'type': exec15.get('type', 'entry'),
+                                'side': 'buy',
+                                'time': now,
+                                'trend1d': trend1d,
+                                'trend4h': trend4h,
+                                'bias1h': bias1h,
+                                'atr': cur_atr,
+                                'atr_stop_pct': atr_stop_pct,
+                                'atr_tp_pct': atr_tp_pct,
+                            })
+                        # Short: require bearish alignment if enabled
+                        elif atr_ok and status['config'].get('enable_bearish') and daily_bearish_align and bias1h['near_ma'] and momentum_down and exec15['signal'] and exec15.get('direction') == 'down':
+                            detected_signals.append({
+                                'symbol': symbol,
+                                'type': exec15.get('type', 'entry'),
+                                'side': 'sell',
+                                'time': now,
+                                'trend1d': {'bullish': False, 'above21': False, 'hhll': False},
+                                'trend4h': {'bullish': False, 'above21': False, 'hhll': False},
+                                'bias1h': bias1h,
+                                'atr': cur_atr,
+                                'atr_stop_pct': atr_stop_pct,
+                                'atr_tp_pct': atr_tp_pct,
+                            })
+                        else:
+                            status['logs'].append(
+                                f"NoSignal {symbol}: 1dTrend={trend1d['bullish']} 4hTrend={trend4h['bullish']} nearEMA1h={bias1h['near_ma']} RSI1h={bias1h['rsi']:.2f} exec={exec15['signal']}"
+                            )
+                    except Exception as e:
+                        status['logs'].append(f"Signal error for {symbol}: {e}")
             status['signals'] = detected_signals
             # Surface just the symbol list for easy UI checks
             try:
@@ -664,7 +1129,7 @@ def bot_loop():
                 sym = pos['symbol']
                 entry = float(pos['entry'])
                 qty = float(pos['qty'])
-                res = compute_exit_reasons(sym, entry, qty, exchange)
+                res = compute_exit_reasons(sym, entry, qty, exchange, pos)
                 if res['should_exit']:
                     if pos.get('side', 'long') == 'short':
                         pnl = (entry - res['price']) * qty
@@ -763,6 +1228,42 @@ def api_status():
     resp.headers['Access-Control-Allow-Origin'] = '*'
     return resp
 
+@app.route('/api/ohlcv', methods=['GET'])
+def api_ohlcv():
+    """Return OHLCV for a symbol and timeframe for charts.
+    Query: symbol=BTC/USDT&timeframe=15m&limit=200
+    """
+    sym = request.args.get('symbol')
+    tf = request.args.get('timeframe', '15m')
+    try:
+        limit = int(request.args.get('limit', '200'))
+    except Exception:
+        limit = 200
+    if not sym:
+        return make_response(jsonify({'error': 'symbol required'}), 400)
+    try:
+        ensure_exchange()
+        df = fetch_ohlcv_df(exchange, sym, tf, limit)
+        # compact payload
+        out = []
+        for _, r in df.iterrows():
+            try:
+                out.append({
+                    'time': int(pd.Timestamp(r['timestamp']).timestamp()),
+                    'open': float(r['open']),
+                    'high': float(r['high']),
+                    'low': float(r['low']),
+                    'close': float(r['close']),
+                    'volume': float(r['volume']),
+                })
+            except Exception:
+                continue
+        resp = make_response(jsonify({'symbol': sym, 'timeframe': tf, 'data': out}), 200)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    except Exception as e:
+        return make_response(jsonify({'error': str(e)}), 500)
+
 @app.route('/update-config', methods=['POST'])
 def update_config():
     # Build dict from form fields, then coerce types
@@ -817,7 +1318,9 @@ def dashboard():
         <head>
             <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
+            {% if not request.cookies.get('refreshPaused') %}
             <meta http-equiv="refresh" content="15" />
+            {% endif %}
             <title>Binance Topdown Bot Dashboard</title>
             <script src="https://cdn.tailwindcss.com"></script>
         </head>
@@ -831,6 +1334,9 @@ def dashboard():
                         <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['bot_status']=='Running' else 'bg-rose-600 text-white' }}">
                             {{ status['bot_status'] }}
                         </span>
+                        {% if status.get('daily_guard_active') %}
+                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-500 text-slate-900" title="Daily loss guard engaged">DL Guard</span>
+                        {% endif %}
                     </div>
                 </div>
             </header>
@@ -864,7 +1370,7 @@ def dashboard():
                         {% set uni = status['universe_sorted'] if 'universe_sorted' in status else status['universe'] %}
                         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 mt-3">
                             {% for symbol in uni[:status['config']['universe_size']] %}
-                            <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 cursor-pointer hover:bg-slate-900/80" onclick="openChartModal('{{ symbol }}')">
                                 <div class="flex items-center justify-between">
                                     <div class="font-semibold text-sm">{{ symbol }}</div>
                                     <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['cooldowns'].get(symbol, 0) }}s</span>
@@ -905,6 +1411,7 @@ def dashboard():
                                         <th class="text-left py-2">Time</th>
                                         <th class="text-left py-2">Symbol</th>
                                         <th class="text-left py-2">Type</th>
+                                        <th class="text-left py-2">1d Trend</th>
                                         <th class="text-left py-2">4h Trend</th>
                                         <th class="text-left py-2">1h Bias</th>
                                     </tr>
@@ -918,12 +1425,22 @@ def dashboard():
                                             <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-medium">{{ sig['type'] }}</span>
                                         </td>
                                         <td class="py-2 space-x-1">
+                                            {% set t1d = sig.get('trend1d') %}
+                                            {% if t1d %}
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if t1d['bullish'] else 'bg-slate-700 text-slate-200' }}">bullish</span>
+                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">{{ status['config']['ema_fast'] }}/{{ 'Y' if t1d.get('above_fast') or t1d.get('above21') else 'N' }}</span>
+                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">HHLL/{{ 'Y' if t1d['hhll'] else 'N' }}</span>
+                                            {% else %}
+                                            <span class="text-xs text-slate-500">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="py-2 space-x-1">
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['trend4h']['bullish'] else 'bg-slate-700 text-slate-200' }}">bullish</span>
-                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">21/{{ 'Y' if sig['trend4h']['above21'] else 'N' }}</span>
+                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">{{ status['config']['ema_fast'] }}/{{ 'Y' if sig['trend4h'].get('above_fast') or sig['trend4h'].get('above21') else 'N' }}</span>
                                             <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">HHLL/{{ 'Y' if sig['trend4h']['hhll'] else 'N' }}</span>
                                         </td>
                                         <td class="py-2 space-x-1">
-                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['near_ma'] else 'bg-slate-700 text-slate-200' }}">near EMA21</span>
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['near_ma'] else 'bg-slate-700 text-slate-200' }}">near EMA{{ status['config']['ema_fast'] }}</span>
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['momentum_ok'] else 'bg-slate-700 text-slate-200' }}">RSI ok</span>
                                             <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">RSI {{ sig['bias1h']['rsi']|round(2) }}</span>
                                         </td>
@@ -986,6 +1503,10 @@ def dashboard():
                                         <th class="text-left py-2">Entry</th>
                                         <th class="text-left py-2">Qty</th>
                                         <th class="text-left py-2">P&L</th>
+                                        <th class="text-left py-2">SL</th>
+                                        <th class="text-left py-2">TP</th>
+                                        <th class="text-left py-2">R</th>
+                                        <th class="text-left py-2">Flags</th>
                                         <th class="text-left py-2">Action</th>
                                     </tr>
                                 </thead>
@@ -997,6 +1518,13 @@ def dashboard():
                                         <td class="py-2">{{ pos['entry'] }}</td>
                                         <td class="py-2">{{ pos['qty'] }}</td>
                                         <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) }}</td>
+                                        <td class="py-2 text-xs">{% if pos.get('sl_price') %}{{ pos['sl_price']|round(6) }}{% else %}-{% endif %}</td>
+                                        <td class="py-2 text-xs">{% if pos.get('tp_price') %}{{ pos['tp_price']|round(6) }}{% else %}-{% endif %}</td>
+                                        <td class="py-2 text-xs">{% if pos.get('r_multiple') is not none %}{{ pos['r_multiple']|round(2) }}{% else %}-{% endif %}</td>
+                                        <td class="py-2 text-xs space-x-1">
+                                            {% if pos.get('partial_filled') %}<span class="inline-block px-1 rounded bg-indigo-600 text-[10px]">PART</span>{% endif %}
+                                            {% if pos.get('trailing_active') %}<span class="inline-block px-1 rounded bg-amber-500 text-[10px] text-slate-900">TRAIL</span>{% endif %}
+                                        </td>
                                         <td class="py-2">
                                             <form method="post" action="/close" class="inline-flex">
                                                 <input type="hidden" name="symbol" value="{{ pos['symbol'] }}">
@@ -1009,6 +1537,13 @@ def dashboard():
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-1 gap-4">
+                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Equity Curve</h2>
+                        <div id="equityChart" class="w-full mt-3" style="height:220px;"></div>
                     </div>
                 </section>
 
@@ -1045,9 +1580,18 @@ def dashboard():
                                             {% endif %}
                                         </div>
                                         {% if p is number and p > 0 %}
-                                            {% set den = p * (sl if sl > 0 else 0.000001) %}
+                                            {% set atr_stop = sig.get('atr_stop_pct') %}
+                                            {% if atr_stop %}
+                                                {% set eff_stop = atr_stop if atr_stop > sl else sl %}
+                                            {% else %}
+                                                {% set eff_stop = sl %}
+                                            {% endif %}
+                                            {% set den = p * (eff_stop if eff_stop > 0 else 0.000001) %}
                                             {% set qty = (eq * risk) / den %}
-                                            <div class="mt-1 text-xs text-slate-400">Risk: ${{ usd_risk|round(2) }} • Qty: <span class="text-slate-200">{{ (qty if qty>0 else 0)|round(6) }}</span></div>
+                                            <div class="mt-1 text-xs text-slate-400">Risk: ${{ usd_risk|round(2) }} • Stop%: {{ (eff_stop*100)|round(2) }} • Qty: <span class="text-slate-200">{{ (qty if qty>0 else 0)|round(6) }}</span></div>
+                                            {% if sig.get('atr') %}
+                                            <div class="mt-1 text-xs text-slate-500">ATR: {{ sig['atr']|round(6) }} (stop {{ (sig.get('atr_stop_pct',0)*100)|round(2) }}%, tp {{ (sig.get('atr_tp_pct',0)*100)|round(2) }}%)</div>
+                                            {% endif %}
                                             <form method="post" action="/trade" class="mt-2">
                                                 <input type="hidden" name="symbol" value="{{ sym }}">
                                                 <input type="hidden" name="side" value="{{ sig.get('side','buy') }}">
@@ -1120,6 +1664,15 @@ def dashboard():
                             <div class="text-xs text-slate-400">Drawdown</div>
                             <div class="text-base">{{ status['performance']['drawdown'] }}</div>
                         </div>
+                        <div class="mt-3 space-y-1 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Daily Realized PnL</span>
+                                <span class="{{ 'text-emerald-400' if status.get('daily_realized_pnl',0)>0 else ('text-rose-400' if status.get('daily_realized_pnl',0)<0 else 'text-slate-300') }}">{{ status.get('daily_realized_pnl',0)|round(2) }}</span>
+                            </div>
+                            {% if status.get('daily_guard_active') %}
+                            <div class="text-amber-400">Guard Active: {{ status.get('bot_pause_reason','') }}</div>
+                            {% endif %}
+                        </div>
                         <div class="mt-4">
                             <h3 class="text-sm font-semibold text-slate-300">Config</h3>
                             <form method="post" action="/update-config" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 text-sm">
@@ -1180,6 +1733,45 @@ def dashboard():
                                 <label class="flex items-center gap-2">enable_bearish
                                     <input name="enable_bearish" type="checkbox" value="1" {% if status['config']['enable_bearish'] %}checked{% endif %} class="mt-1 rounded border-slate-700" />
                                 </label>
+                                <label>partial_tp_r_multiple
+                                    <input name="partial_tp_r_multiple" type="number" step="0.1" min="0" value="{{ status['config']['partial_tp_r_multiple'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>partial_tp_fraction
+                                    <input name="partial_tp_fraction" type="number" step="0.05" min="0" max="1" value="{{ status['config']['partial_tp_fraction'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label class="flex items-center gap-2">breakeven_after_partial
+                                    <input name="breakeven_after_partial" type="checkbox" value="1" {% if status['config']['breakeven_after_partial'] %}checked{% endif %} class="mt-1 rounded border-slate-700" />
+                                </label>
+                                <label>trail_activate_r_multiple
+                                    <input name="trail_activate_r_multiple" type="number" step="0.1" min="0" value="{{ status['config']['trail_activate_r_multiple'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>trail_atr_mult
+                                    <input name="trail_atr_mult" type="number" step="0.1" min="0" value="{{ status['config']['trail_atr_mult'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>daily_loss_limit_pct
+                                    <input name="daily_loss_limit_pct" type="number" step="0.001" min="0" value="{{ status['config']['daily_loss_limit_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label class="flex items-center gap-2">enable_daily_loss_guard
+                                    <input name="enable_daily_loss_guard" type="checkbox" value="1" {% if status['config']['enable_daily_loss_guard'] %}checked{% endif %} class="mt-1 rounded border-slate-700" />
+                                </label>
+                                <label>ema_fast
+                                    <input name="ema_fast" type="number" step="1" min="1" value="{{ status['config']['ema_fast'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>ema_slow
+                                    <input name="ema_slow" type="number" step="1" min="2" value="{{ status['config']['ema_slow'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>atr_period
+                                    <input name="atr_period" type="number" step="1" min="1" value="{{ status['config']['atr_period'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>atr_stop_mult
+                                    <input name="atr_stop_mult" type="number" step="0.1" min="0" value="{{ status['config']['atr_stop_mult'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>atr_tp_mult
+                                    <input name="atr_tp_mult" type="number" step="0.1" min="0" value="{{ status['config']['atr_tp_mult'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
+                                <label>min_stop_pct
+                                    <input name="min_stop_pct" type="number" step="0.0001" min="0" value="{{ status['config']['min_stop_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                </label>
 
                                 <div class="sm:col-span-2 flex items-center justify-end gap-2">
                                     <button type="submit" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-medium">Save</button>
@@ -1194,6 +1786,40 @@ def dashboard():
 
                             <section>
                                 <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <footer class="max-w-7xl mx-auto p-4">
+                            <div class="bg-slate-900/60 border border-slate-800 rounded-lg">
+                                <button id="cfgLegendToggle" class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold">
+                                    <span>Configuration Legend</span>
+                                    <span id="cfgLegendState" class="text-xs text-slate-400">toggle</span>
+                                </button>
+                                <div id="cfgLegend" class="hidden max-h-80 overflow-y-auto">
+                                    <table class="w-full text-xs">
+                                        <thead class="bg-slate-800/60 sticky top-0">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left font-medium text-slate-300">Key</th>
+                                                <th class="px-3 py-2 text-left font-medium text-slate-300">Value</th>
+                                                <th class="px-3 py-2 text-left font-medium text-slate-300">Description</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for k, v in status['config'].items() %}
+                                            <tr class="border-b border-slate-800/50 hover:bg-slate-800/40">
+                                                <td class="px-3 py-1 font-mono text-slate-200">{{ k }}</td>
+                                                <td class="px-3 py-1 text-slate-300">{{ v }}</td>
+                                                <td class="px-3 py-1 text-slate-400">{{ config_desc.get(k, '—') }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                            <!-- Derived metric definitions -->
+                                            <tr class="border-b border-slate-800/50 bg-slate-800/30">
+                                                <td class="px-3 py-1 font-mono text-amber-300">ATR</td>
+                                                <td class="px-3 py-1 text-slate-300">derived</td>
+                                                <td class="px-3 py-1 text-slate-400">Average True Range: moving average of True Range (max(high-low, |high-prevClose|, |low-prevClose|)); measures recent volatility for dynamic stop (atr_stop_mult), target (atr_tp_mult) sizing, and min volatility filter (min_atr_rel).</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </footer>
                                     <h2 class="text-sm font-semibold text-slate-300">Recent Trades</h2>
                                     <div class="overflow-x-auto mt-2">
                                         <table class="min-w-full text-sm">
@@ -1238,6 +1864,505 @@ def dashboard():
                     </div>
                 </section>
             </main>
+            <!-- Chart Modal -->
+            <div id="chartModal" class="hidden fixed inset-0 z-50 bg-black/70">
+                <div class="absolute inset-0 flex items-center justify-center p-4">
+                    <div class="w-full max-w-5xl bg-slate-900 rounded-lg border border-slate-800 shadow-xl">
+                        <div class="flex items-center justify-between p-3 border-b border-slate-800">
+                            <div class="text-sm font-semibold" id="chartTitle">Chart</div>
+                            <div class="flex items-center gap-2">
+                                <select id="tfSelect" class="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-xs">
+                                    <option value="15m">15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                    <option value="1d">1d</option>
+                                </select>
+                                <button class="px-2 py-1 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs" onclick="closeChartModal()">Close</button>
+                            </div>
+                        </div>
+                        <div class="p-3">
+                            <div id="chartContainerPrice" class="w-full" style="height: 420px;"></div>
+                            <div id="chartContainerRSI" class="w-full mt-2" style="height: 160px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+                    <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+                    <script>
+                        // Legend persistence
+                        (function(){
+                            try {
+                                const btn = document.getElementById('cfgLegendToggle');
+                                const panel = document.getElementById('cfgLegend');
+                                const stateSpan = document.getElementById('cfgLegendState');
+                                if (!btn || !panel) return;
+                                const KEY = 'legendOpen';
+                                function apply(open){
+                                    if (open){ panel.classList.remove('hidden'); stateSpan && (stateSpan.textContent='(open)'); }
+                                    else { panel.classList.add('hidden'); stateSpan && (stateSpan.textContent='(closed)'); }
+                                }
+                                let open = false;
+                                try { open = localStorage.getItem(KEY)==='1'; } catch(e){}
+                                apply(open);
+                                btn.addEventListener('click', ()=>{ open=!open; apply(open); try { localStorage.setItem(KEY, open?'1':'0'); } catch(e){} });
+                            } catch(e){ console.error('legend persistence error', e); }
+                        })();
+                        // Equity curve rendering
+                        (function(){
+                            try {
+                                const rawHist = {{ status['equity_history'] | tojson }};
+                                // Normalize possible legacy (float) vs new (ts, equity)
+                                const norm = [];
+                                for (const item of rawHist){
+                                    if (Array.isArray(item) && item.length===2){
+                                        norm.push({ time: Math.floor(item[0]), value: item[1] });
+                                    } else if (typeof item === 'number'){
+                                        // fabricate time sequentially
+                                        const base = (norm.length? norm[norm.length-1].time : Math.floor(Date.now()/1000)) + 60;
+                                        norm.push({ time: base, value: item });
+                                    }
+                                }
+                                const el = document.getElementById('equityChart');
+                                if (el && norm.length){
+                                    const ec = LightweightCharts.createChart(el,{ layout:{ background:{type:'solid',color:'#0f172a'}, textColor:'#cbd5e1'}, grid:{ vertLines:{color:'#1f2937'}, horzLines:{color:'#1f2937'} } });
+                                    const line = ec.addLineSeries({ color:'#10b981', lineWidth:2 });
+                                    line.setData(norm);
+                                }
+                            } catch(e) { console.error('equity chart err', e); }
+                        })();
+                        // Chart modal logic
+                        // Auto-refresh control (pause while modal open)
+                        function pauseAutoRefresh(){
+                            const head = document.querySelector('head');
+                            const meta = document.querySelector('meta[http-equiv="refresh"]');
+                            if (meta){
+                                try { localStorage.setItem('refreshContent', meta.getAttribute('content') || '15'); } catch(e){}
+                                meta.remove();
+                            }
+                            try { localStorage.setItem('refreshPaused', '1'); } catch(e){}
+                            // Also set cookie so next render omits meta tag entirely
+                            try {
+                                const d = new Date(Date.now() + 7*24*60*60*1000);
+                                document.cookie = `refreshPaused=1; expires=${d.toUTCString()}; path=/`;
+                            } catch(e){}
+                        }
+                        function resumeAutoRefresh(){
+                            const head = document.querySelector('head');
+                            const exists = document.querySelector('meta[http-equiv="refresh"]');
+                            if (!exists && head){
+                                let content = '15';
+                                try { content = localStorage.getItem('refreshContent') || '15'; } catch(e){}
+                                const m = document.createElement('meta');
+                                m.setAttribute('http-equiv','refresh');
+                                m.setAttribute('content', content);
+                                head.appendChild(m);
+                            }
+                            try { localStorage.removeItem('refreshPaused'); } catch(e){}
+                            // Clear cookie so future renders include meta again
+                            try { document.cookie = 'refreshPaused=; Max-Age=0; path=/'; } catch(e){}
+                        }
+                        let chartPrice = null;
+                        let chartRSI = null;
+                        let candleSeries = null;
+                        let volumeSeries = null;
+                        let emaFastSeries = null;
+                        let emaSlowSeries = null;
+                        // Higher timeframe overlay EMA series
+                        let emaFastSeries1h = null, emaSlowSeries1h = null;
+                        let emaFastSeries4h = null, emaSlowSeries4h = null;
+                        let emaFastSeries1d = null, emaSlowSeries1d = null;
+                        let rsiSeries = null;
+                        // Dynamic RSI threshold lines
+                        let rsiThreshSeries = null; // rsi_threshold (e.g. 30)
+                        let rsiExecSeries = null;   // rsi_exec_threshold (e.g. 45)
+                        let rsiOverSeries = null;   // rsi_overbought (e.g. 70)
+                        let currentSymbol = null;
+                        let currentTf = '15m';
+                        let restoredRangeOnce = false;
+                        let userAdjusted = false;
+                        let isProgrammaticRangeSet = false;
+                        let saveRangeTimer = null;
+                        let lastDataKey = null;
+                        let inFlight = 0;
+                        let pendingFetch = false;
+                        function timeRangesEqual(a,b){
+                            if (!a || !b) return false;
+                            return a.from === b.from && a.to === b.to;
+                        }
+                        function getVisibleTimeRange(){
+                            try { return chartPrice?.timeScale().getVisibleRange() || null; } catch(e){ return null; }
+                        }
+                        function setVisibleTimeRange(r){
+                            if (!r) return;
+                            try {
+                                const cur = chartPrice.timeScale().getVisibleRange();
+                                if (!timeRangesEqual(cur, r)){
+                                    chartPrice.timeScale().setVisibleRange(r);
+                                    chartRSI.timeScale().setVisibleRange(r);
+                                }
+                            } catch(e){}
+                        }
+                        function saveTimeRange(){
+                            const r = getVisibleTimeRange();
+                            if (r && r.from && r.to){
+                                try { localStorage.setItem(`chartTimeRange:${currentSymbol}:${currentTf}`, JSON.stringify(r)); } catch(e){}
+                            }
+                        }
+                        function rangesClose(a,b,eps=0.5){
+                            if (!a || !b) return false;
+                            return Math.abs((a.from||0) - (b.from||0)) < eps && Math.abs((a.to||0) - (b.to||0)) < eps;
+                        }
+                        function saveVisibleRange(){
+                            if (!chartPrice) return;
+                            try{
+                                const rng = chartPrice.timeScale().getVisibleLogicalRange();
+                                if (rng && isFinite(rng.from) && isFinite(rng.to)){
+                                    const key = `chartRange:${currentSymbol}:${currentTf}`;
+                                    localStorage.setItem(key, JSON.stringify(rng));
+                                }
+                            }catch(e){}
+                        }
+                        function openChartModal(symbol){
+                            currentSymbol = symbol;
+                            const modal = document.getElementById('chartModal');
+                            const title = document.getElementById('chartTitle');
+                            const tfSel = document.getElementById('tfSelect');
+                            if (title) title.textContent = `${symbol} — Candles`;
+                            if (modal) modal.classList.remove('hidden');
+                            if (tfSel) tfSel.value = currentTf;
+                            // pause auto refresh and persist state
+                            pauseAutoRefresh();
+                            try { localStorage.setItem('chartState', JSON.stringify({ open: true, symbol: currentSymbol, tf: currentTf })); } catch(e){}
+                            // create chart if needed
+                            restoredRangeOnce = false; userAdjusted = false;
+                            const containerPrice = document.getElementById('chartContainerPrice');
+                            const containerRSI = document.getElementById('chartContainerRSI');
+                            if (containerPrice){
+                                while (containerPrice.firstChild) containerPrice.removeChild(containerPrice.firstChild);
+                                chartPrice = LightweightCharts.createChart(containerPrice, {
+                                    layout: { background: { type: 'solid', color: '#0f172a' }, textColor: '#cbd5e1' },
+                                    grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
+                                    crosshair: { mode: 1 },
+                                });
+                                candleSeries = chartPrice.addCandlestickSeries({ upColor: '#10b981', downColor: '#ef4444', borderDownColor: '#ef4444', borderUpColor: '#10b981', wickDownColor: '#ef4444', wickUpColor: '#10b981' });
+                                volumeSeries = chartPrice.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+                                chartPrice.priceScale('')?.applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+                                emaFastSeries = chartPrice.addLineSeries({ color: '#22d3ee', lineWidth: 1, title: 'EMA ' + {{ status['config']['ema_fast'] }} });
+                                emaSlowSeries = chartPrice.addLineSeries({ color: '#f59e0b', lineWidth: 1, title: 'EMA ' + {{ status['config']['ema_slow'] }} });
+                                // Overlay series (dashed)
+                                emaFastSeries1h = chartPrice.addLineSeries({ color: '#0891b2', lineWidth: 1, lineStyle: 1 });
+                                emaSlowSeries1h = chartPrice.addLineSeries({ color: '#0ea5e9', lineWidth: 1, lineStyle: 1 });
+                                emaFastSeries4h = chartPrice.addLineSeries({ color: '#6366f1', lineWidth: 1, lineStyle: 1 });
+                                emaSlowSeries4h = chartPrice.addLineSeries({ color: '#4f46e5', lineWidth: 1, lineStyle: 1 });
+                                emaFastSeries1d = chartPrice.addLineSeries({ color: '#e2e8f0', lineWidth: 1, lineStyle: 1 });
+                                emaSlowSeries1d = chartPrice.addLineSeries({ color: '#94a3b8', lineWidth: 1, lineStyle: 1 });
+                                // watch for user zoom/pan and persist range
+                chartPrice.timeScale().subscribeVisibleLogicalRangeChange(() => {
+                                    if (!isProgrammaticRangeSet) {
+                                        userAdjusted = true;
+                                        if (saveRangeTimer) clearTimeout(saveRangeTimer);
+                                        saveRangeTimer = setTimeout(saveVisibleRange, 300);
+                    saveTimeRange();
+                                    }
+                                });
+                            }
+                            if (containerRSI){
+                                while (containerRSI.firstChild) containerRSI.removeChild(containerRSI.firstChild);
+                                chartRSI = LightweightCharts.createChart(containerRSI, {
+                                    layout: { background: { type: 'solid', color: '#0f172a' }, textColor: '#cbd5e1' },
+                                    grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
+                                    crosshair: { mode: 1 },
+                                    rightPriceScale: { visible: true },
+                                });
+                                rsiSeries = chartRSI.addLineSeries({ color: '#94a3b8', lineWidth: 1 });
+                                rsiThreshSeries = chartRSI.addLineSeries({ color: '#475569', lineWidth: 1, lineStyle: 2 });
+                                rsiExecSeries = chartRSI.addLineSeries({ color: '#0ea5e9', lineWidth: 1, lineStyle: 2 });
+                                rsiOverSeries = chartRSI.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: 2 });
+                chartRSI.timeScale().subscribeVisibleLogicalRangeChange(() => {
+                                    if (!isProgrammaticRangeSet) {
+                                        userAdjusted = true;
+                                        if (saveRangeTimer) clearTimeout(saveRangeTimer);
+                                        saveRangeTimer = setTimeout(saveVisibleRange, 300);
+                    saveTimeRange();
+                                    }
+                                });
+                            }
+                            fetchAndRender();
+                        }
+                        function closeChartModal(){
+                            const modal = document.getElementById('chartModal');
+                            if (modal) modal.classList.add('hidden');
+                            // resume auto refresh and clear state
+                            resumeAutoRefresh();
+                            try { localStorage.removeItem('chartState'); } catch(e){}
+                        }
+                        // --- Indicators (client-side) ---
+                        function computeEMA(values, period){
+                            const k = 2 / (period + 1);
+                            const ema = [];
+                            let prev = null;
+                            for (let i = 0; i < values.length; i++){
+                                const v = values[i];
+                                if (v == null || !isFinite(v)) { ema.push(null); continue; }
+                                if (prev == null){ prev = v; ema.push(v); }
+                                else { prev = v * k + prev * (1 - k); ema.push(prev); }
+                            }
+                            return ema;
+                        }
+                        function computeRSI(closes, period=14){
+                            const rsi = new Array(closes.length).fill(null);
+                            let gains = 0, losses = 0;
+                            for (let i=1; i<=period; i++){
+                                const ch = closes[i] - closes[i-1];
+                                if (ch>=0) gains += ch; else losses -= ch;
+                            }
+                            let avgGain = gains/period;
+                            let avgLoss = losses/period;
+                            function calcRS(avgG, avgL){
+                                if (avgL === 0) return 100;
+                                const rs = avgG / avgL;
+                                return 100 - (100 / (1 + rs));
+                            }
+                            rsi[period] = calcRS(avgGain, avgLoss);
+                            for (let i=period+1; i<closes.length; i++){
+                                const ch = closes[i] - closes[i-1];
+                                const gain = Math.max(ch, 0);
+                                const loss = Math.max(-ch, 0);
+                                avgGain = (avgGain * (period - 1) + gain) / period;
+                                avgLoss = (avgLoss * (period - 1) + loss) / period;
+                                rsi[i] = calcRS(avgGain, avgLoss);
+                            }
+                            return rsi;
+                        }
+                        const CFG = { rsi_threshold: {{ status['config']['rsi_threshold'] }}, rsi_exec_threshold: {{ status['config']['rsi_exec_threshold'] }}, rsi_overbought: {{ status['config']['rsi_overbought'] }} };
+                        async function fetchHigherTf(symbol){
+                            if (currentTf !== '15m') return null; // only overlay on execution timeframe
+                            try {
+                                const qs = [
+                                    fetch(`/api/ohlcv?symbol=${encodeURIComponent(symbol)}&timeframe=1h&limit=300`).then(r=>r.json()),
+                                    fetch(`/api/ohlcv?symbol=${encodeURIComponent(symbol)}&timeframe=4h&limit=300`).then(r=>r.json()),
+                                    fetch(`/api/ohlcv?symbol=${encodeURIComponent(symbol)}&timeframe=1d&limit=400`).then(r=>r.json()),
+                                ];
+                                const [d1h,d4h,d1d] = await Promise.all(qs);
+                                return { d1h, d4h, d1d };
+                            } catch(e){ console.error('higherTf fetch err', e); return null; }
+                        }
+                        function expandEMA(baseTimes, htData, period=21, period2=50){
+                            // htData: array of {time, open, high, low, close}
+                            if (!htData || !htData.length) return { ema21: [], ema50: [] };
+                            const closes = htData.map(c=>c.close);
+                            const e21 = computeEMA(closes, period);
+                            const e50 = computeEMA(closes, period2);
+                            // forward fill across base times
+                            let idx = 0;
+                            const out21 = [], out50 = [];
+                            for (const t of baseTimes){
+                                while (idx+1 < htData.length && htData[idx+1].time <= t) idx++;
+                                const v21 = e21[idx];
+                                const v50 = e50[idx];
+                                out21.push(v21!=null?{ time: t, value: +v21.toFixed(8)}:null);
+                                out50.push(v50!=null?{ time: t, value: +v50.toFixed(8)}:null);
+                            }
+                            return { ema21: out21.filter(Boolean), ema50: out50.filter(Boolean) };
+                        }
+                        async function fetchAndRender(){
+                            if (!currentSymbol) return;
+                            if (inFlight > 0){ pendingFetch = true; return; }
+                            inFlight++;
+                            // capture current logical range to restore after update if user adjusted
+                            let rangeBefore = null;
+                            try { if (chartPrice) rangeBefore = chartPrice.timeScale().getVisibleLogicalRange(); } catch(e){}
+                            let timeRangeBefore = getVisibleTimeRange();
+                            const url = `/api/ohlcv?symbol=${encodeURIComponent(currentSymbol)}&timeframe=${encodeURIComponent(currentTf)}&limit=500`;
+                            try{
+                                const res = await fetch(url);
+                                const js = await res.json();
+                                if (!js || !js.data) return;
+                                const candles = js.data.map(r => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close }));
+                                const dataKey = `${currentSymbol}|${currentTf}|${candles.length}|${candles.length?candles[candles.length-1].time:0}`;
+                                const sameData = (dataKey === lastDataKey);
+                                const vols = js.data.map(r => ({ time: r.time, value: r.volume, color: (r.close>=r.open?'#10b981':'#ef4444') }));
+                                if (!sameData){
+                                    if (candleSeries) candleSeries.setData(candles);
+                                    if (volumeSeries) volumeSeries.setData(vols);
+                                }
+                                // indicators
+                                const closes = js.data.map(r => r.close);
+                                const fastP = {{ status['config']['ema_fast'] }};
+                                const slowP = {{ status['config']['ema_slow'] }};
+                                const emaFast = computeEMA(closes, fastP);
+                                const emaSlow = computeEMA(closes, slowP);
+                                const emaFastData = js.data.map((r,i) => (emaFast[i]!=null?{ time: r.time, value: +emaFast[i].toFixed(8)}:null)).filter(Boolean);
+                                const emaSlowData = js.data.map((r,i) => (emaSlow[i]!=null?{ time: r.time, value: +emaSlow[i].toFixed(8)}:null)).filter(Boolean);
+                                if (!sameData){
+                                    if (emaFastSeries) emaFastSeries.setData(emaFastData);
+                                    if (emaSlowSeries) emaSlowSeries.setData(emaSlowData);
+                                }
+                                // RSI pane
+                                const rsi = computeRSI(closes, 14);
+                                const rsiData = js.data.map((r,i) => (rsi[i]!=null?{ time: r.time, value: +rsi[i].toFixed(2)}:null)).filter(Boolean);
+                                if (!sameData){ if (rsiSeries) rsiSeries.setData(rsiData); }
+                                // Threshold lines (sparse approach: full span across times)
+                                if (!sameData){
+                                    const baseLine = candles.map(c => ({ time: c.time }));
+                                    if (rsiThreshSeries) rsiThreshSeries.setData(baseLine.map(o => ({ time: o.time, value: CFG.rsi_threshold })));
+                                    if (rsiExecSeries) rsiExecSeries.setData(baseLine.map(o => ({ time: o.time, value: CFG.rsi_exec_threshold })));
+                                    if (rsiOverSeries) rsiOverSeries.setData(baseLine.map(o => ({ time: o.time, value: CFG.rsi_overbought })));
+                                }
+                                // Higher timeframe overlays only on 15m
+                                if (!sameData && currentTf === '15m'){
+                                    const higher = await fetchHigherTf(currentSymbol);
+                                    if (higher){
+                                        const bTimes = candles.map(c=>c.time);
+                                        const mapHT = (d) => (d && d.data)? d.data.map(r=>({ time: r.time, open:r.open, high:r.high, low:r.low, close:r.close})):[];
+                                        const d1h = mapHT(higher.d1h);
+                                        const d4h = mapHT(higher.d4h);
+                                        const d1d = mapHT(higher.d1d);
+                                        // Use configured fast/slow periods for higher TF expansion too
+                                        const h1 = expandEMA(bTimes, d1h, fastP, slowP);
+                                        const h4 = expandEMA(bTimes, d4h, fastP, slowP);
+                                        const hD = expandEMA(bTimes, d1d, fastP, slowP);
+                                        if (emaFastSeries1h) emaFastSeries1h.setData(h1.ema21);
+                                        if (emaSlowSeries1h) emaSlowSeries1h.setData(h1.ema50);
+                                        if (emaFastSeries4h) emaFastSeries4h.setData(h4.ema21);
+                                        if (emaSlowSeries4h) emaSlowSeries4h.setData(h4.ema50);
+                                        if (emaFastSeries1d) emaFastSeries1d.setData(hD.ema21);
+                                        if (emaSlowSeries1d) emaSlowSeries1d.setData(hD.ema50);
+                                    }
+                                } else if (!sameData && currentTf !== '15m') {
+                                    [emaFastSeries1h, emaSlowSeries1h, emaFastSeries4h, emaSlowSeries4h, emaFastSeries1d, emaSlowSeries1d].forEach(s => { if (s) s.setData([]); });
+                                }
+                                // --- Markers: EMA crosses + patterns ---
+                                const markers = [];
+                                for (let i=1; i<emaFast.length; i++){
+                                    const fPrev = emaFast[i-1], sPrev = emaSlow[i-1];
+                                    const fCur = emaFast[i], sCur = emaSlow[i];
+                                    if ([fPrev,sPrev,fCur,sCur].some(v => v==null)) continue;
+                                    if (fPrev < sPrev && fCur > sCur){
+                                        markers.push({ time: candles[i].time, position: 'belowBar', color: '#10b981', shape: 'arrowUp', text: `EMA${fastP}>${slowP}` });
+                                    }
+                                    if (fPrev > sPrev && fCur < sCur){
+                                        markers.push({ time: candles[i].time, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: `EMA${fastP}<${slowP}` });
+                                    }
+                                }
+                                // Bullish/Bearish engulfing + hammer/shooting-star markers
+                                function isBullishEngulf(prev, cur){
+                                    if (!(prev && cur)) return false;
+                                    const prevBear = prev.close < prev.open;
+                                    const curBull = cur.close > cur.open;
+                                    if (!prevBear || !curBull) return false;
+                                    const curBodyLow = Math.min(cur.open, cur.close);
+                                    const curBodyHigh = Math.max(cur.open, cur.close);
+                                    const prevBodyLow = Math.min(prev.open, prev.close);
+                                    const prevBodyHigh = Math.max(prev.open, prev.close);
+                                    return curBodyLow <= prevBodyHigh && curBodyHigh >= prevBodyLow;
+                                }
+                                function isBearishEngulf(prev, cur){
+                                    if (!(prev && cur)) return false;
+                                    const prevBull = prev.close > prev.open;
+                                    const curBear = cur.close < cur.open;
+                                    if (!prevBull || !curBear) return false;
+                                    const curBodyLow = Math.min(cur.open, cur.close);
+                                    const curBodyHigh = Math.max(cur.open, cur.close);
+                                    const prevBodyLow = Math.min(prev.open, prev.close);
+                                    const prevBodyHigh = Math.max(prev.open, prev.close);
+                                    return curBodyLow <= prevBodyHigh && curBodyHigh >= prevBodyLow;
+                                }
+                                function isHammer(c){
+                                    if (!c) return false;
+                                    const body = Math.abs(c.close - c.open);
+                                    const range = c.high - c.low;
+                                    if (range <= 0) return false;
+                                    const lower = Math.min(c.open, c.close) - c.low;
+                                    const upper = c.high - Math.max(c.open, c.close);
+                                    return lower >= 2*body && upper <= body && body/range < 0.4;
+                                }
+                                function isShootingStar(c){
+                                    if (!c) return false;
+                                    const body = Math.abs(c.close - c.open);
+                                    const range = c.high - c.low;
+                                    if (range <= 0) return false;
+                                    const lower = Math.min(c.open, c.close) - c.low;
+                                    const upper = c.high - Math.max(c.open, c.close);
+                                    return upper >= 2*body && lower <= body && body/range < 0.4;
+                                }
+                                for (let i=1; i<candles.length; i++){
+                                    const prev = candles[i-1], cur = candles[i];
+                                    if (isBullishEngulf(prev, cur)){
+                                        markers.push({ time: cur.time, position: 'belowBar', color: '#10b981', shape: 'circle', text: 'BE' });
+                                    }
+                                    if (isBearishEngulf(prev, cur)){
+                                        markers.push({ time: cur.time, position: 'aboveBar', color: '#ef4444', shape: 'circle', text: 'BEAR' });
+                                    }
+                                    if (isHammer(cur)){
+                                        markers.push({ time: cur.time, position: 'belowBar', color: '#22d3ee', shape: 'circle', text: 'H' });
+                                    }
+                                    if (isShootingStar(cur)){
+                                        markers.push({ time: cur.time, position: 'aboveBar', color: '#f97316', shape: 'circle', text: 'SS' });
+                                    }
+                                }
+                                if (!sameData){
+                                    if (candleSeries && markers.length){ candleSeries.setMarkers(markers); } else if (candleSeries) { candleSeries.setMarkers([]); }
+                                }
+                                // Never auto-fit on update; restore previous or saved view once per open
+                                if (chartPrice && chartRSI){
+                                    const applyRange = () => {
+                                        isProgrammaticRangeSet = true;
+                                        try {
+                                            // Prefer time-based range for stability
+                                            const curTime = getVisibleTimeRange();
+                                            if (userAdjusted && timeRangeBefore && !timeRangesEqual(curTime, timeRangeBefore)){
+                                                setVisibleTimeRange(timeRangeBefore);
+                                            } else if (!restoredRangeOnce) {
+                                                let savedTime = null;
+                                                try { savedTime = JSON.parse(localStorage.getItem(`chartTimeRange:${currentSymbol}:${currentTf}`) || 'null'); } catch(e){}
+                                                if (savedTime && savedTime.from && savedTime.to && !timeRangesEqual(curTime, savedTime)){
+                                                    setVisibleTimeRange(savedTime);
+                                                } else if (!savedTime) {
+                                                    const n = candles.length;
+                                                    if (n > 0){
+                                                        const last = candles[n-1]?.time;
+                                                        const from = candles[Math.max(0, n-150)]?.time || candles[0]?.time;
+                                                        const defTime = { from, to: last };
+                                                        setVisibleTimeRange(defTime);
+                                                    }
+                                                }
+                                                restoredRangeOnce = true;
+                                            }
+                                        } finally {
+                                            isProgrammaticRangeSet = false;
+                                        }
+                                    };
+                                    // Defer to next frame to avoid thrash
+                                    requestAnimationFrame(applyRange);
+                                }
+                                lastDataKey = dataKey;
+                            } catch(e) {
+                                console.error('chart fetch error', e);
+                            } finally {
+                                inFlight = Math.max(0, inFlight-1);
+                                if (pendingFetch){ pendingFetch = false; fetchAndRender(); }
+                            }
+                        }
+                        const tfSel = document.getElementById('tfSelect');
+                        if (tfSel){
+                            tfSel.addEventListener('change', () => { currentTf = tfSel.value; restoredRangeOnce = false; userAdjusted = false; lastDataKey = null; pendingFetch = false; inFlight = 0; fetchAndRender(); });
+                        }
+                        window.openChartModal = openChartModal;
+                        window.closeChartModal = closeChartModal;
+                        // Restore chart after reload if needed
+                        (function(){
+                            try {
+                                const st = JSON.parse(localStorage.getItem('chartState') || 'null');
+                                if (st && st.open && st.symbol){
+                                    currentTf = st.tf || '15m';
+                                    pauseAutoRefresh();
+                                    // open after a tiny delay to ensure DOM is ready
+                                    setTimeout(()=> openChartModal(st.symbol), 0);
+                                }
+                            } catch(e){}
+                        })();
+                    </script>
                     <script>
                         // Persist and toggle sound preference
                         let soundEnabled = (localStorage.getItem('soundEnabled') === '1');
@@ -1402,7 +2527,7 @@ def dashboard():
                     </script>
         </body>
         </html>
-    ''', status=status)
+    ''', status=status, config_desc=CONFIG_PARAM_DESCRIPTIONS)
 
 if __name__ == '__main__':
     # Local/dev run: start bot and Flask dev server
