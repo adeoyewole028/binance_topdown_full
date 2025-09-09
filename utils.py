@@ -44,6 +44,25 @@ def detect_hammer(df):
     if body == 0: return False
     return (lower_wick >= 2 * body) and (upper_wick <= 0.5 * body)
 
+def detect_bearish_engulfing(df):
+    if len(df) < 2: return False
+    a = df.iloc[-2]; b = df.iloc[-1]
+    prev_bull = a['close'] > a['open']
+    curr_bear = b['close'] < b['open']
+    if not (prev_bull and curr_bear): return False
+    prev_low, prev_high = min(a['open'],a['close']), max(a['open'],a['close'])
+    curr_low, curr_high = min(b['open'],b['close']), max(b['open'],b['close'])
+    return curr_low <= prev_low and curr_high >= prev_high
+
+def detect_shooting_star(df):
+    if len(df) < 1: return False
+    c = df.iloc[-1]
+    body = abs(c['close'] - c['open'])
+    upper_wick = c['high'] - max(c['open'], c['close'])
+    lower_wick = min(c['open'], c['close']) - c['low']
+    if body == 0: return False
+    return (upper_wick >= 2 * body) and (lower_wick <= 0.5 * body)
+
 def ensure_logs(path='logs'):
     os.makedirs(path, exist_ok=True)
 
