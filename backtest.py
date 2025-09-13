@@ -11,11 +11,14 @@ import json
 import argparse
 import os
 import time
+import logging
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any, Optional
 import pandas as pd
-from utils import ema, rsi, atr, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, detect_bearish_engulfing, detect_shooting_star
+from utils import ema, rsi, atr, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, detect_bearish_engulfing, detect_shooting_star, detect_volatility_regime
 import statistics
+
+logger = logging.getLogger(__name__)
 try:
     import ccxt  # type: ignore
 except ImportError:  # pragma: no cover
@@ -66,6 +69,7 @@ class BacktestConfig:
     trend_tp_boost: float = 0.5  # extra TP range multiplier when higher TF trends align
     use_bullish_patterns: bool = True
     use_bearish_patterns: bool = True
+    fee_pct: float = 0.001  # Binance taker fee (0.1%)
 
     def validate(self):
         """Validate configuration values; raise ValueError on invalid settings."""
@@ -113,8 +117,19 @@ class Backtester:
         self.realized_pnl = 0.0
 
     def _prep(self):
-        """Compute indicator columns (EMA, RSI, ATR)."""
+        """Compute indicator columns (EMA, RSI, ATR) with adaptive parameters."""
+        # Detect volatility regime on 15m
+        regime = detect_volatility_regime(self.df15, self.cfg.atr_period, 1.0)
         f, s = self.cfg.ema_fast, self.cfg.ema_slow
+        if regime == 'high_vol':
+            # Shorter EMAs for faster signals in high vol
+            f = max(5, f - 5)
+            s = max(10, s - 10)
+        elif regime == 'low_vol':
+            # Longer EMAs for stability in low vol
+            f = min(50, f + 5)
+            s = min(100, s + 10)
+        logger.info(f"Detected regime: {regime}, using EMA fast={f}, slow={s}")
         for df in (self.df15, self.df1h, self.df4h, self.df1d):
             df['ema_fast'] = ema(df['close'], f)
             df['ema_slow'] = ema(df['close'], s)
@@ -250,6 +265,7 @@ class Backtester:
                                     realized_pnl = (price - pos['entry_price']) * partial_qty
                                 else:
                                     realized_pnl = (pos['entry_price'] - price) * partial_qty
+                                realized_pnl *= (1 - self.cfg.fee_pct)
                                 # R multiple based on original risk distance (price risk unit)
                                 r_mult = None
                                 if pos['risk_unit'] > 0:
@@ -321,6 +337,7 @@ class Backtester:
                             exit_reason = 'ema_fast_break'
                 if exit_reason:
                     pnl = (price - pos['entry_price']) * pos['qty'] if pos['side']=='long' else (pos['entry_price'] - price) * pos['qty']
+                    pnl *= (1 - self.cfg.fee_pct)
                     r_mult = None
                     if pos['risk_unit'] > 0:
                         if pos['side']=='long':
@@ -349,6 +366,7 @@ class Backtester:
             else:
                 pnl = (pos['entry_price'] - price) * pos['qty']
                 r_mult = (pos['entry_price'] - price) / pos['risk_unit'] if pos['risk_unit']>0 else None
+            pnl *= (1 - self.cfg.fee_pct)
             self.equity += pnl
             self.trades.append(Trade(
                 symbol=self.symbol,
@@ -441,7 +459,7 @@ def fetch_ohlcv_dataframe(exchange, symbol: str, timeframe: str, since_ms: int) 
         try:
             batch = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=limit)
         except Exception as e:  # pragma: no cover - network
-            print(f"Fetch error {timeframe}: {e}")
+            logger.warning(f"Fetch error {timeframe}: {e}")
             break
         if not batch:
             break
@@ -484,7 +502,7 @@ def ensure_data(args: argparse.Namespace):
     exchange = ex_class({'enableRateLimit': True})
     since_days = getattr(args, 'since_days', 180)
     since_ms = int(time.time() * 1000) - since_days * 86400 * 1000
-    print(f"Auto-fetching missing data since {since_days} days ago ({missing}) ...")
+    logger.info(f"Auto-fetching missing data since {since_days} days ago ({missing}) ...")
     for attr in missing:
         tf = required[attr]
         out_path = getattr(args, attr)
@@ -492,7 +510,7 @@ def ensure_data(args: argparse.Namespace):
         if df.empty:
             raise RuntimeError(f"Fetched no data for {args.symbol} {tf}")
         df.reset_index().to_csv(out_path, index=False)
-        print(f"Saved {len(df)} rows to {out_path}")
+        logger.info(f"Saved {len(df)} rows to {out_path}")
 
 
 def run_single(args: argparse.Namespace):
@@ -510,7 +528,8 @@ def run_single(args: argparse.Namespace):
     atr_compression_threshold=args.atr_compression_threshold,
     trend_tp_boost=args.trend_tp_boost,
     use_bullish_patterns=not args.disable_bullish_patterns,
-    use_bearish_patterns=not args.disable_bearish_patterns
+    use_bearish_patterns=not args.disable_bearish_patterns,
+    fee_pct=args.fee_pct
     )
     cfg.validate()
     df15 = load_csv_to_df(args.data_15m)
@@ -532,7 +551,7 @@ def run_single(args: argparse.Namespace):
     # Summary
     m = bt.metrics()
     summary = {'metrics': m, 'gate_stats': bt.gate_stats}
-    print(json.dumps(summary if args.verbose else m, indent=2))
+    logger.info(json.dumps(summary if args.verbose else m, indent=2))
     if getattr(args, 'json_out', None):
         with open(args.json_out, 'w', encoding='utf-8') as f:
             json.dump({'config': asdict(cfg), 'metrics': m, 'gate_stats': bt.gate_stats}, f, indent=2)
@@ -589,6 +608,7 @@ def build_arg_parser():
     p.add_argument('--sweep-risk-per-trade-pct')
     p.add_argument('--sweep-trend-tp-boost')
     p.add_argument('--sweep-out', help='CSV file to write sweep summary')
+    p.add_argument('--fee-pct', type=float, default=0.001, help='Trading fee percentage (e.g., 0.001 for 0.1%)')
     return p
 
 if __name__ == '__main__':
@@ -646,12 +666,13 @@ if __name__ == '__main__':
                 atr_compression_threshold=args.atr_compression_threshold,
                 trend_tp_boost=args.trend_tp_boost,
                 use_bullish_patterns=not args.disable_bullish_patterns,
-                use_bearish_patterns=not args.disable_bearish_patterns
+                use_bearish_patterns=not args.disable_bearish_patterns,
+                fee_pct=args.fee_pct
             )
             try:
                 cfg.validate()
             except Exception as e:
-                print(f"Config validation failed for combo {local_kwargs}: {e}")
+                logger.warning(f"Config validation failed for combo {local_kwargs}: {e}")
                 continue
             bt = Backtester(base_df15, base_df1h, base_df4h, base_df1d, args.symbol, cfg)
             trades = bt.run()
@@ -660,7 +681,7 @@ if __name__ == '__main__':
             for k,v in local_kwargs.items():
                 rec[k] = v
             results.append(rec)
-            print(json.dumps({'combo': local_kwargs, 'summary': rec}, indent=2))
+            logger.info(json.dumps({'combo': local_kwargs, 'summary': rec}, indent=2))
         if args.sweep_out and results:
             fieldnames = sorted({fn for r in results for fn in r.keys()})
             with open(args.sweep_out, 'w', newline='', encoding='utf-8') as f:
@@ -669,6 +690,6 @@ if __name__ == '__main__':
         # Print best by avg_r then by total_pnl
         if results:
             best = sorted(results, key=lambda r: (r['avg_r'], r['total_pnl']), reverse=True)[:5]
-            print('Top 5 combos:')
+            logger.info('Top 5 combos:')
             for b in best:
-                print(b)
+                logger.info(str(b))
