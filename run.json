@@ -1,0 +1,48 @@
+{
+  "config": {
+    "ema_fast": 21,
+    "ema_slow": 50,
+    "rsi_threshold": 30,
+    "rsi_exec_threshold": 45,
+    "atr_period": 14,
+    "atr_stop_mult": 1.5,
+    "atr_tp_mult": 2.5,
+    "min_stop_pct": 0.004,
+    "partial_tp_r_multiple": 1.0,
+    "partial_tp_fraction": 0.5,
+    "trail_activate_r_multiple": 1.5,
+    "trail_atr_mult": 1.0,
+    "min_atr_rel": 0.001,
+    "near_ema_pct": 0.02,
+    "enable_shorts": true,
+    "base_capital": 1000.0,
+    "risk_per_trade_pct": 0.01,
+    "adaptive_near_multiplier": 2.0,
+    "atr_compression_threshold": 0.0008,
+    "trend_tp_boost": 0.5,
+    "use_bullish_patterns": true,
+    "use_bearish_patterns": true
+  },
+  "metrics": {
+    "trades": 2,
+    "total_pnl": -5.804003092412161,
+    "avg_r": -0.29062073190673215,
+    "median_r": -0.29062073190673215,
+    "best_r": -0.27204783258595255,
+    "worst_r": -0.30919363122751176,
+    "win_rate": 0.0,
+    "profit_factor": 0,
+    "max_drawdown": 5.804003092412131,
+    "sharpe": -22.608952930854212,
+    "expectancy_r": -0.29062073190673215
+  },
+  "gate_stats": {
+    "checks": 34840,
+    "passes": 360,
+    "fail_insufficient_history": 4562,
+    "fail_trend1d": 27110,
+    "fail_trend4h": 2656,
+    "fail_near_ma": 152,
+    "fail_momentum": 0
+  }
+}
