@@ -1,7 +1,7 @@
 {
   "ticket": "BT02 / GitHub #4",
   "scope": "offline behavior and safety checks; not deployed/provider acceptance",
-  "source_revision": "f7db424437fe35d3f531ba9991a56ae91c7b0d57",
+  "source_revision": "31173c7adff0794dcf807c7179cfe4e38e9236d4",
   "python": "3.11.3",
   "dependencies": {
     "ccxt": "4.5.3",
@@ -14,18 +14,19 @@
     "mypy": "1.18.2"
   },
   "source_sha256": {
-    "dashboard.py": "b4631d6e02beb3e100be75a453f19c5cdd3083d14d3a3143853235d5e43bbcd6",
+    "dashboard.py": "df544857bcd604388b2f97f9bb1ac328e72b66dbc5d24c4e1cd713847b15bbfa",
     "topdown_daemon.py": "165083566aa2d0d819ef254b1a59215de8503c12085c6ec47e375139ff963abe",
     "backtester.py": "5871f8cefdb9ccbb6d07c98fe43fb417ba7350fa2580116b73d2e31e5167f5d2",
     "utils.py": "25f983276908426bd065e3c2f2ff515c121e071f8328f119b67183a12880ddb6",
     "operator_security.py": "4c53cdfafb86e9767149235e6aabe689cec4429f5bf9d7f9ab823a98c8f23554",
-    "runtime_environment.py": "3dca111c8871a0e08d714b36e9a10affffb46e91b7cfa1ca4c4d6cbd71a71250",
+    "runtime_environment.py": "e6abb4a2264f2cf9c913cc2f33947e291ab3fa51b4bc0f5f0f8f176c319f36ee",
     "wsgi.py": "fc95f37fa77935b551363780ea58be4aaec25b0041c20a1f6a5db0f19b3d507f",
-    "run_scanner.py": "52845601da998c54179d820a82dbc3a5ea66c1cb41a65349c516247856c83216"
+    "run_scanner.py": "52845601da998c54179d820a82dbc3a5ea66c1cb41a65349c516247856c83216",
+    "gunicorn.conf.py": "b20b3fde0d21d1426470da38b508920031afd510243d7840db17ba5f6ca36dd6"
   },
   "fixture_sha256": "efb98e3182c57acc67c6a5f60cb02fc7af87610754da8ef094e5afc308d8b93b",
-  "tests": 76,
-  "passed": 69,
+  "tests": 80,
+  "passed": 73,
   "known_defects_expected_failure": [
     "test_negative_buy_leaves_positions_unchanged",
     "test_negative_sell_does_not_increase_holdings",

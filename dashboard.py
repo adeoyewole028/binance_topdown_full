@@ -329,10 +329,11 @@ exchange = None
 local_broker = LocalBroker(status)
 
 runtime_environment = None
+configured_defaults = DEFAULT_CONFIG.copy()
 
 def initialize_runtime(environment: Mapping[str, str] | None = None) -> Flask:
     """Explicit web startup; no scanner or exchange requests are started here."""
-    global runtime_environment, DATA_DIR, CONFIG_PATH, POSITIONS_PATH
+    global runtime_environment, DATA_DIR, CONFIG_PATH, POSITIONS_PATH, configured_defaults
     environment = os.environ if environment is None else environment
     runtime = RuntimeEnvironment.from_mapping(environment)
     app.config.update(DEBUG=False)
@@ -351,6 +352,7 @@ def initialize_runtime(environment: Mapping[str, str] | None = None) -> Flask:
         if key != 'paper_trading' and environment.get(env_name):
             value = environment[env_name]
             defaults[key] = parse_boolean(value) if isinstance(current, bool) else type(current)(value)
+    configured_defaults = defaults.copy()
     status['config'] = defaults
     status['config'].update(coerce_config_types(load_persisted_config(CONFIG_PATH)))
     # Old persisted flags can never elevate execution mode at startup.
@@ -605,7 +607,7 @@ def update_config():
 def reset_config():
     # Reset to DEFAULT_CONFIG and persist
     paper = status['config']['paper_trading']
-    status['config'] = DEFAULT_CONFIG.copy()
+    status['config'] = configured_defaults.copy()
     status['config']['paper_trading'] = paper
     ok = save_persisted_config(status['config'])
     if ok:

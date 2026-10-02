@@ -15,7 +15,7 @@ Production uses `APP_ENV=production`, HTTPS and `wsgi:app`. Cookies are Secure, 
 
 All mutation routes, including login/logout, require a session-bound unpredictable CSRF token. Forms include it; an authenticated same-origin client can send `X-CSRF-Token` instead. A supplied Origin must match the request origin. `/` and `/api/status` require operator authentication; account CORS is same-origin. TLS terminates at a trusted reverse proxy; the app does not trust arbitrary forwarded client addresses. No account or password details enter public API responses or routine authentication errors.
 
-`APP_ENV=development` permits non-Secure cookies only on isolated loopback HTTP. `python dashboard.py` binds to 127.0.0.1, rejects production, and disables debug/reload. Add `--scan` only to explicitly start its isolated paper scanner in that same process. `FLASK_DEBUG`, `FLASK_RUN_DEBUG`, `FLASK_RUN_RELOAD` or `--reload` settings fail validation. Never use the Flask CLI as a production launcher.
+`APP_ENV=development` permits non-Secure cookies only on isolated loopback HTTP. `python dashboard.py` binds to 127.0.0.1, rejects production, and disables debug/reload. Add `--scan` only to explicitly start its isolated paper scanner in that same process. `FLASK_DEBUG`, `FLASK_RUN_DEBUG`, `FLASK_RUN_RELOAD` `GUNICORN_CMD_ARGS=--reload` or `--reload` settings fail validation; the mandatory gunicorn.conf.py launcher hooks reject effective reload values from configuration and overrides. Never use the Flask CLI as a production launcher.
 
 ## Mode, venue and server gates
 

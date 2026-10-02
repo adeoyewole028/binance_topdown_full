@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 import sys
+import shlex
 from typing import Any, Mapping
 
 
@@ -41,7 +42,9 @@ class RuntimeEnvironment:
         environment = compatible_value(env, 'APP_ENV', ('FLASK_ENV',), 'production')
         if environment not in {'development', 'production'}:
             raise ValueError('APP_ENV must be development or production')
-        if any(parse_boolean(env.get(name, 'false')) for name in ('FLASK_DEBUG', 'FLASK_RUN_DEBUG', 'FLASK_RUN_RELOAD')) or '--reload' in sys.argv:
+        server_arguments = [*sys.argv, *shlex.split(env.get('GUNICORN_CMD_ARGS', ''))]
+        if (any(parse_boolean(env.get(name, 'false')) for name in ('FLASK_DEBUG', 'FLASK_RUN_DEBUG', 'FLASK_RUN_RELOAD'))
+                or any(argument.startswith('--reload') for argument in server_arguments)):
             raise ValueError('Debug and reloader startup are disabled')
         mode = env.get('TRADING_MODE', '') or ('paper' if parse_boolean(env.get('PAPER_TRADING', 'true')) else 'exchange')
         if mode not in {'paper', 'exchange'}:

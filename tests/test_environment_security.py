@@ -7,6 +7,8 @@ import subprocess
 import sys
 from typing import Any
 from unittest.mock import patch
+import runpy
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +25,7 @@ from tests.legacy_sandbox import LegacySandbox, ROOT
     {'API_KEY': 'a', 'BINANCE_API_KEY': 'b', 'API_SECRET': 'c', 'CREDENTIAL_VENUE': 'testnet'},
     {'FLASK_DEBUG': 'true'},
     {'FLASK_RUN_RELOAD': 'true'},
+    {'GUNICORN_CMD_ARGS': '--reload'},
     {'TRADING_MODE': 'exchange', 'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true',
      'BINANCE_VENUE': 'mainnet', 'BINANCE_MAINNET_API_KEY': 'offline-key', 'BINANCE_MAINNET_API_SECRET': 'offline-secret'},
 ])
@@ -140,3 +143,18 @@ print('Safe development launch')
 '''], cwd=ROOT, capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == 'Safe development launch'
+
+
+def test_production_server_rejects_effective_reload_configuration() -> None:
+    # The server hook is Gunicorn's public launcher boundary; the host is replaced
+    # on Windows so no unsupported Unix master process or listener is started.
+    launcher = runpy.run_path(str(ROOT / 'gunicorn.conf.py'))
+    for reload in (False, True):
+        server = SimpleNamespace(cfg=SimpleNamespace(reload=reload))
+        if reload:
+            with pytest.raises(ValueError, match='reload'):
+                launcher['on_starting'](server)
+            with pytest.raises(ValueError, match='reload'):
+                launcher['on_reload'](server)
+        else:
+            launcher['on_starting'](server)

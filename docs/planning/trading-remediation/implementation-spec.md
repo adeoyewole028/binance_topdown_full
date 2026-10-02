@@ -76,7 +76,7 @@ The user approved both test boundaries and the 16-ticket granularity/dependency 
 
 ## Implementation Decisions
 
-### S1 Scope and invariants â€” R01-R03
+### S1 Scope and invariants — R01-R03
 
 R01: unauthorized and cross-site requests never create orders, change mode/config, reset state or reveal account-specific telemetry. Authentication sessions do not themselves authorize a venue change. Require production secret; reject missing/default secrets in production; debug/reload only on explicitly isolated development.
 
@@ -84,7 +84,7 @@ R02: execution mode is `paper` or `exchange`; venue is `testnet` or `mainnet`. S
 
 R03: manual, daemon and close actions use the same operation service. Account/venue/mode/strategy identifiers qualify every intent, fill, position, metric and risk reservation. Kill switch stops new entries but permits authenticated risk reduction, provider status reads and confirmed protection maintenance; it does not blindly cancel protective orders. Every durable write failure blocks execution rather than displaying a filled/saved result.
 
-### S2 Target architecture â€” R04
+### S2 Target architecture — R04
 
 ```mermaid
 flowchart LR
@@ -106,7 +106,7 @@ flowchart LR
 
 R04: HTTP workers never dispatch Binance orders directly or start scanners on import. One execution owner per configured account/venue serializes intent dispatch, risk reservations and protection/close coordination. The daemon attaches to this owner or acts as the explicitly sole supervised launcher; simultaneous legacy launch cannot create another owner. Acquire ownership before private submission. Do not rely on process-local globals for ownership. Lock expiry alone is insufficient fencing: resolve prior in-flight provider outcomes before takeover. If database/ownership becomes uncertain, halt new dispatch; keep stable operation IDs and reconcile after recovery. Single-host transactional SQLite/OS locking is the approved D02 design; a future approved multi-host scope change would require fencing and shared-database ownership.
 
-### S3 Data model, persistence and migration â€” R05
+### S3 Data model, persistence and migration — R05
 
 All times UTC with explicit candle open/close/as-of meanings; display timezone is labelled. Money and crypto quantities use decimal arithmetic and exchange-compatible decimal strings at boundaries, with explicit asset/currency; no universal cents assumption.
 
@@ -129,7 +129,7 @@ Unique constraints: namespace + idempotency key, namespace + provider order/fill
 
 R05: back up legacy snapshots and CSV before migration; inspect types, finite positive qty/entry, duplicates and unknown provenance; quarantine anomalies. Do not invent missing fees, fills or initial capital. Migrating the same checksum twice has no additional effect. Compare pre/post record counts and confirmed paper quantities, document all quarantines. Legacy files remain read-only migration input, never a dual-write source of truth. Required sequence: pause new writes -> backup/checksum -> transactional schema migration/import -> integrity checks -> ownership acquisition -> provider reconciliation where applicable -> resume only approved mode. Rollback retains new journal data and uses a compatible reader; older JSON-writing binaries may not resume against migrated state. Corruption or disk loss must not become an empty tradable account.
 
-### S4 Market data, configuration and supervision â€” R06-R07
+### S4 Market data, configuration and supervision — R06-R07
 
 R06: every price/candle has venue, symbol, fetched-at and completed-bar metadata. Validate sorted unique timestamps and OHLC consistency; require enough warmup and reject gaps for affected decisions. Never trade on the currently forming candle. Market-data failures have distinct transient, auth, rate-limit, invalid-market and data-quality classes. Use bounded backoff/jitter and provider-directed wait; share an IP/venue budget across scanner, execution, reconciliation and historical fetches. Prioritize risk reduction/reconciliation over new entries/research. A failed request does not reset freshness. Clock skew is measured; failed clock/freshness checks block order dispatch.
 
@@ -137,7 +137,7 @@ Maintain universe symbols plus all held/pending/protected symbols. Cache only co
 
 R07: config updates validate finite values, numeric domains and cross-field constraints atomically. Proposed domains: risk >0 and <=1, stop distance >0 and <1, RSI thresholds in [0,100], positive integral capacities/intervals, nonnegative cooldown and volume, canonical quote/profile/mode enums and supported markets. More restrictive capital/loss bounds require D05. Every scan and intent snapshots one complete config version. Changing strategy/quote does not rewrite open position exit rules without a separately reviewed policy change. Legacy trailing_pct is explicitly unsupported/disabled unless D05 selects and specifies verified trailing behavior; never imply it is active. Successful scan time advances only after completed work; failure or death sets degraded/stale status. Ownership, heartbeat and current reason are separate from web liveness.
 
-### S5 Orders, simulation and risk â€” R08-R10
+### S5 Orders, simulation and risk — R08-R10
 
 R08: reject missing, zero, negative, NaN/infinite quantities, invalid side/symbol, stale prices, inactive markets, oversells, overspend, unresolved ownership/state, insufficient warmup and invalid limits before mutation. Reject rather than silently reinterpret non-buy as sell or fill at zero. Derive server sizing from available funds plus approved equity/risk/stop policy; fixed allocation is currency-qualified rather than universally USD. Reserve available funds/holdings and open-position slots transactionally before dispatch. Max positions and cooldown apply across manual and daemon entry paths; reduction is not blocked by an entry cooldown. Server recomputes UI estimates and binds reviewed config/price version; changed inputs require refreshed review.
 
@@ -147,23 +147,23 @@ R10: persist immutable semantic order intent and stable client-order ID before n
 
 Order lifecycle: created -> validated/reserved -> submitting -> accepted/partially_filled/filled/rejected; accepted or partial can end canceled/expired with fills retained. Submitting can become unknown -> reconciliation_required -> observed provider state. A pre-dispatch failure can release reservation; ambiguous dispatch cannot. Audit every transition, actor and canonical reference. Do not log full responses or secrets.
 
-### S6 Protection and risk reduction â€” R11
+### S6 Protection and risk reduction — R11
 
 R11: use a provider-supported Spot contingent/OCO design selected under D05, with symbol precision and actual sellable filled quantity after fees. Protection has installing/unknown/active/failed/canceling/closed states; active only after provider verification. Failed protection preserves filled entry and surfaces unprotected exposure; blocks new entries and alerts operator. No automatic emergency liquidation is invented. A manual close first resolves/cancels applicable protection, reconciles races/fills and computes remaining sellable qty. Duplicate/racing close requests cannot oversell; cancellation timeout is unresolved, not a permission to issue another sell. Partial close leaves confirmed remainder tracked and reprotected under selected policy. A stopped worker must not imply exchange-native protection disappeared; verify it on recovery. No local polling claim substitutes for a confirmed exchange stop. Live provider stop behavior cannot guarantee execution price.
 
-### S7 Shared strategies and automation â€” R12-R13
+### S7 Shared strategies and automation — R12-R13
 
 R12: version and document each D04-selected profile, exact timeframes, EMA spans/warmup, rolling RSI and close-pivot semantics, entry/exit ordering, thresholds and reasons. One deterministic evaluator takes only completed bars as of a decision time, immutable config and observed position state; it returns signal identity/reasons with no network/database side effects. Golden fixtures preserve valid legacy indicator/profile outputs, with causal timing defects explicitly corrected and documented. Duplicate scans on the same execution candle cannot create another automatic intent for the same strategy/config/namespace/symbol.
 
 R13: daemon and dashboard share evaluator, market freshness, sizing, intent dispatch, protection and reconciliation. Automation has an explicit start/stop status and cannot run before reconciliation and approved controls. Confirmed exits decrement exposure/open slots and preserve cooldown history through restart. Graceful shutdown stops intake, persists status and preserves unknown intents for recovery. A second daemon launch fails ownership acquisition. No autonomous live enablement from defaults, imports, reset or form omissions.
 
-### S8 Historical replay and performance â€” R14-R15
+### S8 Historical replay and performance — R14-R15
 
 R14: fetch explicit UTC start/end ranges by pagination, include required pre-start warmup, validate coverage and gaps, and bound every dataset by as-of close. Replay forward at execution-candle boundaries; no same-day final close before daily close, no future bias authorizing earlier entry, no overlapping duplicate entries. Runtime and replay use the same profile evaluator and approved simulation/capital/protection rules. Report partial data as incomplete rather than valid zero trades. Fees/slippage/seed/cost-basis policies are recorded and reproducible. Define conservative same-bar stop/TP ambiguity, gap prices and partial-fill assumptions under D05; OHLC alone cannot prove intrabar order. CLI date/profile input and result provenance replace hard-coded historical range. Results include fills, positions, exposure, equity, realized/unrealized return, drawdown and win-rate denominator. No promise of profit or inference of live fidelity from candles.
 
 R15: metrics read full durable history, not the latest displayed trades. Initial capital and asset/currency-qualified holdings plus cash define equity; peak-to-trough account equity defines drawdown. Disclose price/fee conversion freshness, unknown cost basis and incomplete imported history; unresolved data yields unavailable/partial metrics rather than false zero. Chosen cost-basis method and win-rate denominator are explicit and shared with replay. Reload/restart/pagination cannot change totals; snapshots may accelerate projections but are rebuildable from the journal.
 
-### S9 Operator journeys and API contracts â€” R16-R17
+### S9 Operator journeys and API contracts — R16-R17
 
 Existing GET status/dashboard require authentication. HTML unauthenticated requests redirect to login; JSON requests return 401; unauthorized actions return 403, validation 422, stale/review or idempotency conflicts 409, unavailable dependencies 503. These are proposed stable error contracts, with field-level message and safe operation ID, never provider stacks. Browser adapters redirect after submission but preserve input and display operation status rather than asserting fill from a successful response.
 
@@ -173,7 +173,7 @@ R16: preserve entered quantities, choices and settings while polling status; loa
 
 R17: retain layout and extract reusable status/form components only as needed. Target WCAG 2.2 AA: labelled controls, keyboard/focus, non-color states, live announcements, semantic tables, adequate targets, contrast, zoom/reflow and reduced motion. Self-host production styles instead of runtime third-party build CDN. Validate real narrow/wide viewports and error paths; source inspection alone cannot satisfy accessibility acceptance.
 
-### S10 Operations, testing, rollout and closure â€” R18-R20
+### S10 Operations, testing, rollout and closure — R18-R20
 
 R18: pin and document tested Python/library versions with repeatable installation; offline lint/type/syntax/behavior/build checks never start exchange requests. Hosted CI performs applicable full suite after focused checks. Deployment has one gated release owner; disable competing autoDeploy/hooks as appropriate with authorized configuration. Supported paid topology, persistent path/database, supervision and readiness distinguish web liveness from reconciled execution readiness. Secrets are required externally and excluded from reports/logs; trading-only least privilege, no withdrawal permission, key rotation procedures and network restrictions are verified at provider gates.
 

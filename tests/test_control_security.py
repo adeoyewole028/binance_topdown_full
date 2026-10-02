@@ -201,3 +201,16 @@ def test_http_fields_cannot_override_venue_credentials_or_execution_gate() -> No
         assert after['venue'] == before['venue'] == 'testnet'
         assert after['exchange_allowed'] is False
         assert sandbox.exchange.holdings == {}
+
+
+def test_reset_restores_configured_environment_defaults_and_preserves_mode() -> None:
+    with LegacySandbox(environment={'RSI_THRESHOLD': '55', 'USE_DYNAMIC_UNIVERSE': 'false'}) as sandbox:
+        before = sandbox.client.get('/api/status').get_json()['config']
+        assert before['rsi_threshold'] == 55.0
+        assert before['use_dynamic_universe'] is False
+        sandbox.post('/update-config', data={'rsi_threshold': '62', 'use_dynamic_universe': 'true'})
+        sandbox.post('/reset-config', data={})
+        reset = sandbox.client.get('/api/status').get_json()['config']
+        assert reset['rsi_threshold'] == 55.0
+        assert reset['use_dynamic_universe'] is False
+        assert reset['paper_trading'] is True

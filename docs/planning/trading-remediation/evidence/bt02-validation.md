@@ -16,7 +16,7 @@ Date: 2026-10-03. Ticket: [BT02 #4](https://github.com/adeoyewole028/binance_top
 
 Initial anonymous-account test failed with HTTP 200 before the security boundary was added, then passed. The authenticated paper test failed because dashboard forms lacked CSRF, then passed after real form tokens were added. Partial config failed with paper=false, then passed with omitted-value preservation and guarded transitions. Venue construction failed on the old manually overridden testnet URLs, then passed using the common constructor. Cookie replay remained authenticated after logout, then failed after opaque session revocation was added. A Windows locked-file failure exposed that SQLite context managers do not close connections; explicit closing corrected it. Strict types exposed response-type mismatches; those were corrected.
 
-Full applicable suite: `python tools/check_baseline.py --ticket 'BT02 / GitHub #4' --output docs/planning/trading-remediation/evidence/bt02-security.json`: **76 cases, 69 passed, 7 strict known-defect xfails, zero unexpected failures/skips**. `python -m mypy`: no issues in 13 sources, including all new security/environment/launcher modules. `python -m pyflakes .`: pass. Eight application modules compile without imports. Source/fixture hashes and exact dependency versions are in [machine evidence](bt02-security.json). Three BT02-owned xfails were promoted to ordinary passing tests. Seven future-ticket defects still reproduce through authenticated/CSRF-protected requests; none is concealed by denial of anonymous access. Strategy fixtures are unchanged.
+Full applicable suite: `python tools/check_baseline.py --ticket 'BT02 / GitHub #4' --output docs/planning/trading-remediation/evidence/bt02-security.json`: **80 cases, 73 passed, 7 strict known-defect xfails, zero unexpected failures/skips**. `python -m mypy`: no issues in 14 sources, including all new security/environment/launcher modules. `python -m pyflakes .`: pass. Nine application modules compile without imports. Source/fixture hashes and exact dependency versions are in [machine evidence](bt02-security.json). Three BT02-owned xfails were promoted to ordinary passing tests. Seven future-ticket defects still reproduce through authenticated/CSRF-protected requests; none is concealed by denial of anonymous access. Strategy fixtures are unchanged.
 
 ## Boundaries and upgrade
 
@@ -26,4 +26,14 @@ See [operator launch/upgrade contract](../../../operator-launch.md) for credenti
 
 ## Review
 
-Standards and Spec reviews pending. Do not close BT02 or begin BT03 until findings are resolved, checks pass and scoped commit/evidence are recorded.
+Initial implementation commit: 31173c7adff0794dcf807c7179cfe4e38e9236d4. Independent reviewers each identified one actionable P2 issue. Both were reproduced with failing regressions before correction; targeted and full checks now pass. Final independent recheck is pending; do not close or begin BT03 before it completes.
+
+## Standards
+
+P2: the initial environment guard missed Gunicorn reload set in GUNICORN_CMD_ARGS or an effective server configuration. Correction parses environment/CLI reload options and uses mandatory Gunicorn on_starting/on_reload hooks to reject effective cfg.reload. README and Render use explicit -c gunicorn.conf.py. A public server-hook boundary test replaces the Unix host on Windows; actual hosted runtime remains BT14. Optional repeated-login setup was retained where the HTTP sequence itself is the behavior under test. Accidental specification encoding changes were restored from the UTF-8 pre-ticket artifact before reapplying authorized decision edits.
+
+## Spec
+
+P2: reset used hard-coded defaults instead of configured environment defaults. Reproduction: RSI_THRESHOLD=55 started at 55 but reset returned 30. Correction stores the environment-resolved defaults separately, preserving current mode. Regression covers threshold and explicit disabled dynamic universe, then update/reset. The reviewer independently observed the original 69 pass/7 strict future-defect result; no other missing requirements or scope creep.
+
+Correction validation: 73 passed, 7 strict expected later defects; zero unexpected failures/skips. Strict type check passes 14 sources; repository lint passes. No new provider, hosting, deployment or trading actions. Final recheck and correction commit must be recorded before closure.

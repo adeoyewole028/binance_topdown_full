@@ -47,7 +47,7 @@ def test_non_disposable_directory_is_blocked(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize('name', ['dashboard.py', 'topdown_daemon.py', 'backtester.py', 'utils.py',
-                                  'operator_security.py', 'runtime_environment.py', 'wsgi.py', 'run_scanner.py'])
+                                  'operator_security.py', 'runtime_environment.py', 'wsgi.py', 'run_scanner.py', 'gunicorn.conf.py'])
 def test_application_source_compiles_without_import(name: str) -> None:
     source = (ROOT / name).read_text(encoding='utf-8')
     compile(source, name, 'exec')

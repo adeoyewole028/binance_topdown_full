@@ -6,7 +6,7 @@ Install requirements.txt and requirements-dev.txt. Configure the operator and en
 
 - Isolated local HTTP server: `python dashboard.py` with APP_ENV=development. No scanner starts automatically; add `--scan` to explicitly run the paper scanner in this same process.
 - Explicit isolated local paper scanner: `python run_scanner.py`. It owns its loop; it does not start an HTTP server. Shared durable production ownership is BT03 work.
-- Production HTTP entry point: `gunicorn -w 2 -k gthread -b 0.0.0.0:$PORT wsgi:app` on the supported Linux host, behind HTTPS. Each worker initializes access controls; none starts a scanner.
+- Production HTTP entry point: `gunicorn -c gunicorn.conf.py -w 2 -k gthread -b 0.0.0.0:$PORT wsgi:app` on the supported Linux host, behind HTTPS. Each worker initializes access controls; none starts a scanner.
 - Optional legacy paper automation: `python topdown_daemon.py`, disabled unless AUTOMATION_ENABLED=true. Exchange automation awaits the BT09 shared reconciled executor.
 - Historical research: `python backtester.py`; causality/accounting corrections remain BT10 work.
 
