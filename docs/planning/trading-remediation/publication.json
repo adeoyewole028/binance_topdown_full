@@ -1,0 +1,298 @@
+{
+  "tracker": "GitHub Issues",
+  "repository": "adeoyewole028/binance_topdown_full",
+  "date": "2026-10-02",
+  "implementation": "not started",
+  "decision_blockers": [
+    "D01",
+    "D02",
+    "D03",
+    "D04",
+    "D05",
+    "D06",
+    "D07"
+  ],
+  "tickets": [
+    {
+      "planning_id": "BT01",
+      "number": 3,
+      "id": 5684088309,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/3",
+      "source_file": "01-offline-regression-baseline.md",
+      "blocked_by": [],
+      "decision_blockers": [],
+      "native_dependencies": [],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT02",
+      "number": 4,
+      "id": 5684088478,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/4",
+      "source_file": "02-secure-control-and-environment.md",
+      "blocked_by": [
+        "BT01"
+      ],
+      "decision_blockers": [
+        "D01"
+      ],
+      "native_dependencies": [
+        "BT01"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT03",
+      "number": 5,
+      "id": 5684088916,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/5",
+      "source_file": "03-durable-runtime-and-migration.md",
+      "blocked_by": [
+        "BT02"
+      ],
+      "decision_blockers": [
+        "D02",
+        "D06"
+      ],
+      "native_dependencies": [
+        "BT02"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT04",
+      "number": 6,
+      "id": 5684089353,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/6",
+      "source_file": "04-fresh-supervised-market-data.md",
+      "blocked_by": [
+        "BT03"
+      ],
+      "decision_blockers": [
+        "D07"
+      ],
+      "native_dependencies": [
+        "BT03"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT05",
+      "number": 7,
+      "id": 5684089755,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/7",
+      "source_file": "05-validated-paper-and-risk.md",
+      "blocked_by": [
+        "BT04"
+      ],
+      "decision_blockers": [
+        "D05"
+      ],
+      "native_dependencies": [
+        "BT04"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT06",
+      "number": 8,
+      "id": 5684090168,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/8",
+      "source_file": "06-live-intents-and-reconciliation.md",
+      "blocked_by": [
+        "BT05"
+      ],
+      "decision_blockers": [
+        "D05"
+      ],
+      "native_dependencies": [
+        "BT05"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT07",
+      "number": 9,
+      "id": 5684090579,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/9",
+      "source_file": "07-protection-and-safe-close.md",
+      "blocked_by": [
+        "BT06"
+      ],
+      "decision_blockers": [
+        "D05"
+      ],
+      "native_dependencies": [
+        "BT06"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT08",
+      "number": 10,
+      "id": 5684091003,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/10",
+      "source_file": "08-versioned-causal-strategies.md",
+      "blocked_by": [
+        "BT04"
+      ],
+      "decision_blockers": [
+        "D04"
+      ],
+      "native_dependencies": [
+        "BT04"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT09",
+      "number": 11,
+      "id": 5684091410,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/11",
+      "source_file": "09-daemon-through-shared-executor.md",
+      "blocked_by": [
+        "BT07",
+        "BT08"
+      ],
+      "decision_blockers": [
+        "D03"
+      ],
+      "native_dependencies": [
+        "BT07",
+        "BT08"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT10",
+      "number": 12,
+      "id": 5684092161,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/12",
+      "source_file": "10-historical-causal-replay.md",
+      "blocked_by": [
+        "BT07",
+        "BT08"
+      ],
+      "decision_blockers": [
+        "D05"
+      ],
+      "native_dependencies": [
+        "BT07",
+        "BT08"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT11",
+      "number": 13,
+      "id": 5684092901,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/13",
+      "source_file": "11-durable-account-performance.md",
+      "blocked_by": [
+        "BT10"
+      ],
+      "decision_blockers": [
+        "D05"
+      ],
+      "native_dependencies": [
+        "BT10"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT12",
+      "number": 14,
+      "id": 5684093369,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/14",
+      "source_file": "12-operator-status-and-settings.md",
+      "blocked_by": [
+        "BT11"
+      ],
+      "decision_blockers": [
+        "D01"
+      ],
+      "native_dependencies": [
+        "BT11"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT13",
+      "number": 15,
+      "id": 5684093779,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/15",
+      "source_file": "13-reviewable-order-recovery-ui.md",
+      "blocked_by": [
+        "BT12"
+      ],
+      "decision_blockers": [],
+      "native_dependencies": [
+        "BT12"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT14",
+      "number": 16,
+      "id": 5684094221,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/16",
+      "source_file": "14-operations-ci-and-release.md",
+      "blocked_by": [
+        "BT09",
+        "BT13"
+      ],
+      "decision_blockers": [
+        "D02",
+        "D07"
+      ],
+      "native_dependencies": [
+        "BT09",
+        "BT13"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT15",
+      "number": 17,
+      "id": 5684094994,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/17",
+      "source_file": "15-integrated-paper-and-sandbox-acceptance.md",
+      "blocked_by": [
+        "BT14"
+      ],
+      "decision_blockers": [
+        "D07"
+      ],
+      "native_dependencies": [
+        "BT14"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    },
+    {
+      "planning_id": "BT16",
+      "number": 18,
+      "id": 5684095453,
+      "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/18",
+      "source_file": "16-authorized-rollout-and-closure.md",
+      "blocked_by": [
+        "BT15"
+      ],
+      "decision_blockers": [
+        "D07"
+      ],
+      "native_dependencies": [
+        "BT15"
+      ],
+      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+    }
+  ],
+  "specification": {
+    "number": 2,
+    "id": 5684088102,
+    "url": "https://github.com/adeoyewole028/binance_topdown_full/issues/2",
+    "body_characters": 53779,
+    "verification": "open issue, required label, complete self-contained body and traceability verified"
+  },
+  "publication_status": "published and read-back verified",
+  "native_dependency_edges": 18
+}

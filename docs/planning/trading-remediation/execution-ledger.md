@@ -1,0 +1,81 @@
+# Audit-remediation execution ledger
+
+Date: 2026-10-02. Source revision: a71999a136b2532e4c84ce53564a98efcf9a77fb.
+
+## Current stage
+
+Research/discovery complete within recorded static/offline/provider evidence boundaries. The user approved both test boundaries and the complete 16-ticket granularity/dependency breakdown on 2026-10-02. Tracker selection/publication is now resolved to repository GitHub Issues. Specification #2 and 16 tickets are published and verified with 18 native dependency edges. D01-D07 remain unresolved; no implementation, deployment or trading has been performed.
+
+Approval evidence: the user replied "approve" to the explicit request to approve the two test boundaries and ticket granularity/dependency breakdown. It supplies that approval once; do not ask for it again. The subsequent user instruction "go on" authorized continuation; the agent announced and used the existing repository GitHub Issues destination. It also does not supply D01-D07 policy selections or rollout authorization.
+
+Authoritative source inputs: existing end-to-end audit A01-A19 and provider research PR01-PR07. Current proposed spec: [implementation-spec.md](implementation-spec.md). Do not create another competing spec on resume; revise this one with decision/evidence history.
+
+## Configured tracker and verified publication
+
+Tracker: GitHub Issues for adeoyewole028/binance_topdown_full; label ready-for-agent. [Published specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2). [Tracker configuration](tracker-config.md) records the continuation authorization and destination. [Publication manifest](publication.json) records all issue IDs, URLs and dependencies. GitHub issues are ticket status truth; local files remain mirrors/evidence.
+
+All 16 approved slices were published in dependency order, read back and verified as open with complete bodies and explicit decision blockers. Native blocking links and body references match the 18 approved edges. No parent issue was closed or edited because the children were created. This label is triage, not permission to start blocked work. D01-D07 and external provider/rollout gates remain explicit.
+
+## Approved ordered ticket breakdown
+
+| Draft ID | Title and complete draft | Genuine prerequisite tickets | Decision conditions | Status |
+|---|---|---|---|---|
+| [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | [Establish safe regression and acceptance baselines](ticket-drafts/01-offline-regression-baseline.md) | None | None additional | Published / open |
+| [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | [Secure control access and explicit environment transitions](ticket-drafts/02-secure-control-and-environment.md) | [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | D01 | Published / open |
+| [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | [Recover isolated state under one execution owner](ticket-drafts/03-durable-runtime-and-migration.md) | [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | D02, D06 | Published / open |
+| [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | [Expose fresh market data and supervised scan health](ticket-drafts/04-fresh-supervised-market-data.md) | [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | D07 | Published / open |
+| [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7) | [Execute credible paper orders within capital and risk limits](ticket-drafts/05-validated-paper-and-risk.md) | [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | D05 | Published / open |
+| [BT06 #8](https://github.com/adeoyewole028/binance_topdown_full/issues/8) | [Dispatch exchange orders with durable fill reconciliation](ticket-drafts/06-live-intents-and-reconciliation.md) | [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7) | D05 | Published / open |
+| [BT07 #9](https://github.com/adeoyewole028/binance_topdown_full/issues/9) | [Protect confirmed positions and close without overselling](ticket-drafts/07-protection-and-safe-close.md) | [BT06 #8](https://github.com/adeoyewole028/binance_topdown_full/issues/8) | D05 | Published / open |
+| [BT08 #10](https://github.com/adeoyewole028/binance_topdown_full/issues/10) | [Evaluate selected strategy profiles from completed candles](ticket-drafts/08-versioned-causal-strategies.md) | [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | D04 | Published / open |
+| [BT09 #11](https://github.com/adeoyewole028/binance_topdown_full/issues/11) | [Run automation through the same reconciled order lifecycle](ticket-drafts/09-daemon-through-shared-executor.md) | BT07, BT08 | D03 | Published / open |
+| [BT10 #12](https://github.com/adeoyewole028/binance_topdown_full/issues/12) | [Backtest complete historical ranges with causal execution](ticket-drafts/10-historical-causal-replay.md) | BT07, BT08 | D05 | Published / open |
+| [BT11 #13](https://github.com/adeoyewole028/binance_topdown_full/issues/13) | [Report performance from full history and account equity](ticket-drafts/11-durable-account-performance.md) | [BT10 #12](https://github.com/adeoyewole028/binance_topdown_full/issues/12) | D05 | Published / open |
+| [BT12 #14](https://github.com/adeoyewole028/binance_topdown_full/issues/14) | [Keep operator status and settings truthful and accessible](ticket-drafts/12-operator-status-and-settings.md) | [BT11 #13](https://github.com/adeoyewole028/binance_topdown_full/issues/13) | D01 | Published / open |
+| [BT13 #15](https://github.com/adeoyewole028/binance_topdown_full/issues/15) | [Review orders and recover pending or unprotected positions](ticket-drafts/13-reviewable-order-recovery-ui.md) | [BT12 #14](https://github.com/adeoyewole028/binance_topdown_full/issues/14) | None additional | Published / open |
+| [BT14 #16](https://github.com/adeoyewole028/binance_topdown_full/issues/16) | [Package a supported deployment with recovery and CI gates](ticket-drafts/14-operations-ci-and-release.md) | BT09, BT13 | D02, D07 | Published / open |
+| [BT15 #17](https://github.com/adeoyewole028/binance_topdown_full/issues/17) | [Prove integrated paper and Spot testnet acceptance](ticket-drafts/15-integrated-paper-and-sandbox-acceptance.md) | [BT14 #16](https://github.com/adeoyewole028/binance_topdown_full/issues/16) | D07 | Published / open |
+| [BT16 #18](https://github.com/adeoyewole028/binance_topdown_full/issues/18) | [Run authorized canary and close with production evidence](ticket-drafts/16-authorized-rollout-and-closure.md) | [BT15 #17](https://github.com/adeoyewole028/binance_topdown_full/issues/17) | D07 | Published / open |
+
+## Dependency graph
+
+```mermaid
+flowchart TD
+  BT01 --> BT02 --> BT03 --> BT04
+  BT04 --> BT05 --> BT06 --> BT07
+  BT04 --> BT08
+  BT07 --> BT09
+  BT08 --> BT09
+  BT07 --> BT10
+  BT08 --> BT10
+  BT10 --> BT11 --> BT12
+  BT12 --> BT13
+  BT09 --> BT14
+  BT13 --> BT14 --> BT15 --> BT16
+```
+
+Recommended strict sequential order is BT01 through BT16. Only the currently selected ticket may be implemented; dependency independence is not authorization for parallel execution. Technical branch points exist after BT04 (BT05 and BT08) and after BT07/BT08 (BT09 and the replay/accounting branch), but parallel work is not enabled by default. No ticket is execution-ready until its material decisions are resolved and implementation is authorized; seam/breakdown reviews are already approved. BT15 additionally needs isolated deployment/testnet access authorization; BT16 additionally needs explicit rollout/mainnet budget and monitoring approval.
+
+## Approved acceptance seams
+
+1. Operator HTTP request -> durable state -> owned executor -> fake exchange observation -> HTTP status/holdings. One high-level seam covers auth, config/mode, paper/live lifecycle, duplicate/unknown outcomes and recovery. Multi-process and browser acceptance validate behavior above this seam.
+2. Versioned strategy evaluator -> chronological replay -> deterministic fills/accounting, using timestamped completed-bar fixtures and clock. This distinct computational seam proves causality and parity without relying on HTTP helper structure.
+
+Provider acceptance remains a real Spot testnet journey; actual rollout remains separately authorized. These are external proof layers, not an excuse to proliferate helper-level test seams.
+
+## Planning completeness and breakdown review
+
+- All audit A01-A19 and provider PR01-PR07 findings map to requirements and ticket evidence in [traceability](traceability.md).
+- Every R01-R20 has at least one implementation and explicit acceptance owner; validation BT15 covers the integrated matrix.
+- Each draft contains objective/context, scope/components, prerequisite/decision blockers, implementation requirements, observable criteria, tests/checks, regressions/security, migration/rollout, evidence, exclusions and handoff status.
+- Slices are meaningful operator/research journeys. BT01 is a justified regression baseline; BT03 is a necessary ownership/migration foundation; BT14-BT16 are explicit operational and independent verification/rollout gates. No future-ticket implementation is hidden in these prerequisites.
+- Redundant dependencies were removed: BT11 depends on BT10, which transitively covers exchange fills and paper protection; BT12 depends on BT11, BT13 on BT12, and BT14 directly on BT09 and BT13. The remaining direct blockers genuinely gate each slice.
+- Protection follows fill reconciliation; automated daemon and historical replay follow both the shared protection/simulation rules and selected causal evaluator. Metrics follow exchange fills plus approved replay accounting. UI/status follows the metrics/reconciled contracts. Release follows all runtime/UI branches. No cycles.
+- Existing Flask/CCXT, indicator definitions, valid universe/risk/manual workflows and optional sound are protected; unsafe/false states are intentionally corrected. No forced visual or infrastructure rewrite.
+- Seam/breakdown review and publication are verified. Remaining gaps are decision readiness, not unmapped audit findings: D01-D07 require recorded selection/approval; D05 includes exact capital/cost-basis/intrabar/protection limits, D07 includes numeric SLO/backup/canary targets. Those values must enter spec/criteria before affected work starts. D08 is resolved.
+
+## Session handoff
+
+Current implementation ticket: none. Completed acceptance: none for future tickets; only audit defect evidence exists. Source code remains untouched by planning. Published specification: #2. Published tickets: #3-#18 (BT01-BT16). Commits: no planning commit requested/made. Seam/breakdown approval: recorded. Publication and tracker gates: satisfied. Remaining blockers: D01-D07 consequential policy choices; later provider/deployment/mainnet access and authorization.
+
+Next permitted step: resolve material policy decisions for affected tickets and, only on a separate implementation instruction, start BT01 then proceed strictly in dependency order. Publication is complete; do not recreate the spec or issues. Do not repeat the seam/granularity review. This planning request does not authorize feature code changes. When implementation is subsequently requested, read this ledger, verify blockers and work exactly one approved ticket at a time with full gates/review/commit before advancing.
