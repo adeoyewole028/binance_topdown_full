@@ -36,7 +36,7 @@ jobs:
       - name: Baseline lint and type check
         run: |
           python -m pyflakes tests tools/check_baseline.py
-          python -m mypy tests tools/check_baseline.py
+          python -m mypy
 
       - name: Lint (pyflakes)
         run: |

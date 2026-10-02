@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give dashboard workers and the daemon one consistent durable state namespace that survives restart without duplicate ownership.
 **Blocked by:** [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4).
-**Decision blockers:** D06
+**Decision blockers:** None additional; D02 and D06 were selected by the user.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R03, R04, R05.
 
@@ -73,3 +73,7 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 ## Approved decision update
 
 APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized
+
+## Approved decision D06
+
+APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation

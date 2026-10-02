@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import os, signal, time, math
 from datetime import datetime, timedelta
-import ccxt, pandas as pd
+import pandas as pd
+from runtime_environment import RuntimeEnvironment, construct_exchange, load_launcher_environment, parse_boolean
 from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv
 
 running = True
@@ -9,17 +10,12 @@ def signal_handler(sig, frame):
     global running
     print(f"Received signal {sig}, shutting down...")
     running = False
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
 
-def make_exchange(testnet=True):
-    exchange = ccxt.binance({'enableRateLimit': True, 'options': {'defaultType': 'spot'},
-                             'apiKey': os.getenv('API_KEY'), 'secret': os.getenv('API_SECRET')})
-    if testnet:
-        exchange.set_sandbox_mode(True)
-        exchange.urls['api']['public'] = 'https://testnet.binance.vision/api'
-        exchange.urls['api']['private'] = 'https://testnet.binance.vision/api'
-    return exchange
+def make_exchange(testnet=None):
+    runtime = RuntimeEnvironment.from_mapping(os.environ)
+    if testnet is not None and testnet != (runtime.venue == 'testnet'):
+        raise ValueError('Explicit venue contradicts configured venue')
+    return construct_exchange(runtime, private=runtime.mode == 'exchange')
 
 def fetch_ohlcv_df(exchange, symbol, timeframe, limit=500):
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
@@ -99,12 +95,12 @@ class Broker:
         return {'tp': tp, 'sl': sl}
 
 def main_loop():
-    # Load environment from .env if present
-    try:
-        from dotenv import load_dotenv as _ld
-        _ld()
-    except Exception:
-        pass
+    runtime = load_launcher_environment()
+    if not parse_boolean(os.getenv('AUTOMATION_ENABLED', 'false')):
+        raise ValueError('Automation is disabled by default')
+    if runtime.mode != 'paper':
+        # BT09 must attach the daemon to the durable reconciled execution owner.
+        raise ValueError('Exchange automation requires the shared reconciled executor')
     cfg = {
         'BASE_QUOTE': os.getenv('BASE_QUOTE','USDT'),
         'UNIVERSE_SIZE': int(os.getenv('UNIVERSE_SIZE','12')),
@@ -115,15 +111,15 @@ def main_loop():
         'STOP_LOSS_PCT': float(os.getenv('STOP_LOSS_PCT','0.03')),
         'TAKE_PROFIT_PCT': float(os.getenv('TAKE_PROFIT_PCT','0.06')),
         'MIN_24H_QUOTE_VOLUME': float(os.getenv('MIN_24H_QUOTE_VOLUME','10000000')),
-        'PAPER_TRADING': os.getenv('PAPER_TRADING','true').lower()=='true',
-        'TESTNET': os.getenv('TESTNET','true').lower()=='true',
+        'PAPER_TRADING': runtime.mode == 'paper',
+        'TESTNET': runtime.venue == 'testnet',
         'COOLDOWN_MINUTES': int(os.getenv('COOLDOWN_MINUTES','120')),
         'LOOP_INTERVAL_SECONDS': int(os.getenv('LOOP_INTERVAL_SECONDS','300')),
         'WHITELIST': os.getenv('WHITELIST','').split(',') if os.getenv('WHITELIST') else None,
         'BLACKLIST': set(os.getenv('BLACKLIST','').split(',')) if os.getenv('BLACKLIST') else None,
     }
 
-    exchange = make_exchange(testnet=False)  # Switch to mainnet
+    exchange = make_exchange()
     markets = exchange.load_markets()
     broker = Broker(exchange, paper=cfg['PAPER_TRADING'])
 
@@ -191,4 +187,6 @@ def main_loop():
     print('Daemon exiting gracefully.')
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     main_loop()

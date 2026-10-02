@@ -1,13 +1,14 @@
 
 from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response
-import threading
 import time
 import os
 import json
-import ccxt
 import pandas as pd
 from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv
 from datetime import datetime
+from typing import Mapping
+from operator_security import install_operator_security, configure_operator
+from runtime_environment import RuntimeEnvironment, construct_exchange, parse_boolean
 
 # --- Strategy helpers (mirrors topdown_daemon) ---
 def daily_trend_check(df_daily: pd.DataFrame):
@@ -73,27 +74,27 @@ def fetch_ohlcv_df(exchange, symbol: str, timeframe: str, limit: int = 200) -> p
     raise last_err
 
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey123')
+install_operator_security(app)
 
 # Defaults for config (used for reset)
 DEFAULT_CONFIG = {
     'risk': 0.01,
     'max_positions': 5,
     'cooldown': 120,
-    'paper_trading': os.getenv('PAPER_TRADING', 'true').lower() in ('1','true','yes','y'),
-    'near_ema_pct': float(os.getenv('NEAR_EMA_PCT', '0.02')),
-    'rsi_threshold': float(os.getenv('RSI_THRESHOLD', '30')),
-    'rsi_exec_threshold': float(os.getenv('RSI_EXEC_THRESHOLD', '45')),
-    'rsi_overbought': float(os.getenv('RSI_OVERBOUGHT', '70')),
-    'take_profit_pct': float(os.getenv('TAKE_PROFIT_PCT', '0.06')),
-    'stop_loss_pct': float(os.getenv('STOP_LOSS_PCT', '0.03')),
-    'trailing_pct': float(os.getenv('TRAILING_PCT', '0.03')),
-    'universe_size': int(os.getenv('UNIVERSE_SIZE', '12')),
-    'base_quote': os.getenv('BASE_QUOTE', 'USDT'),
+    'paper_trading': True,
+    'near_ema_pct': 0.02,
+    'rsi_threshold': 30.0,
+    'rsi_exec_threshold': 45.0,
+    'rsi_overbought': 70.0,
+    'take_profit_pct': 0.06,
+    'stop_loss_pct': 0.03,
+    'trailing_pct': 0.03,
+    'universe_size': 12,
+    'base_quote': 'USDT',
     'use_dynamic_universe': True,
-    'min_quote_vol': float(os.getenv('MIN_24H_QUOTE_VOLUME', '10000000')),
+    'min_quote_vol': 10000000.0,
     # proxy account equity for risk sizing
-    'equity_proxy': float(os.getenv('EQUITY_PROXY', '1000')),
+    'equity_proxy': 1000.0,
 }
 
 status = {
@@ -123,7 +124,8 @@ DATA_DIR = os.getenv('DATA_DIR', os.path.dirname(__file__))
 CONFIG_PATH = os.path.join(DATA_DIR, 'config.json')
 POSITIONS_PATH = os.path.join(DATA_DIR, 'positions.json')
 
-def load_persisted_config(path: str = CONFIG_PATH):
+def load_persisted_config(path=None):
+    path = CONFIG_PATH if path is None else path
     try:
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
@@ -131,16 +133,17 @@ def load_persisted_config(path: str = CONFIG_PATH):
                 if isinstance(data, dict):
                     return data
     except Exception as e:
-        status['logs'].append(f"Config load error: {e}")
+        status['logs'].append(f"Config load error: {type(e).__name__}")
     return {}
 
-def save_persisted_config(cfg: dict, path: str = CONFIG_PATH):
+def save_persisted_config(cfg: dict, path=None):
+    path = CONFIG_PATH if path is None else path
     try:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(cfg, f, indent=2)
         return True
     except Exception as e:
-        status['logs'].append(f"Config save error: {e}")
+        status['logs'].append(f"Config save error: {type(e).__name__}")
         return False
 
 def coerce_config_types(incoming: dict) -> dict:
@@ -171,7 +174,7 @@ def coerce_config_types(incoming: dict) -> dict:
             if caster is bool:
                 # Accept truthy strings or existing bool
                 if isinstance(v, str):
-                    out[k] = v.strip().lower() in ('1','true','on','yes','y')
+                    out[k] = parse_boolean(v)
                 else:
                     out[k] = bool(v)
             else:
@@ -182,12 +185,10 @@ def coerce_config_types(incoming: dict) -> dict:
     return out
 
 # Load persisted config and merge over defaults
-_persisted = load_persisted_config()
-if _persisted:
-    status['config'].update(coerce_config_types(_persisted))
 
 # --- Positions persistence ---
-def load_positions(path: str = POSITIONS_PATH):
+def load_positions(path=None):
+    path = POSITIONS_PATH if path is None else path
     try:
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
@@ -202,22 +203,20 @@ def load_positions(path: str = POSITIONS_PATH):
                             continue
                     return out
     except Exception as e:
-        status['logs'].append(f"Positions load error: {e}")
+        status['logs'].append(f"Positions load error: {type(e).__name__}")
     return []
 
-def save_positions(positions: list, path: str = POSITIONS_PATH):
+def save_positions(positions: list, path=None):
+    path = POSITIONS_PATH if path is None else path
     try:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(positions, f, indent=2)
         return True
     except Exception as e:
-        status['logs'].append(f"Positions save error: {e}")
+        status['logs'].append(f"Positions save error: {type(e).__name__}")
         return False
 
 # Initialize positions from disk
-_pos = load_positions()
-if _pos:
-    status['open_positions'] = _pos
 
 # --- Exit strategy helpers ---
 def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dict:
@@ -248,7 +247,7 @@ def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dic
             if (prev['rsi'] >= status['config']['rsi_overbought']) and (last['rsi'] < status['config']['rsi_overbought']):
                 reasons.append('rsi_overbought_cross_down_15m')
     except Exception as e:
-        status['logs'].append(f"Exit check 15m error {symbol}: {e}")
+        status['logs'].append(f"Exit check 15m error {symbol}: {type(e).__name__}")
 
     # 1h momentum weakening
     try:
@@ -261,7 +260,7 @@ def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dic
             if (p1['close'] >= p1['ema21']) and (l1['close'] < l1['ema21']) and (l1['rsi'] < p1['rsi']):
                 reasons.append('ema21_break_1h_rsi_down')
     except Exception as e:
-        status['logs'].append(f"Exit check 1h error {symbol}: {e}")
+        status['logs'].append(f"Exit check 1h error {symbol}: {type(e).__name__}")
 
     return {'should_exit': len(reasons) > 0, 'reasons': reasons, 'price': price}
 
@@ -328,15 +327,53 @@ class LocalBroker:
 
 exchange = None
 local_broker = LocalBroker(status)
-def bot_loop():
+
+runtime_environment = None
+
+def initialize_runtime(environment: Mapping[str, str] | None = None) -> Flask:
+    """Explicit web startup; no scanner or exchange requests are started here."""
+    global runtime_environment, DATA_DIR, CONFIG_PATH, POSITIONS_PATH
+    environment = os.environ if environment is None else environment
+    runtime = RuntimeEnvironment.from_mapping(environment)
+    app.config.update(DEBUG=False)
+    configure_operator(app, environment.get('OPERATOR_USERNAME', ''),
+                       environment.get('OPERATOR_PASSWORD_HASH', ''),
+                       environment.get('FLASK_SECRET_KEY', ''), runtime.data_directory,
+                       development=runtime.development)
+    DATA_DIR = str(runtime.data_directory)
+    CONFIG_PATH = str(runtime.data_directory / 'config.json')
+    POSITIONS_PATH = str(runtime.data_directory / 'positions.json')
+    local_broker.trade_log_path = str(runtime.data_directory / 'trades.csv')
+    # Read strategy knobs only after the explicit launcher has loaded .env.
+    defaults = DEFAULT_CONFIG.copy()
+    for key, current in defaults.items():
+        env_name = 'MIN_24H_QUOTE_VOLUME' if key == 'min_quote_vol' else key.upper()
+        if key != 'paper_trading' and environment.get(env_name):
+            value = environment[env_name]
+            defaults[key] = parse_boolean(value) if isinstance(current, bool) else type(current)(value)
+    status['config'] = defaults
+    status['config'].update(coerce_config_types(load_persisted_config(CONFIG_PATH)))
+    # Old persisted flags can never elevate execution mode at startup.
+    status['config']['paper_trading'] = runtime.mode == 'paper'
+    status['open_positions'] = load_positions(POSITIONS_PATH)
+    if runtime.mode == 'exchange' and status['open_positions']:
+        raise ValueError('Legacy exposure requires review before exchange startup')
+    status['bot_status'] = 'Scanner stopped'
+    runtime_environment = runtime
+    return app
+
+def require_exchange_execution():
+    if runtime_environment is None:
+        raise ValueError('Exchange execution is disabled until explicit initialization')
+    runtime_environment.require_exchange()
+    if runtime_environment.mode != 'exchange':
+        raise ValueError('Restart with a reviewed exchange namespace before execution')
+def bot_loop() -> None:
     symbols = ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
     global exchange
-    exchange = ccxt.binance({
-        'apiKey': os.getenv('API_KEY'),
-        'secret': os.getenv('API_SECRET'),
-        'enableRateLimit': True,
-        'options': {'defaultType': 'spot'}
-    })
+    if runtime_environment is None:
+        raise RuntimeError('Explicit runtime initialization is required')
+    exchange = construct_exchange(runtime_environment, private=not status['config']['paper_trading'])
     while True:
         now = time.strftime('%Y-%m-%d %H:%M:%S')
         status['last_scan'] = now
@@ -356,7 +393,7 @@ def bot_loop():
                 candidates.sort(key=lambda x: x[1], reverse=True)
                 symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
             except Exception as e:
-                status['logs'].append(f"Universe error: {e}")
+                status['logs'].append(f"Universe error: {type(e).__name__}")
         status['universe'] = symbols
         # Fetch live prices (with retries)
         try:
@@ -376,7 +413,7 @@ def bot_loop():
             status['live_prices'] = {s: tickers[s]['last'] for s in symbols}
         except Exception as e:
             status['live_prices'] = {s: 'N/A' for s in symbols}
-            status['logs'].append(f"Error fetching prices: {e}")
+            status['logs'].append(f"Error fetching prices: {type(e).__name__}")
         # Update P&L for local open positions
         for pos in status['open_positions']:
             sym = pos['symbol']
@@ -423,7 +460,7 @@ def bot_loop():
             status['performance']['total_profit'] = round(total_profit, 4)
             status['performance']['drawdown'] = round(drawdown, 2)
         except Exception as e:
-            status['logs'].append(f"Perf calc error: {e}")
+            status['logs'].append(f"Perf calc error: {type(e).__name__}")
         # Multi-timeframe signal gating: 4h trend + 1h bias + 15m execution
         detected_signals = []
         for symbol in symbols:
@@ -448,7 +485,7 @@ def bot_loop():
                         f"NoSignal {symbol}: 4hTrend={trend4h['bullish']} nearEMA1h={bias1h['near_ma']} RSI1h={bias1h['rsi']:.2f} exec={exec15['signal']}"
                     )
             except Exception as e:
-                status['logs'].append(f"Signal error for {symbol}: {e}")
+                status['logs'].append(f"Signal error for {symbol}: {type(e).__name__}")
         status['signals'] = detected_signals
         # Simulate cooldowns
         # Build exit signals for open positions
@@ -476,6 +513,11 @@ def trade():
     symbol = request.form.get('symbol')
     side = request.form.get('side')
     qty = request.form.get('qty')
+    if not status['config']['paper_trading']:
+        try:
+            require_exchange_execution()
+        except ValueError:
+            return jsonify(error='Exchange execution is disabled by server policy'), 403
     try:
         if status['config']['paper_trading']:
             order = local_broker.create_order(symbol, side, float(qty))
@@ -484,14 +526,19 @@ def trade():
         flash(f"Trade executed: {order}", "success")
         status['logs'].append(f"Trade executed: {order}")
     except Exception as e:
-        flash(f"Trade error: {e}", "error")
-        status['logs'].append(f"Trade error: {e}")
+        flash('Trade failed; review operator status.', "error")
+        status['logs'].append(f"Trade error: {type(e).__name__}")
     return redirect('/')
 
 @app.route('/close', methods=['POST'])
 def close_position():
     symbol = request.form.get('symbol')
     qty = request.form.get('qty')
+    if not status['config']['paper_trading']:
+        try:
+            require_exchange_execution()
+        except ValueError:
+            return jsonify(error='Exchange execution is disabled by server policy'), 403
     try:
         q = float(qty)
     except Exception:
@@ -509,8 +556,8 @@ def close_position():
         flash(f"Closed {symbol}: {order}", 'success')
         status['logs'].append(f"Closed {symbol}: {order}")
     except Exception as e:
-        flash(f"Close error for {symbol}: {e}", 'error')
-        status['logs'].append(f"Close error for {symbol}: {e}")
+        flash('Close failed; review operator status.', 'error')
+        status['logs'].append(f"Close error: {type(e).__name__}")
     return redirect('/')
 
 @app.route('/api/status', methods=['GET'])
@@ -525,20 +572,25 @@ def api_status():
         'performance': status['performance'],
         'config': status['config'],
         'live_prices': status['live_prices'],
+        'execution_mode': 'paper' if status['config']['paper_trading'] else 'exchange',
+        'venue': runtime_environment.venue if runtime_environment else 'unconfigured',
+        'exchange_allowed': runtime_environment.allow_exchange if runtime_environment else False,
     }
     resp = make_response(jsonify(payload), 200)
-    resp.headers['Access-Control-Allow-Origin'] = '*'
     return resp
 
 @app.route('/update-config', methods=['POST'])
 def update_config():
     # Build dict from form fields, then coerce types
     form = request.form.to_dict(flat=True)
-    # Only accept known keys, but handle booleans even if unchecked (missing => False)
+    # Absence always means preserve; safety mode is a separate reviewed action.
     updates = {k: v for k, v in form.items() if k in status['config']}
-    for bk in ('paper_trading', 'use_dynamic_universe'):
-        if bk in status['config']:
-            updates[bk] = '1' if form.get(bk) is not None else '0'
+    if 'paper_trading' in updates:
+        try:
+            if parse_boolean(updates['paper_trading']) != status['config']['paper_trading']:
+                return jsonify(error='Use a reviewed execution mode transition'), 409
+        except ValueError:
+            return jsonify(error='Invalid execution mode'), 400
     coerced = coerce_config_types(updates)
     # Merge into status
     status['config'].update(coerced)
@@ -552,12 +604,28 @@ def update_config():
 @app.route('/reset-config', methods=['POST'])
 def reset_config():
     # Reset to DEFAULT_CONFIG and persist
+    paper = status['config']['paper_trading']
     status['config'] = DEFAULT_CONFIG.copy()
+    status['config']['paper_trading'] = paper
     ok = save_persisted_config(status['config'])
     if ok:
         flash('Configuration reset to defaults.', 'success')
     else:
         flash('Reset failed to save; defaults applied in memory.', 'error')
+    return redirect(url_for('dashboard'))
+
+@app.post('/change-mode')
+def change_mode():
+    mode = request.form.get('mode')
+    if mode not in {'paper', 'exchange'}:
+        return jsonify(error='Invalid execution mode'), 400
+    current = 'paper' if status['config']['paper_trading'] else 'exchange'
+    if request.form.get('expected_mode') != current or request.form.get('confirmation') != mode:
+        return jsonify(error='Review and confirm the current execution mode'), 409
+    if mode != current:
+        # Actual cross-namespace transitions require BT03 durable recovery and
+        # account reconciliation. Never reinterpret legacy positions as holdings.
+        return jsonify(error='Mode transition requires isolated state and account reconciliation; restart after review'), 409
     return redirect(url_for('dashboard'))
 
 @app.route('/', methods=['GET'])
@@ -576,6 +644,11 @@ def dashboard():
             <header class="bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-800">
                 <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
                     <h1 class="text-xl font-semibold">Binance Topdown Bot</h1>
+                    <span>Mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }} / {{ venue }}</span>
+                    <form method="post" action="/logout">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Sign out</button>
+                    </form>
                     <div class="flex items-center gap-2">
                         <button id="soundToggle" class="px-2 py-1 rounded border border-slate-700 text-xs text-slate-200 hover:bg-slate-800">Sound: Off</button>
                         <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['bot_status']=='Running' else 'bg-rose-600 text-white' }}">
@@ -726,6 +799,7 @@ def dashboard():
                                         </td>
                                         <td class="py-2">
                                             <form method="post" action="/close" class="inline-flex">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                 <input type="hidden" name="symbol" value="{{ es['symbol'] }}">
                                                 <input type="hidden" name="qty" value="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}">
                                                 <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
@@ -746,6 +820,7 @@ def dashboard():
                     <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                         <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
                                     <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <label class="text-sm">Symbol
                                             {% if status['universe'] %}
                                                 <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol">
@@ -782,6 +857,7 @@ def dashboard():
                             {% endwith %}
                         </div>
                         <form method="post" action="/reset-config" class="mt-3">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="px-3 py-2 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs">Reset to defaults</button>
                         </form>
                     </div>
@@ -805,6 +881,7 @@ def dashboard():
                         <div class="mt-4">
                             <h3 class="text-sm font-semibold text-slate-300">Config</h3>
                             <form method="post" action="/update-config" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 text-sm">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <label>risk
                                     <input name="risk" type="number" step="0.001" min="0" max="1" value="{{ status['config']['risk'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
@@ -814,9 +891,8 @@ def dashboard():
                                 <label>cooldown
                                     <input name="cooldown" type="number" step="1" min="0" value="{{ status['config']['cooldown'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
-                                <label class="flex items-center gap-2">paper_trading
-                                    <input name="paper_trading" type="checkbox" value="1" {% if status['config']['paper_trading'] %}checked{% endif %} class="mt-1 rounded border-slate-700" />
-                                </label>
+                                <p>Execution mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }}.
+                                    Mode and venue changes require isolated state and account review.</p>
                                 <label>near_ema_pct
                                     <input name="near_ema_pct" type="number" step="0.001" min="0" value="{{ status['config']['near_ema_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
@@ -845,7 +921,10 @@ def dashboard():
                                     <input name="base_quote" type="text" value="{{ status['config']['base_quote'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
                                 <label class="flex items-center gap-2">use_dynamic_universe
-                                    <input name="use_dynamic_universe" type="checkbox" value="1" {% if status['config']['use_dynamic_universe'] %}checked{% endif %} class="mt-1 rounded border-slate-700" />
+                                    <select name="use_dynamic_universe" class="mt-1 rounded border-slate-700">
+                                        <option value="true" {% if status['config']['use_dynamic_universe'] %}selected{% endif %}>Enabled</option>
+                                        <option value="false" {% if not status['config']['use_dynamic_universe'] %}selected{% endif %}>Disabled</option>
+                                    </select>
                                 </label>
                                 <label>min_quote_vol
                                     <input name="min_quote_vol" type="number" step="1000" min="0" value="{{ status['config']['min_quote_vol'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
@@ -980,7 +1059,7 @@ def dashboard():
                             for (const id of newOnes) {
                                 const parts = id.split('|');
                                 const sym = parts[0], t = parts[1], typ = parts[2];
-                                showToast(`<span class="font-semibold">Signal</span> — ${sym} <span class="text-slate-400">(${typ})</span><br><span class="text-slate-400 text-xs">${t}</span>`);
+                                showToast(`<span class="font-semibold">Signal</span> â€” ${sym} <span class="text-slate-400">(${typ})</span><br><span class="text-slate-400 text-xs">${t}</span>`);
                             }
                             playBeep();
                         }
@@ -1013,17 +1092,21 @@ def dashboard():
                     </script>
         </body>
         </html>
-    ''', status=status)
+    ''', status=status, venue=runtime_environment.venue if runtime_environment else 'unconfigured')
 
 if __name__ == '__main__':
-    # Local/dev run: start bot and Flask dev server
-    threading.Thread(target=bot_loop, daemon=True).start()
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=True)
-else:
-    # Production (WSGI): Flask 3.x removed before_first_request; start once at import time.
-    try:
-        if not globals().get('_bot_started', False):
-            threading.Thread(target=bot_loop, daemon=True).start()
-            globals()['_bot_started'] = True
-    except Exception:
-        pass
+    import argparse
+    from runtime_environment import load_launcher_environment
+    parser = argparse.ArgumentParser(description='Isolated development operator server')
+    parser.add_argument('--scan', action='store_true', help='Explicitly start the local paper scanner in this process')
+    arguments = parser.parse_args()
+    load_launcher_environment()
+    initialize_runtime()
+    if not runtime_environment.development:
+        raise ValueError('Use the production WSGI launcher for production')
+    if arguments.scan:
+        if runtime_environment.mode != 'paper':
+            raise ValueError('Development scanner requires paper mode')
+        import threading
+        threading.Thread(target=bot_loop, daemon=True).start()
+    app.run(host='127.0.0.1', port=int(os.getenv('PORT', 5000)), debug=False, use_reloader=False)

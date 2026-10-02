@@ -1,12 +1,10 @@
-"""Temporary BT01 adapter for the legacy HTTP and evaluator test seams.
+"""Disposable operator/evaluator boundary with real, unmodified normal imports.
 
-Only legacy startup branches and daemon signal registration are stripped, as in
-the original audit. This is characterization, not proof of safe normal imports.
-The transport/credential/write guards remain active even for normal-import tests.
+Transport/credential/write guards stay active; only fake keys and temp state exist.
+BT02 removed the AST startup workaround originally recorded in BT01 evidence.
 """
 from __future__ import annotations
 
-import ast
 import builtins
 from contextlib import ExitStack
 import io
@@ -14,14 +12,17 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import re
 from types import ModuleType, TracebackType
 from typing import Any, Literal, Self
 from unittest.mock import patch
 
 from flask.testing import FlaskClient
 import pandas as pd  # Load dependency before temporarily blocking thread startup.
+from werkzeug.security import generate_password_hash
 
 ROOT = Path(__file__).resolve().parents[1]
+OFFLINE_PASSWORD_HASH = generate_password_hash('offline-password')
 
 
 class OfflineViolation(RuntimeError):
@@ -35,6 +36,10 @@ class FakeExchange:
         self.holdings: dict[str, float] = {}
         self.prices: dict[str, float] = {}
         self.orders: list[dict[str, Any]] = []
+        self.sandbox = False
+
+    def set_sandbox_mode(self, enabled: bool) -> None:
+        self.sandbox = enabled
 
     def create_order(
         self, symbol: str, order_type: str, side: str, qty: float,
@@ -55,7 +60,8 @@ class FakeExchange:
 
 
 class LegacySandbox:
-    def __init__(self, data_directory: Path | None = None) -> None:
+    def __init__(self, data_directory: Path | None = None, *, authenticated: bool = True,
+                 environment: dict[str, str] | None = None) -> None:
         self.stack = ExitStack()
         self.provided_directory = data_directory
         self.exchange = FakeExchange()
@@ -69,6 +75,9 @@ class LegacySandbox:
         self.module = ModuleType('not_loaded')
         self.client: FlaskClient
         self.directory: Path
+        self.authenticated = authenticated
+        self.environment = environment or {}
+        self.csrf = ''
 
     def __enter__(self) -> Self:
         try:
@@ -78,8 +87,11 @@ class LegacySandbox:
             self.directory.mkdir(parents=True, exist_ok=True)
             self.stack.enter_context(patch.dict(os.environ, {
                 'DATA_DIR': str(self.directory), 'PAPER_TRADING': 'true',
-                'FLASK_SECRET_KEY': 'offline-session-key',
-                'API_KEY': 'offline-key', 'API_SECRET': 'offline-secret',
+                'APP_ENV': 'development',
+                'FLASK_SECRET_KEY': 'offline-session-secret-with-32-characters',
+                'OPERATOR_USERNAME': 'operator', 'OPERATOR_PASSWORD_HASH': OFFLINE_PASSWORD_HASH,
+                'BINANCE_TESTNET_API_KEY': 'offline-key', 'BINANCE_TESTNET_API_SECRET': 'offline-secret',
+                **self.environment,
             }, clear=True))
             self.stack.enter_context(patch.object(sys, 'dont_write_bytecode', True))
             fake_ccxt = ModuleType('ccxt')
@@ -99,10 +111,13 @@ class LegacySandbox:
             self.stack.enter_context(patch('io.open', self._guarded_io_open))
             self.stack.enter_context(patch('os.mkdir', self._guarded_mkdir))
             self.module = self.load_module('dashboard')
+            self.module.initialize_runtime()
             self.module.local_broker.trade_log_path = str(self.directory / 'trades.csv')
             self.module.__dict__['exchange'] = self.exchange
             self.module.app.config['TESTING'] = True
             self.client = self.module.app.test_client()
+            if self.authenticated:
+                self.login()
             return self
         except BaseException:
             self.stack.close()
@@ -151,24 +166,28 @@ class LegacySandbox:
         *, normal_import: bool = False,
     ) -> ModuleType:
         path = ROOT / f'{name}.py'
-        tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-        if not normal_import and name != 'utils':
-            tail = tree.body[-1]
-            if not isinstance(tail, ast.If) or ast.unparse(tail.test) != "__name__ == '__main__'":
-                raise OfflineViolation('Legacy startup changed; re-review this temporary adapter')
-            tree.body.pop()
-            self.removed_startup.append(f'{name}: terminal startup branch')
-        if name == 'topdown_daemon':
-            tree.body = [node for node in tree.body if not (
-                isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
-                and ast.unparse(node.value.func) == 'signal.signal'
-            )]
-            self.removed_startup.append('topdown_daemon: signal handler registration')
+        source = path.read_text(encoding='utf-8')
         module = ModuleType(f'bt01_{name}')
         module.__file__ = str(path)
         self.stack.enter_context(patch.dict(sys.modules, {module.__name__: module}))
-        exec(compile(tree, str(path), 'exec'), module.__dict__)
+        exec(compile(source, str(path), 'exec'), module.__dict__)
         return module
+
+    def login(self) -> None:
+        page = self.client.get('/login').get_data(as_text=True)
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page)
+        assert token is not None
+        response = self.client.post('/login', data={
+            'username': 'operator', 'password': 'offline-password', 'csrf_token': token[1],
+        })
+        assert response.status_code == 302
+        page = self.client.get('/').get_data(as_text=True)
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page)
+        assert token is not None
+        self.csrf = token[1]
+
+    def post(self, route: str, *, data: dict[str, str]) -> Any:
+        return self.client.post(route, data={**data, 'csrf_token': self.csrf})
 
     def seed_price(self, symbol: str, price: float) -> None:
         """Legacy fixture provisioning; assertions use HTTP/provider boundaries."""

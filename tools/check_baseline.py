@@ -19,10 +19,15 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='Optional redacted JSON evidence file')
+    parser.add_argument('--ticket', default='offline regression suite', help='Ticket owning this validation snapshot')
     args = parser.parse_args()
     environment = os.environ.copy()
-    for name in ('API_KEY', 'API_SECRET', 'BINANCE_API_KEY', 'BINANCE_API_SECRET', 'FLASK_SECRET_KEY', 'DATA_DIR'):
-        environment.pop(name, None)
+    for name in tuple(environment):
+        if name.startswith(('BINANCE_', 'OPERATOR_', 'ALLOW_', 'TRADING_')) or name in (
+            'API_KEY', 'API_SECRET', 'FLASK_SECRET_KEY', 'DATA_DIR', 'APP_ENV', 'FLASK_ENV',
+            'FLASK_DEBUG', 'FLASK_RUN_DEBUG', 'FLASK_RUN_RELOAD', 'PAPER_TRADING', 'TESTNET', 'CREDENTIAL_VENUE',
+        ):
+            environment.pop(name, None)
     environment['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
     with tempfile.TemporaryDirectory(prefix='bt01-report-') as directory:
         report = Path(directory) / 'junit.xml'
@@ -40,16 +45,16 @@ def main() -> int:
                 xfails.append(case.attrib['name'])
         other_skips = sum(case.find('skipped') is not None for case in cases) - len(xfails)
         evidence = {
-            'ticket': 'BT01 / GitHub #3', 'scope': 'offline characterization, not production safety',
-            'source_revision': 'a71999a136b2532e4c84ce53564a98efcf9a77fb',
+            'ticket': args.ticket, 'scope': 'offline behavior and safety checks; not deployed/provider acceptance',
+            'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             'python': platform.python_version(),
             'dependencies': {name: version(name) for name in ('ccxt', 'pandas', 'Flask', 'gunicorn', 'python-dotenv', 'pytest', 'pyflakes', 'mypy')},
-            'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in ('dashboard.py', 'topdown_daemon.py', 'backtester.py', 'utils.py')},
+            'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in ('dashboard.py', 'topdown_daemon.py', 'backtester.py', 'utils.py', 'operator_security.py', 'runtime_environment.py', 'wsgi.py', 'run_scanner.py')},
             'fixture_sha256': hashlib.sha256((ROOT / 'tests/fixtures/legacy_strategy_v1.json').read_bytes()).hexdigest(),
             'tests': len(cases), 'passed': len(cases) - failures - len(xfails) - other_skips,
             'known_defects_expected_failure': xfails, 'failures': failures,
             'other_skips': other_skips, 'pytest_exit_code': result.returncode,
-            'boundaries': 'Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; no normal startup except guarded defect test.',
+            'boundaries': 'Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; unmodified normal imports; explicit guarded launch checks.',
         }
     print(json.dumps(evidence, indent=2))
     if args.output:

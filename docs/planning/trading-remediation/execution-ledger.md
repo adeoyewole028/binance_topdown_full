@@ -4,9 +4,9 @@ Date: 2026-10-02. Source revision: a71999a136b2532e4c84ce53564a98efcf9a77fb.
 
 ## Current stage
 
-Research/discovery complete within recorded static/offline/provider evidence boundaries. The user approved both test boundaries and the complete 16-ticket granularity/dependency breakdown on 2026-10-02. Tracker selection/publication is now resolved to repository GitHub Issues. Specification #2 and 16 tickets are published and verified with 18 native dependency edges. D05-D07 remain unresolved; BT01 is implemented and closed; no deployment or trading has been performed.
+Research/discovery complete within recorded static/offline/provider evidence boundaries. The user approved both test boundaries and the complete 16-ticket granularity/dependency breakdown on 2026-10-02. Tracker selection/publication is now resolved to repository GitHub Issues. Specification #2 and 16 tickets are published and verified with 18 native dependency edges. D05 and D07 remain unresolved; BT01 is implemented and closed; no deployment or trading has been performed.
 
-Approval evidence: the user replied "approve" to the explicit request to approve the two test boundaries and ticket granularity/dependency breakdown. It supplies that approval once; do not ask for it again. The subsequent user instruction "go on" authorized continuation; the agent announced and used the existing repository GitHub Issues destination. It also does not supply D05-D07 policy selections or rollout authorization.
+Approval evidence: the user replied "approve" to the explicit request to approve the two test boundaries and ticket granularity/dependency breakdown. It supplies that approval once; do not ask for it again. The subsequent user instruction "go on" authorized continuation; the agent announced and used the existing repository GitHub Issues destination. It also does not supply D05 and D07 policy selections or rollout authorization.
 
 Authoritative source inputs: existing end-to-end audit A01-A19 and provider research PR01-PR07. Current proposed spec: [implementation-spec.md](implementation-spec.md). Do not create another competing spec on resume; revise this one with decision/evidence history.
 
@@ -14,7 +14,7 @@ Authoritative source inputs: existing end-to-end audit A01-A19 and provider rese
 
 Tracker: GitHub Issues for adeoyewole028/binance_topdown_full; label ready-for-agent. [Published specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2). [Tracker configuration](tracker-config.md) records the continuation authorization and destination. [Publication manifest](publication.json) records all issue IDs, URLs and dependencies. GitHub issues are ticket status truth; local files remain mirrors/evidence.
 
-All 16 approved slices were published in dependency order, read back and verified as open with complete bodies and explicit decision blockers. Native blocking links and body references match the 18 approved edges. No parent issue was closed or edited because the children were created. This label is triage, not permission to start blocked work. D05-D07 and external provider/rollout gates remain explicit.
+All 16 approved slices were published in dependency order, read back and verified as open with complete bodies and explicit decision blockers. Native blocking links and body references match the 18 approved edges. No parent issue was closed or edited because the children were created. This label is triage, not permission to start blocked work. D05 and D07 and external provider/rollout gates remain explicit.
 
 ## Approved ordered ticket breakdown
 
@@ -22,7 +22,7 @@ All 16 approved slices were published in dependency order, read back and verifie
 |---|---|---|---|---|
 | [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | [Establish safe regression and acceptance baselines](ticket-drafts/01-offline-regression-baseline.md) | None | None additional | Complete / closed |
 | [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | [Secure control access and explicit environment transitions](ticket-drafts/02-secure-control-and-environment.md) | [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | D01 approved | Published / open |
-| [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | [Recover isolated state under one execution owner](ticket-drafts/03-durable-runtime-and-migration.md) | [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | D06 | Published / open |
+| [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | [Recover isolated state under one execution owner](ticket-drafts/03-durable-runtime-and-migration.md) | [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | D02/D06 approved | Published / open |
 | [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | [Expose fresh market data and supervised scan health](ticket-drafts/04-fresh-supervised-market-data.md) | [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | D07 | Published / open |
 | [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7) | [Execute credible paper orders within capital and risk limits](ticket-drafts/05-validated-paper-and-risk.md) | [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | D05 | Published / open |
 | [BT06 #8](https://github.com/adeoyewole028/binance_topdown_full/issues/8) | [Dispatch exchange orders with durable fill reconciliation](ticket-drafts/06-live-intents-and-reconciliation.md) | [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7) | D05 | Published / open |
@@ -72,17 +72,17 @@ Provider acceptance remains a real Spot testnet journey; actual rollout remains 
 - Redundant dependencies were removed: BT11 depends on BT10, which transitively covers exchange fills and paper protection; BT12 depends on BT11, BT13 on BT12, and BT14 directly on BT09 and BT13. The remaining direct blockers genuinely gate each slice.
 - Protection follows fill reconciliation; automated daemon and historical replay follow both the shared protection/simulation rules and selected causal evaluator. Metrics follow exchange fills plus approved replay accounting. UI/status follows the metrics/reconciled contracts. Release follows all runtime/UI branches. No cycles.
 - Existing Flask/CCXT, indicator definitions, valid universe/risk/manual workflows and optional sound are protected; unsafe/false states are intentionally corrected. No forced visual or infrastructure rewrite.
-- Seam/breakdown review and publication are verified. Remaining gaps are decision readiness, not unmapped audit findings: D05-D07 require recorded selection/approval; D05 includes exact capital/cost-basis/intrabar/protection limits, D07 includes numeric SLO/backup/canary targets. Those values must enter spec/criteria before affected work starts. D08 is resolved.
+- Seam/breakdown review and publication are verified. Remaining gaps are decision readiness, not unmapped audit findings: D05 and D07 require recorded selection/approval; D05 includes exact capital/cost-basis/intrabar/protection limits, D07 includes numeric SLO/backup/canary targets. Those values must enter spec/criteria before affected work starts. D08 is resolved.
 
 ## Session handoff
 
-Current ticket: BT01 complete and issue #3 closure verified; BT02 is current. BT01: 39 cases (29 pass, 10 known-defect strict xfails), type/lint/source compile checks pass, Standards/Spec review 0 findings, implementation commit 8fed3dca4d6f42386541ee0af4b20f72e702968b. Application source is unchanged by the baseline. Published specification: #2. Published tickets: #3-#18 (BT01-BT16). Planning commit: 4d7506d7da06b5f76e33f0d2a1a6caaa25770884. Baseline implementation commit: 8fed3dca4d6f42386541ee0af4b20f72e702968b. Seam/breakdown approval: recorded. Publication and tracker gates: satisfied. Remaining blockers: D05-D07 consequential policy choices; later provider/deployment/mainnet access and authorization.
+Current ticket: BT01 complete and issue #3 closure verified; BT02 is current. BT01: 39 cases (29 pass, 10 known-defect strict xfails), type/lint/source compile checks pass, Standards/Spec review 0 findings, implementation commit 8fed3dca4d6f42386541ee0af4b20f72e702968b. Application source is unchanged by the baseline. Published specification: #2. Published tickets: #3-#18 (BT01-BT16). Planning commit: 4d7506d7da06b5f76e33f0d2a1a6caaa25770884. Baseline implementation commit: 8fed3dca4d6f42386541ee0af4b20f72e702968b. Seam/breakdown approval: recorded. Publication and tracker gates: satisfied. Remaining blockers: D05 and D07 consequential policy choices; later provider/deployment/mainnet access and authorization.
 
 Next permitted step: resolve material policy decisions for affected tickets and, only on a separate implementation instruction, start BT01 then proceed strictly in dependency order. Publication is complete; do not recreate the spec or issues. Do not repeat the seam/granularity review. The user subsequently authorized strict implementation; feature work now follows the ticket gates. When implementation is subsequently requested, read this ledger, verify blockers and work exactly one approved ticket at a time with full gates/review/commit before advancing.
 
 ## Approved decision update
 
-D01: the user selected a single configured operator with a password, secure session and CSRF on 2026-10-02. The specification and affected GitHub tickets #4/#14 record it. Remaining material decisions are D05-D07.
+D01: the user selected a single configured operator with a password, secure session and CSRF on 2026-10-02. The specification and affected GitHub tickets #4/#14 record it. Remaining material decisions are D05 and D07.
 
 ## BT01 completion evidence
 
@@ -90,4 +90,8 @@ All four criteria are satisfied; see [validation](evidence/bt01-validation.md) a
 
 ## Continuation on 2026-10-02
 
-BT01 #3 closed and read-back verified after all acceptance gates. BT02 #4 is the sole current ticket; fixed point will be the bookkeeping commit preceding its implementation. User selected D02 single-host SQLite/single owner, D03 explicit disabled automation, D04 both named/versioned profiles. Specification #2, affected issues and publication manifest updated. D05-D07 remain unresolved. No push or deployment performed.
+BT01 #3 closed and read-back verified after all acceptance gates. BT02 #4 is the sole current ticket; fixed point will be the bookkeeping commit preceding its implementation. User selected D02 single-host SQLite/single owner, D03 explicit disabled automation, D04 both named/versioned profiles. Specification #2, affected issues and publication manifest updated. D05 and D07 remain unresolved. No push or deployment performed.
+
+D06 approved on 2026-10-03: keep all legacy snapshots quarantined/read-only until each paper origin is confirmed; exchange balances/holdings require reconciliation. Spec #2 and BT03 #5 updated. BT02 is still the sole active implementation ticket.
+
+BT02 validation on 2026-10-03: full offline suite 76 cases, 69 pass/7 strict later-ticket expected failures; 13-source strict type check and repository lint pass. BT02 acceptance implemented; independent Standards/Spec reviews and closure are pending. All changes stay within access/environment/launch scope. D06 selection was recorded as authorized change control, with no BT03 code started.

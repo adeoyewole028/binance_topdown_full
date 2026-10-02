@@ -5,7 +5,6 @@
   "implementation": "BT01 complete and closed; BT02 next",
   "decision_blockers": [
     "D05",
-    "D06",
     "D07"
   ],
   "tickets": [
@@ -45,9 +44,7 @@
       "blocked_by": [
         "BT02"
       ],
-      "decision_blockers": [
-        "D06"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT02"
       ],
@@ -286,6 +283,7 @@
     "D01": "single configured operator, password hash, secure session, CSRF and login throttling; user selection on 2026-10-02",
     "D02": "APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized",
     "D03": "APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automation, disabled by default; both use the same executor",
-    "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection"
+    "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection",
+    "D06": "APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation"
   }
 }
