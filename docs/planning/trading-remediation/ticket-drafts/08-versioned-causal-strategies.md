@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce reproducible strategy signals from the same as-of inputs across runtime and replay.
 **Blocked by:** [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6).
-**Decision blockers:** D04.
+**Decision blockers:** None additional; applicable choices approved by the user on 2026-10-02.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R12, R06.
 
@@ -68,3 +68,7 @@ Strategy optimization, new indicators, silently deprecating a profile.
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
 
+
+## Approved decision update
+
+APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection

@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce a reproducible, continuously supervised release with tested restore and one verification-gated deployment owner.
 **Blocked by:** [BT09 #11](https://github.com/adeoyewole028/binance_topdown_full/issues/11), [BT13 #15](https://github.com/adeoyewole028/binance_topdown_full/issues/15).
-**Decision blockers:** D02, D07.
+**Decision blockers:** D07
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R18, R19, R05, R04.
 
@@ -68,3 +68,7 @@ Spending/hosting activation without approval, customer custody/hyperscale infras
 ## Execution record
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+
+## Approved decision update
+
+APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized

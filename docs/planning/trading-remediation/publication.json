@@ -2,11 +2,8 @@
   "tracker": "GitHub Issues",
   "repository": "adeoyewole028/binance_topdown_full",
   "date": "2026-10-02",
-  "implementation": "not started",
+  "implementation": "BT01 complete and closed; BT02 next",
   "decision_blockers": [
-    "D02",
-    "D03",
-    "D04",
     "D05",
     "D06",
     "D07"
@@ -21,7 +18,8 @@
       "blocked_by": [],
       "decision_blockers": [],
       "native_dependencies": [],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "completed and read-back verified after all acceptance, review and commit gates",
+      "state": "CLOSED"
     },
     {
       "planning_id": "BT02",
@@ -48,7 +46,6 @@
         "BT02"
       ],
       "decision_blockers": [
-        "D02",
         "D06"
       ],
       "native_dependencies": [
@@ -133,9 +130,7 @@
       "blocked_by": [
         "BT04"
       ],
-      "decision_blockers": [
-        "D04"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT04"
       ],
@@ -151,9 +146,7 @@
         "BT07",
         "BT08"
       ],
-      "decision_blockers": [
-        "D03"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT07",
         "BT08"
@@ -237,7 +230,6 @@
         "BT13"
       ],
       "decision_blockers": [
-        "D02",
         "D07"
       ],
       "native_dependencies": [
@@ -291,6 +283,9 @@
   "publication_status": "published and read-back verified",
   "native_dependency_edges": 18,
   "approved_decisions": {
-    "D01": "single configured operator, password hash, secure session, CSRF and login throttling; user selection on 2026-10-02"
+    "D01": "single configured operator, password hash, secure session, CSRF and login throttling; user selection on 2026-10-02",
+    "D02": "APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized",
+    "D03": "APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automation, disabled by default; both use the same executor",
+    "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection"
   }
 }

@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give dashboard workers and the daemon one consistent durable state namespace that survives restart without duplicate ownership.
 **Blocked by:** [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4).
-**Decision blockers:** D02, D06.
+**Decision blockers:** D06
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R03, R04, R05.
 
@@ -69,3 +69,7 @@ Mainnet reconciliation implementation, distributed platform or new custody model
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
 
+
+## Approved decision update
+
+APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized

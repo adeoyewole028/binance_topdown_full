@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** complete; all baseline acceptance and review gates passed. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give remediation a reproducible offline baseline for legitimate journeys and known failures before behavior changes.
 **Blocked by:** None (baseline has no ticket prerequisite).
 **Decision blockers:** None additional; implementation requires a separate instruction.
@@ -30,10 +30,10 @@ Dashboard HTTP journey, strategy utilities, daemon/replay entry points, CI.
 
 ## Acceptance criteria
 
-- [ ] Offline baseline and fixture generation make zero exchange requests and create no production state.
-- [ ] Golden inputs establish exact legacy EMA, rolling RSI, close-pivot, hammer and engulfing outputs and valid profile differences.
-- [ ] Anonymous control, partial-mode update, invalid qty, missing price, duplicate submission and live-position divergence have reproducible defect cases; remediation expectations are explicit.
-- [ ] Source/CI side effects and missing behavioral-suite baseline are documented; fixture/result provenance and baseline review are recorded.
+- [x] Offline baseline and fixture generation make zero exchange requests and create no production state.
+- [x] Golden inputs establish exact legacy EMA, rolling RSI, close-pivot, hammer and engulfing outputs and valid profile differences.
+- [x] Anonymous control, partial-mode update, invalid qty, missing price, duplicate submission and live-position divergence have reproducible defect cases; remediation expectations are explicit.
+- [x] Source/CI side effects and missing behavioral-suite baseline are documented; fixture/result provenance and baseline review are recorded.
 
 ## Testing and validation
 
@@ -65,5 +65,4 @@ Behavior remediation, live/sandbox acceptance, architecture selection.
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
-
+Complete on 2026-10-02. Offline suite: 39 cases, 29 passed, 10 strict expected known-defect failures, zero unexpected failures/skips. Known failures belong to later remediation tickets and do not count as passing safety acceptance. Mypy passed 7 sources; repository-wide Pyflakes and compilation of all four application modules passed. Two independent Standards/Spec reviews returned zero actionable findings; Spec independently reran the baseline. All four acceptance criteria are mapped in docs/planning/trading-remediation/evidence/bt01-validation.md; sanitized versions and hashes in bt01-baseline.json. Implementation commit: 8fed3dca4d6f42386541ee0af4b20f72e702968b. Review/evidence bookkeeping: 50a764b0375678b2db740e93d62d19a6081e344c. Local commits have not been pushed. No application remediation, real provider access, deployment or trading was performed. Next ticket BT02; D01 approved.
