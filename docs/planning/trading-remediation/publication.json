@@ -4,7 +4,6 @@
   "date": "2026-10-02",
   "implementation": "not started",
   "decision_blockers": [
-    "D01",
     "D02",
     "D03",
     "D04",
@@ -33,9 +32,7 @@
       "blocked_by": [
         "BT01"
       ],
-      "decision_blockers": [
-        "D01"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT01"
       ],
@@ -208,9 +205,7 @@
       "blocked_by": [
         "BT11"
       ],
-      "decision_blockers": [
-        "D01"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT11"
       ],
@@ -294,5 +289,8 @@
     "verification": "open issue, required label, complete self-contained body and traceability verified"
   },
   "publication_status": "published and read-back verified",
-  "native_dependency_edges": 18
+  "native_dependency_edges": 18,
+  "approved_decisions": {
+    "D01": "single configured operator, password hash, secure session, CSRF and login throttling; user selection on 2026-10-02"
+  }
 }

@@ -3,7 +3,8 @@
 Ticket: https://github.com/adeoyewole028/binance_topdown_full/issues/3
 Source characterization revision: `a71999a136b2532e4c84ce53564a98efcf9a77fb`.
 Pre-ticket review fixed point: `4d7506d7da06b5f76e33f0d2a1a6caaa25770884` (preserved planning/tracker).
-Date: 2026-10-02. Status: implemented; final validation and two-axis review in progress.
+Date: 2026-10-02. Status: complete locally; all BT01 acceptance criteria validated and two-axis review passed.
+Implementation commit: `8fed3dca4d6f42386541ee0af4b20f72e702968b` on the current `main` branch (not pushed or deployed).
 
 ## Scope and test boundaries
 
@@ -42,4 +43,14 @@ There is no wheel/container build contract for BT01; source-compilation tests co
 
 ## Review, commit, and handoff
 
-Standards and specification reviews: pending at the pre-ticket fixed point above. Closure requires addressing actionable findings, rerunning relevant checks and a scoped commit. Only after GitHub #3 completion evidence is recorded and it is closed may BT02 start. D01 was separately resolved by the user's sign-in choice; other policy decisions remain outside BT01.
+Both required parallel reviews compared the committed diff against the pre-ticket fixed point above. No actionable findings required changes. The Spec reviewer independently reran the full offline suite and confirmed the committed hashes and 29 pass / 10 expected-failure result. Final scoped type check passed for all seven checked sources; repository-wide pyflakes passed; all four application modules compile without import. No migration/build/provider/device gate is omitted: there is no BT01 persisted migration or packaging contract, and later deployed/provider gates remain open under their own tickets.
+
+## Standards
+
+No actionable Standards-axis findings in the BT01 diff. Changes remain within the offline baseline, fixture, evidence and CI scope. The fake exchange and disposable persistence suit the stated boundary. The adapter is a temporary guard around reviewed legacy code, not a general security sandbox; no future architecture refactor is required here. Closure bookkeeping is recorded in the ledger and ticket.
+
+## Spec
+
+No actionable Spec-axis findings. Independent literal fixtures cover exact legacy computations and the profile difference. Strict assertion-only expected failures assert safe desired outcomes. The AST startup workaround and normal-import defect are explicit; source/fixture hashes, versions, CI commands and acceptance mapping are present. The reviewer independently observed 29 passed, 10 expected failures with no unexpected skips/failures. The D01 document change records the user's selection without implementing future authentication.
+
+Review totals: Standards 0, Spec 0; no worst issue on either axis. BT01 is complete without fixing future-ticket defects. GitHub #3 must be recorded/closed before BT02 begins. D01 was separately resolved by the user's sign-in choice; other policy decisions remain outside BT01.
