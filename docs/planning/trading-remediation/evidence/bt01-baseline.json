@@ -1,0 +1,41 @@
+{
+  "ticket": "BT01 / GitHub #3",
+  "scope": "offline characterization, not production safety",
+  "source_revision": "a71999a136b2532e4c84ce53564a98efcf9a77fb",
+  "python": "3.11.3",
+  "dependencies": {
+    "ccxt": "4.5.3",
+    "pandas": "2.3.2",
+    "Flask": "3.1.2",
+    "gunicorn": "23.0.0",
+    "python-dotenv": "1.1.1",
+    "pytest": "8.4.2",
+    "pyflakes": "3.4.0",
+    "mypy": "1.18.2"
+  },
+  "source_sha256": {
+    "dashboard.py": "6b447130eb4ca9533a7b5c15019e2c93010b003bfe092597a85e0cc80a98191d",
+    "topdown_daemon.py": "75a74b41b01d14e34204292f450277cb3b46ac4bee0285081a837e99cdb84502",
+    "backtester.py": "5871f8cefdb9ccbb6d07c98fe43fb417ba7350fa2580116b73d2e31e5167f5d2",
+    "utils.py": "25f983276908426bd065e3c2f2ff515c121e071f8328f119b67183a12880ddb6"
+  },
+  "fixture_sha256": "efb98e3182c57acc67c6a5f60cb02fc7af87610754da8ef094e5afc308d8b93b",
+  "tests": 39,
+  "passed": 29,
+  "known_defects_expected_failure": [
+    "test_anonymous_trade_has_no_exchange_effect",
+    "test_partial_config_preserves_paper_mode",
+    "test_negative_buy_leaves_positions_unchanged",
+    "test_negative_sell_does_not_increase_holdings",
+    "test_missing_price_does_not_create_position",
+    "test_duplicate_operation_has_one_exchange_effect",
+    "test_confirmed_exchange_fill_is_visible_to_operator",
+    "test_equity_estimate_setting_is_saved",
+    "test_negative_risk_cannot_replace_valid_setting",
+    "test_normal_dashboard_import_has_no_background_startup"
+  ],
+  "failures": 0,
+  "other_skips": 0,
+  "pytest_exit_code": 0,
+  "boundaries": "Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; no normal startup except guarded defect test."
+}

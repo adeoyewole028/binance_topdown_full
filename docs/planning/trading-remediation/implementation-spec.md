@@ -63,7 +63,7 @@ Current HTTP entry points `/`, `/api/status`, `/trade`, `/close`, `/update-confi
 
 | Decision | Proposed direction | Alternative / trade-off | Blocks |
 |---|---|---|---|
-| D01 Operator authentication | Single configured operator with password hash, login throttling, secure session and CSRF; no registration or password reset product | Upstream identity provider may be preferable if already deployed; requires external configuration and current docs | BT02, BT12, BT13 |
+| D01 Operator authentication | APPROVED on 2026-10-02: single configured operator with password hash, login throttling, secure session and CSRF; no registration or password reset product | User selected the recommended single-operator option; do not substitute an upstream identity provider | Resolved for BT02, BT12, BT13 |
 | D02 Topology and authoritative storage | One paid single-host service, multiple HTTP processes and one supervised scanner/executor, transactional SQLite with write serialization and verified backups | Separate Render services require shared Postgres; mounted disks are not a cross-service datastore. Select one; never deploy SQLite onto independent services | BT03 onward, BT14 |
 | D03 Product modes and activation | Preserve advisory dashboard/manual trading and separate automation entry point; both route through one executor, automation disabled by default | Remove automation if product is intended to be advisory only. This changes scope and must update tickets | BT09, BT15, BT16 |
 | D04 Strategy contract | Preserve two explicitly named/versioned existing profiles (daemon daily and dashboard intraday), both replayable; no automatic selection | Choose one authoritative profile and explicitly deprecate the other | BT08, BT09, BT10 |

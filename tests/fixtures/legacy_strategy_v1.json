@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "source_revision": "a71999a136b2532e4c84ce53564a98efcf9a77fb",
+  "provenance": "Literal worked examples, authored before remediation. EMA3 uses alpha=1/2; rolling RSI3 examples have gain/loss sums (1,2), (4,2), (3,3), (5,1). Profiles use separately timestamped complete UTC bars. No source-generated snapshots or provider data.",
+  "ema": {"closes": [10, 11, 9, 12, 13], "span": 3, "expected": [10, 10.5, 9.75, 10.875, 11.9375]},
+  "rsi": {"closes": [10, 11, 9, 12, 11, 13], "period": 3, "expected": [null, null, 33.33333333333333, 66.66666666666667, 50, 83.33333333333333]},
+  "pivots": [
+    {"name": "three_rising_highs_and_lows", "closes": [1,3,2,4,3,5,4,6,5], "expected": true},
+    {"name": "falling_highs_and_lows", "closes": [9,7,8,6,7,5,6,4,5], "expected": false},
+    {"name": "too_few_pivots", "closes": [1,3,2], "expected": false}
+  ],
+  "candlesticks": [
+    {"name": "engulfing", "rows": [[10,11,7,8],[7.5,11,7,10.5]], "engulfing": true, "hammer": false},
+    {"name": "hammer", "rows": [[10,11.2,7,11]], "engulfing": false, "hammer": true},
+    {"name": "long_upper_wick", "rows": [[10,13,7,11]], "engulfing": false, "hammer": false},
+    {"name": "doji", "rows": [[10,11,7,10]], "engulfing": false, "hammer": false},
+    {"name": "empty", "rows": [], "engulfing": false, "hammer": false}
+  ],
+  "profiles": {
+    "trend_closes": [100,103,101,104,102,105,103,106,104,107,105,108,106,109,107,110,108,111,109,112,110,113,111,114,112,115,113,116,114,117,115,118,116,119,117,120,118,121,119,122,120,123,121,124,122,125,123,126,124,127,125,128,126,129,127,130,128,131,129,132,130],
+    "bias_closes": [100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101,100,101],
+    "cross_closes": [100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,99,98,97,96,95,94,100],
+    "trend_expected": {"bullish": true, "above21": true, "hhll": true},
+    "bias_expected": {"near_ma": true, "momentum_ok": true, "rsi": 50},
+    "daemon_cross_expected": {"signal": false},
+    "dashboard_cross_expected": {"signal": true, "type": "ema21_rsi_cross"},
+    "engulfing_expected": {"signal": true, "type": "bullish_engulfing"}
+  }
+}
