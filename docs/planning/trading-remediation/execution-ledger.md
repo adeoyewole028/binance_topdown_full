@@ -21,7 +21,7 @@ All 16 approved slices were published in dependency order, read back and verifie
 | Draft ID | Title and complete draft | Genuine prerequisite tickets | Decision conditions | Status |
 |---|---|---|---|---|
 | [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | [Establish safe regression and acceptance baselines](ticket-drafts/01-offline-regression-baseline.md) | None | None additional | Complete / closed |
-| [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | [Secure control access and explicit environment transitions](ticket-drafts/02-secure-control-and-environment.md) | [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | D01 approved | Published / open |
+| [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | [Secure control access and explicit environment transitions](ticket-drafts/02-secure-control-and-environment.md) | [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3) | D01 approved | Complete / closed |
 | [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | [Recover isolated state under one execution owner](ticket-drafts/03-durable-runtime-and-migration.md) | [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4) | D02/D06 approved | Published / open |
 | [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | [Expose fresh market data and supervised scan health](ticket-drafts/04-fresh-supervised-market-data.md) | [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5) | D07 | Published / open |
 | [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7) | [Execute credible paper orders within capital and risk limits](ticket-drafts/05-validated-paper-and-risk.md) | [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6) | D05 | Published / open |
@@ -95,3 +95,7 @@ BT01 #3 closed and read-back verified after all acceptance gates. BT02 #4 is the
 D06 approved on 2026-10-03: keep all legacy snapshots quarantined/read-only until each paper origin is confirmed; exchange balances/holdings require reconciliation. Spec #2 and BT03 #5 updated. BT02 is still the sole active implementation ticket.
 
 BT02 validation on 2026-10-03: full offline suite 76 cases, 69 pass/7 strict later-ticket expected failures; 13-source strict type check and repository lint pass. BT02 acceptance implemented; independent Standards/Spec reviews and closure are pending. All changes stay within access/environment/launch scope. D06 selection was recorded as authorized change control, with no BT03 code started.
+
+## BT02 closure and current permitted step
+
+BT02 #4 CLOSED, verified after all five criteria/checks/reviews. Commits 31173c7 and 1a5b740; 73 pass/7 strict future defects, type14 and repository lint/9-source compilation pass. Standards0 and Spec0 remaining actionable findings after corrections. Next sole permitted implementation ticket: BT03 #5, once its now-closed prerequisite is read-back verified. D02 single-host SQLite/single owner and D06 quarantine are approved. D07 target proposal is pending user input; D05 values remain unresolved. No source push, deployment or actual trading.

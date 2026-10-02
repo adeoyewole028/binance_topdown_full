@@ -37,3 +37,11 @@ P2: the initial environment guard missed Gunicorn reload set in GUNICORN_CMD_ARG
 P2: reset used hard-coded defaults instead of configured environment defaults. Reproduction: RSI_THRESHOLD=55 started at 55 but reset returned 30. Correction stores the environment-resolved defaults separately, preserving current mode. Regression covers threshold and explicit disabled dynamic universe, then update/reset. The reviewer independently observed the original 69 pass/7 strict future-defect result; no other missing requirements or scope creep.
 
 Correction validation: 73 passed, 7 strict expected later defects; zero unexpected failures/skips. Strict type check passes 14 sources; repository lint passes. No new provider, hosting, deployment or trading actions. Final recheck and correction commit must be recorded before closure.
+
+## Final recheck and closure
+
+Standards: **0 remaining actionable findings; worst severity none**. Independent reload environment and effective hook probes confirmed rejection; encoding is restored. Optional setup repetition remains where it tests the HTTP sequence itself.
+
+Spec: **0 remaining actionable findings; worst issue none**. Independent13-case focused verification covers configured reset, effective reload and environment rejection. No further scope creep or missing BT02 requirements.
+
+Final scoped commits: 31173c7adff0794dcf807c7179cfe4e38e9236d4 and 1a5b740 (review corrections). GitHub #4 closed/read-back verified on 2026-10-03. Both axes complete; BT03 is next. Required acceptance is local/offline; deployment/provider gates remain later work.

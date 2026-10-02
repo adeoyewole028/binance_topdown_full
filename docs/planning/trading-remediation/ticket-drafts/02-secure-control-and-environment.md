@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** complete; all scoped acceptance and review gates passed. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Make unauthorized control and accidental real-money activation impossible through the existing entry points.
 **Blocked by:** [BT01 #3](https://github.com/adeoyewole028/binance_topdown_full/issues/3).
 **Decision blockers:** None additional; D01 was approved by the user on 2026-10-02.
@@ -30,11 +30,11 @@ Flask operator routes/session, shared environment/config parser, explicit launch
 
 ## Acceptance criteria
 
-- [ ] Anonymous/unauthorized or invalid-CSRF trade, close, config and reset requests produce no order or state effects; account GET data requires auth.
-- [ ] Omitted paper/mode/boolean fields retain prior values; reset cannot enable exchange execution or alter venue credentials.
-- [ ] Server live gate defaults off and cannot be enabled through HTTP config; contradictory venue/credential settings fail before private calls.
-- [ ] Normal imports and offline CI start no threads or exchange requests; explicit development and production launch paths have documented ownership.
-- [ ] Production default/missing secret and debug/reloader startup are rejected; successful authenticated paper access remains available.
+- [x] Anonymous/unauthorized or invalid-CSRF trade, close, config and reset requests produce no order or state effects; account GET data requires auth.
+- [x] Omitted paper/mode/boolean fields retain prior values; reset cannot enable exchange execution or alter venue credentials.
+- [x] Server live gate defaults off and cannot be enabled through HTTP config; contradictory venue/credential settings fail before private calls.
+- [x] Normal imports and offline CI start no threads or exchange requests; explicit development and production launch paths have documented ownership.
+- [x] Production default/missing secret and debug/reloader startup are rejected; successful authenticated paper access remains available.
 
 ## Testing and validation
 
@@ -66,7 +66,7 @@ Durable financial store, actual venue/account transition with holdings, user reg
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+Complete on 2026-10-03. Implementation commit 31173c7adff0794dcf807c7179cfe4e38e9236d4; review corrections 1a5b740. All five criteria mapped in docs/planning/trading-remediation/evidence/bt02-validation.md and sanitized bt02-security.json. Full offline suite: 80 cases, 73 passed, 7 strict known defects owned by later tickets; zero unexpected failures/skips. Strict mypy passed14 sources; repository Pyflakes passed; nine source modules compile without import. Independent Standards and Spec reviewers each found one P2, both reproduced and corrected (effective production reload rejection; configured reset defaults). Final rechecks: Standards0 and Spec0 actionable findings; Spec independently passed13 focused cases. Session revocation/expiry/rotation, shared throttle, CSRF/auth denial, immutable gates/venue conflicts and unmodified import/explicit launch checks passed. Existing authenticated paper and golden strategies preserved. No source push, real provider order, hosting activation or deployment; later financial/recovery/provider/rollout gates remain open. Next BT03 after closure verification; D02/D06 approved.
 
 
 ## Approved decision D01
