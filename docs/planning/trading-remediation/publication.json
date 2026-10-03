@@ -232,7 +232,11 @@
       "native_dependencies": [
         "BT12"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "closed/completed, complete body and local acceptance read-back exactly verified; full371/browser7/reviews0",
+      "state": "closed",
+      "closed_at": "2026-10-03T22:19:43Z",
+      "acceptance_commit": "263c455c1323d15adcd9282d49acc9a753aec5ad",
+      "source_commit": "e0447a24bd6f2835a2c39e46ef666498a669cd8a"
     },
     {
       "planning_id": "BT14",
