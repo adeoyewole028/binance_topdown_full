@@ -164,6 +164,19 @@ class LegacySandbox:
             self.module.initialize_runtime()
             self.module.__dict__['exchange'] = self.exchange
             self.module.app.config['TESTING'] = True
+            class ReviewedClient(FlaskClient):
+                def post(self, *args: Any, **kwargs: Any) -> Any:
+                    # Ordinary fixture actions model the status review preceding
+                    # submit; explicit empty/stale tokens remain untouched.
+                    if args and args[0] in {'/trade', '/close'} and isinstance(kwargs.get('data'), dict):
+                        data = dict(kwargs['data'])
+                        if 'order_review' not in data:
+                            observed = self.get('/api/status').get_json(silent=True) or {}
+                            if 'order_review' in observed:
+                                data['order_review'] = observed['order_review']
+                        kwargs['data'] = data
+                    return super().post(*args, **kwargs)
+            self.module.app.test_client_class = ReviewedClient
             self.client = self.module.app.test_client()
             if self.authenticated:
                 self.login()

@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from configuration import validated_config, ConfigurationError, ConfigurationConflict
-from paper_policy import decimal_text
+from paper_policy import decimal_text, financial_arithmetic
 
 
 class StateUnavailable(RuntimeError):
@@ -234,7 +234,8 @@ class StateStore:
         self.config()
         self.positions()
 
-    def enqueue(self, kind: str, symbol: str, side: str, quantity: str, *, idempotency_key: str | None = None, now: float | None = None, sizing: str = 'quantity') -> str:
+    @financial_arithmetic
+    def enqueue(self, kind: str, symbol: str, side: str, quantity: str, *, idempotency_key: str | None = None, now: float | None = None, sizing: str = 'quantity', review: dict[str, Any] | None = None) -> str:
         import hashlib
         from paper_policy import number
         if kind not in {'trade', 'close'} or side not in {'buy', 'sell'} or not isinstance(symbol, str) or not re.fullmatch(r'[A-Z0-9]{2,12}/[A-Z0-9]{2,12}', symbol):
@@ -261,10 +262,19 @@ class StateStore:
                                      (self.namespace,)).fetchone()
             if row is None or row[0] is None:
                 raise StateUnavailable('Namespace requires explicit initialization')
+            reviewed = connection.execute('SELECT price,fetched_at FROM market_prices WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
+            if review is not None:
+                current_quote = dict(reviewed) if reviewed else None
+                if review.get('namespace') != self.namespace or review.get('config_version') != row[0] or review.get('prices', {}).get(symbol) != current_quote:
+                    raise ConfigurationConflict('Price or settings changed; refresh the order review')
+            elif self._config(connection)[1].get('paper_policy'):
+                raise ConfigurationConflict('Reviewed order context required')
             if sizing == 'full_close':
                 held = connection.execute('SELECT qty FROM positions WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
                 if held is None:
                     raise ConfigurationError('No confirmed holding to close')
+                if review is not None and review.get('holdings', {}).get(symbol) != held[0]:
+                    raise ConfigurationConflict('Holding changed; refresh the close review')
                 amount = number(held[0])
                 quantity = decimal_text(amount)
             elif sizing != 'quantity':
@@ -276,7 +286,6 @@ class StateStore:
                                    requested_qty,config_version,provider_client_id) VALUES (?,?,?,?,?,?,?,?,?,?)''',
                                (self.namespace, operation, key, digest,
                                 kind, symbol, side, quantity, row[0], operation))
-            reviewed = connection.execute('SELECT price,fetched_at FROM market_prices WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
             context = {**json.loads(request), 'reviewed_price': reviewed['price'] if reviewed else None,
                        'reviewed_at': reviewed['fetched_at'] if reviewed else None, 'config_version': row[0]}
             event = connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
@@ -300,6 +309,7 @@ class StateStore:
                                        (self.namespace, operation, 'paper_rejected', json.dumps({'reason': str(error)})))
         return operation
 
+    @financial_arithmetic
     def size_paper(self, connection: sqlite3.Connection, symbol: str, mode: str) -> Decimal:
         from decimal import ROUND_FLOOR
         config = self._config(connection)[1]
@@ -335,6 +345,7 @@ class StateStore:
             raise ConfigurationError('No available capital for a valid order')
         return quantity
 
+    @financial_arithmetic
     def reserve_paper(self, connection: sqlite3.Connection, operation: str, symbol: str, side: str,
                       quantity: Decimal, observed_price: Decimal, *, now: float | None = None) -> None:
         policy = self._config(connection)[1]['paper_policy']
@@ -352,6 +363,12 @@ class StateStore:
         if side == 'buy':
             if account['entry_blocked']:
                 raise ValueError(account['entry_block_reason'])
+            from paper_filters import validate_position_limit
+            pending_base = sum((Decimal(row[0]) for row in connection.execute(
+                "SELECT i.requested_qty FROM reservations r JOIN intents i ON i.namespace=r.namespace AND i.operation_id=r.operation_id WHERE r.namespace=? AND r.state='active' AND i.side='buy' AND i.symbol LIKE ? AND i.operation_id!=?",
+                (self.namespace, base + '/%', operation))), Decimal(0))
+            validate_position_limit(self._scan(connection).get('market_metadata', {}), symbol,
+                                    Decimal(account['balances'].get(base, {}).get('total', '0')) + pending_base + quantity)
             now = time.time() if now is None else now
             cooldown = connection.execute('SELECT last_event_at FROM cooldowns WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
             if cooldown is not None and now - datetime.fromisoformat(cooldown[0]).timestamp() < max(policy['cooldown_seconds'], self._config(connection)[1]['cooldown']):
@@ -581,6 +598,7 @@ class StateStore:
                     row[field] = decimal_text(value)
         return rows
 
+    @financial_arithmetic
     def _paper_account(self, connection: sqlite3.Connection, *, exclude_operation: str = "") -> dict[str, Any]:
         if self.mode != 'paper':
             return {'state': 'not_applicable', 'balances': {}}
@@ -620,6 +638,7 @@ class StateStore:
                 'balances': {asset: {'total': decimal_text(total), 'reserved': decimal_text(reserved.get(asset, Decimal(0))),
                                      'available': decimal_text(total - reserved.get(asset, Decimal(0)))} for asset, total in totals.items()}}
 
+    @financial_arithmetic
     def record_paper_risk(self, connection: sqlite3.Connection) -> None:
         account = self._paper_account(connection)
         if account.get('equity') is None:

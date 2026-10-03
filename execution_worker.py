@@ -12,6 +12,7 @@ import time
 from state_store import StateStore
 from operations_policy import OperationsPolicy
 from configuration import ConfigurationError
+from paper_policy import financial_arithmetic
 
 from execution_owner import ExecutionOwner, OwnershipUnavailable
 
@@ -99,6 +100,7 @@ class ExecutionWorker(ExecutionOwner):
                 processed += 1
         return processed
 
+    @financial_arithmetic
     def _paper_effect(self, connection: sqlite3.Connection, operation: sqlite3.Row) -> None:
         namespace, symbol = self.store.namespace, operation['symbol']
         policy = self.store._config(connection)[1].get('paper_policy')

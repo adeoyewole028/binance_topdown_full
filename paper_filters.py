@@ -7,6 +7,18 @@ from operations_policy import OperationsPolicy
 from paper_policy import number
 
 
+def validate_position_limit(metadata: dict[str, Any], symbol: str, projected_base: Decimal) -> None:
+    """MAX_POSITION counts all confirmed base assets and outstanding buys."""
+    for market in metadata.get('symbols', []):
+        if market['baseAsset'] + '/' + market['quoteAsset'] != symbol:
+            continue
+        for rule in market['filters']:
+            if rule['filterType'] == 'MAX_POSITION':
+                maximum = number(rule['maxPosition'])
+                if maximum < 0 or projected_base > maximum:
+                    raise ValueError('position_filter_rejected')
+
+
 def validate_market_quantity(metadata: dict[str, Any], symbol: str, quantity: Decimal,
                              last_price: Decimal, now: float, venue: str) -> None:
     try:

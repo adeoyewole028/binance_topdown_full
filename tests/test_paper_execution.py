@@ -24,6 +24,66 @@ PAPER_INPUTS = {
 }
 
 
+@pytest.mark.parametrize(('cash', 'remaining'), [
+    ('1000', '899.99999999999999999999999999'),
+    ('1e28', '9999999999999999999999999899.99999999999999999999999999'),
+])
+def test_small_explicit_fee_is_not_lost_from_cash_accounting(cash: str, remaining: str) -> None:
+    with LegacySandbox(paper_setup=False) as sandbox:
+        assert setup(sandbox, initial_cash=cash, fee_fraction='1e-28', slippage_fraction='0') == 302
+        sandbox.seed_price('BTC/USDT', 100.0)
+        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['fills'][0]['fee_amount'] == '0.00000000000000000000000001'
+        assert state['paper_account']['balances']['USDT']['total'] == remaining
+
+
+@pytest.mark.parametrize('change', ['config', 'price', 'missing', 'forged'])
+def test_new_order_requires_the_operator_reviewed_context(change: str) -> None:
+    with LegacySandbox(paper_setup=False) as sandbox:
+        assert setup(sandbox) == 302
+        sandbox.seed_price('BTC/USDT', 100.0)
+        state = sandbox.client.get('/api/status').get_json()
+        review = state.get('order_review', 'currently-missing-review')
+        if change == 'config':
+            sandbox.post('/update-config', data={'risk': '0.005'})
+        elif change == 'price':
+            sandbox.seed_price('BTC/USDT', 101.0)
+        elif change == 'missing':
+            review = ''
+        else:
+            review += '-forged'
+        response = sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'order_review': review})
+        assert response.status_code == 409
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['positions'] == []
+        assert state['paper_account']['balances']['USDT']['total'] == '1000'
+
+
+def test_provider_max_position_counts_confirmed_and_reserved_buys() -> None:
+    from execution_worker import ExecutionWorker
+    with LegacySandbox(paper_setup=False) as sandbox:
+        assert setup(sandbox, cooldown_seconds='0') == 302
+        sandbox.exchange.market_filters = {'BTC/USDT': [
+            {'filterType': 'LOT_SIZE', 'minQty': '0.001', 'maxQty': '10000', 'stepSize': '0.001'},
+            {'filterType': 'MAX_POSITION', 'maxPosition': '0.5'},
+        ]}
+        sandbox.seed_price('BTC/USDT', 100.0)
+        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '0.1'})
+        with ExecutionWorker(sandbox.module.state_store) as owner:
+            for key in ('first-position', 'second-position'):
+                sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '0.3',
+                                                   'idempotency_key': key, 'csrf_token': sandbox.csrf})
+            state = sandbox.client.get('/api/status').get_json()
+            assert state['operations'][-1]['state'] == 'rejected'
+            assert state['paper_account']['balances']['USDT']['reserved'] == '30.603'
+            owner.process_pending()
+        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'sell', 'qty': '0.1'})
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['positions'][0]['qty'] == '0.3'
+        assert state['operations'][-1]['state'] == 'filled'
+
+
 def setup(sandbox: LegacySandbox, **changes: str) -> int:
     version = sandbox.client.get('/api/status').get_json()['config_version']
     return int(sandbox.post('/paper/setup', data={**PAPER_INPUTS, **changes, 'expected_config_version': str(version)}).status_code)

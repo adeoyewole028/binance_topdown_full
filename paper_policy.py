@@ -1,14 +1,30 @@
 """Explicit versioned simulation assumptions; no numerical financial defaults."""
 from __future__ import annotations
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, InvalidOperation, localcontext
+from functools import wraps
 import re
-from typing import Any
+from typing import Any, Callable, ParamSpec, TypeVar
 from configuration import ConfigurationError
 
 DECIMAL_FIELDS = {'initial_cash', 'fee_fraction', 'slippage_fraction', 'risk_fraction', 'fixed_quote',
                   'max_allocation_fraction', 'max_exposure_fraction', 'drawdown_fraction'}
 INTEGER_FIELDS = {'max_positions', 'cooldown_seconds'}
 FIELDS = DECIMAL_FIELDS | INTEGER_FIELDS | {'quote'}
+P = ParamSpec('P')
+T = TypeVar('T')
+
+
+def financial_arithmetic(function: Callable[P, T]) -> Callable[P, T]:
+    """Keep accepted 28-digit inputs and compounded fees exact in money effects.
+
+    Division for sizing/basis has deterministic 256-digit precision; monetary
+    products, sums and serialization must not inherit a caller's short context.
+    """
+    @wraps(function)
+    def calculate(*args: P.args, **kwargs: P.kwargs) -> T:
+        with localcontext(Context(prec=256)):
+            return function(*args, **kwargs)
+    return calculate
 
 
 def number(value: Any) -> Decimal:
@@ -16,7 +32,8 @@ def number(value: Any) -> Decimal:
         if isinstance(value, bool):
             raise ValueError('Boolean money value')
         result = Decimal(str(value))
-        if not result.is_finite() or (result and (abs(result.adjusted()) > 28 or len(result.as_tuple().digits) > 28)):
+        significant_digits = len(''.join(str(digit) for digit in result.as_tuple().digits).rstrip('0'))
+        if not result.is_finite() or (result and (abs(result.adjusted()) > 28 or significant_digits > 28)):
             raise ValueError('Nonfinite money value')
         return result
     except (InvalidOperation, ValueError, TypeError) as error:
@@ -51,4 +68,5 @@ def validated_policy(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def decimal_text(value: Decimal) -> str:
-    return format(value.normalize(), "f")
+    text = format(value, "f")
+    return text.rstrip('0').rstrip('.') if '.' in text else text

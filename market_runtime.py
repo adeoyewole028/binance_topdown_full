@@ -135,12 +135,7 @@ class MarketRuntime:
                 notional = [f for f in by_symbol.get(symbol, {}).get('filters', []) if f['filterType'] in {'MIN_NOTIONAL', 'NOTIONAL'}]
                 if not notional:
                     continue
-                reference = self._request('reduction', 2, lambda: self.provider.reference_price(symbol))
-                observation = {'reference': reference, 'fetched_at': iso(self.clock())}
-                if reference.get('referencePrice') is None and any(f.get('avgPriceMins', 0) for f in notional):
-                    observation['average'] = self._request('reduction', 2, lambda: self.provider.average_price(symbol))
-                    observation['fetched_at'] = iso(self.clock())
-                filter_prices[symbol] = observation
+                filter_prices[symbol] = self._filter_price(symbol, notional, 'reduction')
             metadata['filter_prices'] = filter_prices
             self.owner.publish_prices({s: tickers[s]['last'] for s in coverage}, fetched_at=ticker_received)
             self.snapshot['market_health'].pop('price_refresh_failure', None)
@@ -148,6 +143,14 @@ class MarketRuntime:
             # Preserve both value and fetched-at on failure; no cached-price publication.
             self.snapshot['market_health']['price_refresh_failure'] = error.kind if isinstance(error, ProviderFailure) else 'data_quality'
         self.owner.publish_scan(self.snapshot)
+
+    def _filter_price(self, symbol: str, notional: list[dict[str, Any]], lane: str) -> dict[str, Any]:
+        reference = self._request(lane, 2, lambda: self.provider.reference_price(symbol))
+        observation = {'reference': reference, 'fetched_at': iso(self.clock())}
+        if reference.get('referencePrice') is None and any(f.get('avgPriceMins', 0) for f in notional):
+            observation['average'] = self._request(lane, 2, lambda: self.provider.average_price(symbol))
+            observation['fetched_at'] = iso(self.clock())
+        return observation
 
     def _candles(self, symbol: str, timeframe: str, server_time: float) -> list[list[float]]:
         duration, required = INTERVALS[timeframe]
@@ -214,14 +217,7 @@ class MarketRuntime:
                 notional = [f for f in by_symbol[symbol].get('filters', []) if f['filterType'] in {'MIN_NOTIONAL', 'NOTIONAL'}]
                 if not notional:
                     continue
-                reference = self._request('reduction' if symbol in financial_coverage else 'market', 2,
-                                          lambda: self.provider.reference_price(symbol))
-                observation = {'reference': reference, 'fetched_at': iso(self.clock())}
-                if reference.get('referencePrice') is None and any(f.get('avgPriceMins', 0) for f in notional):
-                    observation['average'] = self._request('reduction' if symbol in financial_coverage else 'market', 2,
-                                                          lambda: self.provider.average_price(symbol))
-                    observation['fetched_at'] = iso(self.clock())
-                filter_prices[symbol] = observation
+                filter_prices[symbol] = self._filter_price(symbol, notional, 'reduction' if symbol in financial_coverage else 'market')
             self.snapshot['market_metadata']['filter_prices'] = filter_prices
             for symbol in sorted(required, key=lambda s: (s not in financial_coverage, s)):
                 for timeframe in INTERVALS:

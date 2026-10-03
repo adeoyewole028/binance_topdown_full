@@ -1,4 +1,5 @@
 import secrets
+from itsdangerous import URLSafeSerializer, BadSignature
 
 from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response, g
 import time
@@ -10,6 +11,25 @@ from operator_security import install_operator_security, configure_operator
 from runtime_environment import RuntimeEnvironment, construct_exchange, parse_boolean
 from state_store import StateStore, StateUnavailable
 from configuration import ConfigurationError, ConfigurationConflict
+
+
+def order_review_token():
+    observed = g.operator_status
+    return URLSafeSerializer(app.secret_key, salt='order-review-v1').dumps({
+        'namespace': state_store.namespace, 'config_version': observed['config_version'],
+        'prices': {s: {'price': q['price'], 'fetched_at': q['fetched_at']} for s, q in observed['market_prices'].items()},
+        'holdings': {p['symbol']: p['qty'] for p in observed['positions']},
+    })
+
+
+def submitted_order_review():
+    try:
+        value = URLSafeSerializer(app.secret_key, salt='order-review-v1').loads(request.form.get('order_review', ''))
+        if not isinstance(value, dict):
+            raise BadSignature('Invalid review')
+        return value
+    except BadSignature:
+        raise ConfigurationConflict('Refresh the order price and settings before submitting') from None
 
 # --- Strategy helpers (mirrors topdown_daemon) ---
 def daily_trend_check(df_daily: pd.DataFrame):
@@ -371,7 +391,7 @@ def trade():
         except ValueError:
             return jsonify(error='Exchange execution is disabled by server policy'), 403
     try:
-        operation = state_store.enqueue('trade', symbol, side, qty, sizing=request.form.get('sizing', 'quantity'), idempotency_key=request.form.get('idempotency_key') or request.headers.get('Idempotency-Key'), now=app.config['MARKET_CLOCK']())
+        operation = state_store.enqueue('trade', symbol, side, qty, sizing=request.form.get('sizing', 'quantity'), idempotency_key=request.form.get('idempotency_key') or request.headers.get('Idempotency-Key'), now=app.config['MARKET_CLOCK'](), review=submitted_order_review())
     except ConfigurationConflict as error:
         return jsonify(error=str(error)), 409
     except ConfigurationError as error:
@@ -395,7 +415,7 @@ def close_position():
     # Preserve the canonical decimal boundary; display floats are estimates.
     q = qty or ''
     try:
-        operation = state_store.enqueue('close', symbol, 'sell', str(q), sizing='quantity' if q else 'full_close', idempotency_key=request.form.get('idempotency_key') or request.headers.get('Idempotency-Key'), now=app.config['MARKET_CLOCK']())
+        operation = state_store.enqueue('close', symbol, 'sell', str(q), sizing='quantity' if q else 'full_close', idempotency_key=request.form.get('idempotency_key') or request.headers.get('Idempotency-Key'), now=app.config['MARKET_CLOCK'](), review=submitted_order_review())
     except ConfigurationConflict as error:
         return jsonify(error=str(error)), 409
     except ConfigurationError as error:
@@ -412,6 +432,7 @@ def api_status():
     # Minimal JSON for static frontends; includes signals, positions, performance, config (non-secret)
     observed = g.operator_status
     payload = {
+        'order_review': order_review_token(),
         'last_scan': observed['last_scan'],
         'universe': observed['universe'],
         'signals': observed['signals'],
@@ -674,7 +695,8 @@ def dashboard():
                                         </td>
                                         <td class="py-2">
                                             <form method="post" action="/close" class="inline-flex">
-                                                <input type="hidden" name="idempotency_key" value="{{ order_key }}-close-{{ loop.index }}">
+                                                <input type="hidden" name="order_review" value="{{ order_review }}">
+                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}-close-{{ loop.index }}">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                 <input type="hidden" name="symbol" value="{{ es['symbol'] }}">
                                                 <input type="hidden" name="qty" value="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}">
@@ -722,6 +744,7 @@ def dashboard():
                         <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
                                     <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="order_review" value="{{ order_review }}">
                                         <input type="hidden" name="idempotency_key" value="{{ order_key }}">
                                         <label class="text-sm">Sizing
                                             <select name="sizing" class="mt-1 rounded bg-slate-800 border border-slate-700 px-2 py-1"><option value="quantity">Explicit quantity</option><option value="fixed">Configured fixed quote allocation</option><option value="risk">Configured risk allocation</option></select>
@@ -984,7 +1007,7 @@ def dashboard():
                     </script>
         </body>
         </html>
-    ''', status=g.operator_status, venue=runtime_environment.venue if runtime_environment else 'unconfigured', order_key=secrets.token_urlsafe(24))
+    ''', status=g.operator_status, venue=runtime_environment.venue if runtime_environment else 'unconfigured', order_key=secrets.token_urlsafe(24), order_review=order_review_token())
 
 if __name__ == '__main__':
     import argparse
