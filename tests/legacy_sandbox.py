@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import tempfile
 import re
+import time
 from types import ModuleType, TracebackType
 from typing import Any, Literal, Self
 from unittest.mock import patch
@@ -57,6 +58,23 @@ class FakeExchange:
 
     def fetch_ticker(self, symbol: str) -> dict[str, float]:
         return {'last': self.prices.get(symbol, 100.0)}
+
+    def metadata(self) -> dict[str, Any]:
+        return {'serverTime': int(time.time() * 1000), 'rateLimits': [
+            {'rateLimitType': 'REQUEST_WEIGHT', 'interval': 'MINUTE', 'intervalNum': 1, 'limit': 100000}],
+            'symbols': [{'symbol': s.replace('/', ''), 'baseAsset': s.split('/')[0], 'quoteAsset': s.split('/')[1],
+                         'status': 'TRADING', 'isSpotTradingAllowed': True} for s in self.prices]}
+
+    def tickers(self, symbols: list[str] | None = None) -> dict[str, Any]:
+        return {s: {'last': p, 'quoteVolume': 20000000.0} for s, p in self.prices.items()
+                if symbols is None or s in symbols}
+
+    def candles(self, symbol: str, timeframe: str, limit: int) -> list[list[float]]:
+        duration = {'4h': 14400, '1h': 3600, '15m': 900}[timeframe]
+        boundary = int(time.time() // duration) * duration
+        price = self.prices[symbol]
+        return [[float((boundary - (limit - index) * duration) * 1000), price, price + 1,
+                 max(price - 1, price / 2), price, 10.0] for index in range(limit)]
 
 
 class LegacySandbox:
@@ -116,6 +134,18 @@ class LegacySandbox:
             runtime = RuntimeEnvironment.from_mapping(os.environ)
             store = StateStore(runtime.data_directory, os.getenv('LOCAL_ACCOUNT_ID', 'operator-account'), runtime.venue, runtime.mode)
             store.provision(self.module.environment_defaults(os.environ))
+            # Validated public-provider fixtures now accompany ordinary paper
+            # orders. This keeps prior acceptance exercising fills, not safety bypasses.
+            from execution_worker import ExecutionWorker
+            from market_runtime import MarketRuntime
+            enter_owner = ExecutionWorker.__enter__
+            provider = self.exchange
+            def owned_provider(worker: ExecutionWorker) -> ExecutionWorker:
+                entered = enter_owner(worker)
+                if provider.prices:
+                    MarketRuntime(entered, provider, clock=worker.clock).scan_once()
+                return entered
+            self.stack.enter_context(patch.object(ExecutionWorker, '__enter__', owned_provider))
             self.module.initialize_runtime()
             self.module.__dict__['exchange'] = self.exchange
             self.module.app.config['TESTING'] = True

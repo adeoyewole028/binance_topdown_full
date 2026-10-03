@@ -15,6 +15,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('init', help='Explicitly create a new namespace; never repair lost state')
+    commands.add_parser('upgrade-market', help='Explicitly install the additive BT04 request-budget extension')
+    resume = commands.add_parser('resume-market', help='After reviewing access/auth failure, clear its terminal block; requires stopped owner')
+    resume.add_argument('--actor', required=True)
     quarantine = commands.add_parser('quarantine')
     quarantine.add_argument('sources', type=Path, nargs='+')
     confirm = commands.add_parser('confirm-paper')
@@ -33,6 +36,15 @@ def main() -> None:
     if arguments.command == 'init':
         from dashboard import environment_defaults
         store.provision(environment_defaults(os.environ))
+    elif arguments.command == 'upgrade-market':
+        from execution_owner import ExecutionOwner
+        with ExecutionOwner(store):
+            store.provision_market()
+    elif arguments.command == 'resume-market':
+        from execution_owner import ExecutionOwner
+        from request_budget import RequestBudget
+        with ExecutionOwner(store) as owner:
+            RequestBudget(store).resume(owner, actor=arguments.actor)
     elif arguments.command == 'quarantine':
         quarantine_legacy(store, [path.resolve() for path in arguments.sources])
     elif arguments.command == 'confirm-paper':

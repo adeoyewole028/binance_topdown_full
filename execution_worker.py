@@ -6,17 +6,25 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
+from collections.abc import Callable
+import time
+from state_store import StateStore
+from operations_policy import OperationsPolicy
 
 from execution_owner import ExecutionOwner, OwnershipUnavailable
 
 
 class ExecutionWorker(ExecutionOwner):
+    def __init__(self, store: StateStore, *, clock: Callable[[], float] = time.time) -> None:
+        super().__init__(store)
+        self.clock = clock
+        self.policy = OperationsPolicy()
     def publish_scan(self, snapshot: dict[str, Any]) -> None:
         if not self.ownership_confirmed():
             raise OwnershipUnavailable('Execution ownership uncertain')
-        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns'}
+        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns', 'market_health', 'market_cache'}
         values = {key: value for key, value in snapshot.items() if key in allowed}
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
         with self.store.connection(write=True) as connection:
             if not self._matches_owner(connection):
                 raise OwnershipUnavailable('Execution ownership uncertain')
@@ -27,13 +35,21 @@ class ExecutionWorker(ExecutionOwner):
                                   DO UPDATE SET config_version=excluded.config_version,profile=excluded.profile,
                                   values_json=excluded.values_json,published_at=excluded.published_at''',
                                (self.store.namespace, version, 'legacy-dashboard-v1', json.dumps(values, allow_nan=False), now))
-            for symbol, price in values.get('live_prices', {}).items():
-                try:
-                    parsed = Decimal(str(price))
-                    if not parsed.is_finite() or parsed <= 0:
-                        continue
-                except InvalidOperation:
-                    continue
+            unresolved = connection.execute('''SELECT 1 FROM intents i JOIN namespaces n ON n.id=i.namespace
+                WHERE n.account=? AND n.venue=? AND i.state IN ('dispatching','unknown','canceling','processing') LIMIT 1''',
+                                            (self.store.account, self.store.venue)).fetchone()
+            if self.store.mode == 'paper' and unresolved is None and values.get('market_health', {}).get('state') == 'ready':
+                connection.execute("UPDATE execution_owners SET state='ready',updated_at=? WHERE token=?", (now, self.token))
+
+    def publish_prices(self, prices: dict[str, Any]) -> None:
+        parsed_prices = {symbol: Decimal(str(price)) for symbol, price in prices.items()}
+        if not parsed_prices or any(not p.is_finite() or p <= 0 for p in parsed_prices.values()):
+            raise ValueError('Invalid public prices')
+        now = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
+        with self.store.connection(write=True) as connection:
+            if not self._matches_owner(connection):
+                raise OwnershipUnavailable('Execution ownership uncertain')
+            for symbol, parsed in parsed_prices.items():
                 connection.execute('''INSERT INTO market_prices VALUES (?,?,?,?) ON CONFLICT(namespace,symbol)
                                       DO UPDATE SET price=excluded.price,fetched_at=excluded.fetched_at''',
                                    (self.store.namespace, symbol, str(parsed), now))
@@ -83,11 +99,25 @@ class ExecutionWorker(ExecutionOwner):
         # BT05 still owns request validation, capital/risk/fees and credible fills.
         if not requested.is_finite() or requested <= 0 or operation['side'] not in {'buy', 'sell'}:
             raise ValueError('Invalid paper projection input')
-        price_row = connection.execute('SELECT price FROM market_prices WHERE namespace=? AND symbol=?', (namespace, symbol)).fetchone()
-        if price_row is None:
+        price_row = connection.execute('SELECT price,fetched_at FROM market_prices WHERE namespace=? AND symbol=?', (namespace, symbol)).fetchone()
+        fresh = False
+        if price_row is not None:
+            try:
+                timestamp = datetime.fromisoformat(price_row['fetched_at'])
+                fresh = timestamp.tzinfo is not None and 0 <= self.clock() - timestamp.timestamp() < self.policy.price_expiry
+            except (ValueError, TypeError, OverflowError):
+                pass
+        from market_runtime import observed_health
+        scan = self.store._scan(connection)
+        health = observed_health({**scan, 'ownership': self.store._ownership(connection),
+                                  'config_version': self.store._config(connection)[0],
+                                  'market_prices': self.store._prices(connection),
+                                  'market_budget': self.store._market_budget(connection)}, self.clock())
+        if not fresh or not health['execution_ready'] or symbol not in health.get('coverage', []):
             connection.execute("UPDATE intents SET state='waiting_for_market_data' WHERE namespace=? AND operation_id=?",
                                (namespace, operation['operation_id']))
             return
+        assert price_row is not None
         price = Decimal(price_row[0])
         if not price.is_finite() or price <= 0:
             raise ValueError('Invalid paper projection price')

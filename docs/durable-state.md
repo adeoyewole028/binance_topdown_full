@@ -1,5 +1,7 @@
 # Durable state and quarantined migration (BT03)
 
+BT04 adds completed-bar/freshness guards and a versioned additive request-budget extension. See [market-data operations and explicit upgrade](market-data.md). Existing BT03 initialization/backup guarantees remain; no numerical D07 target is pending now, and its actual backup/supervisor implementation remains BT14.
+
 The approved topology is one host, private local disk, transactional SQLite, and one supervised execution owner per local account/venue across paper/exchange modes. HTTP processes never submit provider orders. `DATA_DIR` must be identical for every process; use a private OS account and permissions, never independent disks, replicas or network filesystems. `LOCAL_ACCOUNT_ID` is an opaque configured identifier, not a provider credential. Venue and mode qualify every financial row; HTTP input cannot select another namespace.
 
 `trading.sqlite3` is authoritative. `state-identity.json` independently binds its identity/schema. Opening missing, mismatched or corrupt state fails closed and never initializes an empty account. All durable monetary/crypto values are decimal strings. Config versions, fills, provider observations, balance movements and journal events are append-only. Intent intake, its config reference and journal sequence commit together; paper fills, positions and journal effects commit together. Schema v1 includes protection, reservations, cooldown and observation identities for their later lifecycle tickets; those behaviors are not activated by BT03.

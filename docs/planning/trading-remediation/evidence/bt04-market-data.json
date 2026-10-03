@@ -1,0 +1,49 @@
+{
+  "ticket": "BT04 #6 fresh supervised market data",
+  "scope": "offline behavior and safety checks; not deployed/provider acceptance",
+  "source_revision": "b7fa4993ec98df43c7a7c2604f3bc1ae3633dfcc",
+  "python": "3.11.3",
+  "dependencies": {
+    "ccxt": "4.5.3",
+    "pandas": "2.3.2",
+    "Flask": "3.1.2",
+    "gunicorn": "23.0.0",
+    "python-dotenv": "1.1.1",
+    "pytest": "8.4.2",
+    "pyflakes": "3.4.0",
+    "mypy": "1.18.2"
+  },
+  "source_sha256": {
+    "dashboard.py": "0ad387025f7acd81fc95f56ac769415c0575ef9de355022390e5ebf834419466",
+    "topdown_daemon.py": "7f2e0f4d9b773cea3998864b989a5273e76d983af08128d3dbeb1aa9f729c147",
+    "backtester.py": "5871f8cefdb9ccbb6d07c98fe43fb417ba7350fa2580116b73d2e31e5167f5d2",
+    "utils.py": "25f983276908426bd065e3c2f2ff515c121e071f8328f119b67183a12880ddb6",
+    "operator_security.py": "4c53cdfafb86e9767149235e6aabe689cec4429f5bf9d7f9ab823a98c8f23554",
+    "runtime_environment.py": "e6abb4a2264f2cf9c913cc2f33947e291ab3fa51b4bc0f5f0f8f176c319f36ee",
+    "wsgi.py": "fc95f37fa77935b551363780ea58be4aaec25b0041c20a1f6a5db0f19b3d507f",
+    "run_scanner.py": "1a15a2c1deb73b308962063352ba80c16bf760c2c311e2dd7047d1df00432c3c",
+    "gunicorn.conf.py": "b20b3fde0d21d1426470da38b508920031afd510243d7840db17ba5f6ca36dd6",
+    "state_store.py": "a5ce030874ddf6b90ef35dcb1db72706abd9259d50ec51743e4a056e2003966d",
+    "execution_owner.py": "e75c568b84c7e63f2fb108c48fe209cb6e4eeb7aa9579ec53b2bb2720a40ecd3",
+    "execution_worker.py": "7831ec5a67ab5ae7751d309b4035158395aa9f728895dfc359535121976c537c",
+    "state_admin.py": "1a6bcdcdfc249a1bfbdbfc6985a353737bab5ab7842496bc990e9ffda493e25e",
+    "manage_state.py": "174bac416dd8c2a3f66c5f9c34f1ed9324258c4f4d19eaa7d84e91d5fc3afd82",
+    "run_worker.py": "d1bff4c87583fc109918a24bd589f5b18970a261dfae372c34bde074f5c85b85",
+    "configuration.py": "24e58436aaac6ccd4e35478b9b53e122eda045aeb02933caa2a61bbab18580e4",
+    "operations_policy.py": "016b06583917483f197f47b1aac45c47d1aa0a3e2546bebe1ab09af62f8ef7d2",
+    "market_runtime.py": "052911d76f151e7f113dbdce529dde49815f47c1f1587e31ad9788870beae78a",
+    "market_adapter.py": "35c22238dde37c7fe1230a27433c57bef3ab6dcb2a396cc255797bc3ab5ed9a0",
+    "request_budget.py": "0292183a711b74882366f91ea14eaba4114280579f9a3d3a261b4a930b8de349"
+  },
+  "fixture_sha256": "efb98e3182c57acc67c6a5f60cb02fc7af87610754da8ef094e5afc308d8b93b",
+  "tests": 139,
+  "passed": 137,
+  "known_defects_expected_failure": [
+    "test_duplicate_operation_has_one_exchange_effect",
+    "test_confirmed_exchange_fill_is_visible_to_operator"
+  ],
+  "failures": 0,
+  "other_skips": 0,
+  "pytest_exit_code": 0,
+  "boundaries": "Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; unmodified normal imports; explicit guarded launch checks."
+}

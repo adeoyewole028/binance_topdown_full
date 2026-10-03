@@ -8,6 +8,7 @@ from typing import Mapping
 from operator_security import install_operator_security, configure_operator
 from runtime_environment import RuntimeEnvironment, construct_exchange, parse_boolean
 from state_store import StateStore, StateUnavailable
+from configuration import ConfigurationError, ConfigurationConflict
 
 # --- Strategy helpers (mirrors topdown_daemon) ---
 def daily_trend_check(df_daily: pd.DataFrame):
@@ -162,7 +163,8 @@ def coerce_config_types(incoming: dict) -> dict:
     return out
 
 # --- Exit strategy helpers ---
-def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dict:
+def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange, config=None) -> dict:
+    settings = status['config'] if config is None else config
     reasons = []
     try:
         price = exchange.fetch_ticker(symbol)['last']
@@ -171,8 +173,8 @@ def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dic
     if not isinstance(price, (int, float)) or price is None:
         return {'should_exit': False, 'reasons': [], 'price': None}
 
-    tp_price = entry * (1 + status['config']['take_profit_pct'])
-    sl_price = entry * (1 - status['config']['stop_loss_pct'])
+    tp_price = entry * (1 + settings['take_profit_pct'])
+    sl_price = entry * (1 - settings['stop_loss_pct'])
     if price >= tp_price:
         reasons.append('take_profit')
     if price <= sl_price:
@@ -187,7 +189,7 @@ def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dic
             last, prev = df15.iloc[-1], df15.iloc[-2]
             if (prev['close'] >= prev['ema21']) and (last['close'] < last['ema21']):
                 reasons.append('ema21_cross_down_15m')
-            if (prev['rsi'] >= status['config']['rsi_overbought']) and (last['rsi'] < status['config']['rsi_overbought']):
+            if (prev['rsi'] >= settings['rsi_overbought']) and (last['rsi'] < settings['rsi_overbought']):
                 reasons.append('rsi_overbought_cross_down_15m')
     except Exception as e:
         status['logs'].append(f"Exit check 15m error {symbol}: {type(e).__name__}")
@@ -223,12 +225,12 @@ def environment_defaults(environment: Mapping[str, str]) -> dict:
             defaults[key] = parse_boolean(value) if isinstance(current, bool) else type(current)(value)
     return defaults
 
-def initialize_runtime(environment: Mapping[str, str] | None = None) -> Flask:
+def initialize_runtime(environment: Mapping[str, str] | None = None, *, clock=time.time) -> Flask:
     """Explicit web startup; no scanner or exchange requests are started here."""
     global runtime_environment, DATA_DIR, configured_defaults, state_store
     environment = os.environ if environment is None else environment
     runtime = RuntimeEnvironment.from_mapping(environment)
-    app.config.update(DEBUG=False)
+    app.config.update(DEBUG=False, MARKET_CLOCK=clock)
     configure_operator(app, environment.get('OPERATOR_USERNAME', ''),
                        environment.get('OPERATOR_PASSWORD_HASH', ''),
                        environment.get('FLASK_SECRET_KEY', ''), runtime.data_directory,
@@ -257,6 +259,21 @@ def refresh_durable_state():
         snapshot = state_store.snapshot()
         g.operator_status = {**status, **snapshot.pop('scan'), **snapshot}
         g.operator_status['open_positions'] = display_positions(snapshot['positions'])
+        from market_runtime import observed_health
+        g.operator_status['market_health'] = observed_health(g.operator_status, app.config['MARKET_CLOCK']())
+        health = g.operator_status['market_health']
+        g.operator_status['bot_status'] = 'Scanner ready' if health['execution_ready'] else 'Scanner paused: ' + str(health['reason'])
+        from datetime import datetime
+        from operations_policy import OperationsPolicy
+        for quote in g.operator_status['market_prices'].values():
+            try:
+                stamp = datetime.fromisoformat(quote['fetched_at'])
+                quote['age_seconds'] = app.config['MARKET_CLOCK']() - stamp.timestamp()
+                quote['fresh'] = stamp.tzinfo is not None and 0 <= quote['age_seconds'] < OperationsPolicy().price_expiry
+            except (ValueError, TypeError, OverflowError):
+                quote['fresh'] = False
+        if g.operator_status['market_prices']:
+            g.operator_status['live_prices'] = {s: float(q['price']) if q['fresh'] else 'N/A' for s, q in g.operator_status['market_prices'].items()}
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; execution paused'), 503
     return None
@@ -270,154 +287,50 @@ def require_exchange_execution():
     runtime_environment.require_exchange()
     if runtime_environment.mode != 'exchange':
         raise ValueError('Restart with a reviewed exchange namespace before execution')
+def evaluate_market_snapshot(view, symbols, config):
+    """Use existing indicator/exit helpers exclusively on validated cached data."""
+    from datetime import datetime, timezone
+    status['config'] = config
+    status['open_positions'] = display_positions(state_store.positions())
+    status['live_prices'] = {s: view.fetch_ticker(s)['last'] for s in view.prices}
+    now = datetime.now(timezone.utc).isoformat()
+    signals = []
+    for symbol in symbols:
+        trend = daily_trend_check(fetch_ohlcv_df(view, symbol, '4h', 200))
+        bias = bias_check_1h(fetch_ohlcv_df(view, symbol, '1h', 200))
+        execution = execution_check_15m(fetch_ohlcv_df(view, symbol, '15m', 100))
+        if trend['bullish'] and bias['near_ma'] and bias['momentum_ok'] and execution['signal']:
+            signals.append({'symbol': symbol, 'type': execution.get('type', 'entry'),
+                            'time': now, 'trend4h': trend, 'bias1h': bias})
+    exits = []
+    rules = state_store.position_rules()
+    for position in status['open_positions']:
+        rule = rules[position['symbol']]
+        if rule['state'] != 'bound':
+            continue
+        result = compute_exit_reasons(position['symbol'], position['entry'], position['qty'], view, rule['config'])
+        if result['should_exit']:
+            exits.append({'symbol': position['symbol'], 'reasons': result['reasons'], 'price': result['price'],
+                          'pnl': (result['price'] - position['entry']) * position['qty']})
+    return {'signals': signals, 'exit_signals': exits}
+
+
 def bot_loop(owner=None) -> None:
     if owner is None:
         from execution_worker import ExecutionWorker
         with ExecutionWorker(state_store) as owned_worker:
             return bot_loop(owned_worker)
-    symbols = ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
-    global exchange
     if runtime_environment is None:
         raise RuntimeError('Explicit runtime initialization is required')
-    exchange = construct_exchange(runtime_environment, private=False)
+    from market_adapter import BinancePublicMarket
+    from market_runtime import MarketRuntime
+    provider = BinancePublicMarket(construct_exchange(runtime_environment, private=False))
+    scanner = MarketRuntime(owner, provider, clock=owner.clock, evaluate=evaluate_market_snapshot,
+                            whitelist={s.strip() for s in os.getenv('WHITELIST', '').split(',') if s.strip()},
+                            blacklist={s.strip() for s in os.getenv('BLACKLIST', '').split(',') if s.strip()})
     while True:
-        from datetime import datetime, timezone
-        status['config_version'], status['config'] = state_store.config()
-        status['open_positions'] = display_positions(state_store.positions())
-        now = datetime.now(timezone.utc).isoformat()
-        status['last_scan'] = now
-        # Dynamic universe selection from top quote volume
-        if status['config']['use_dynamic_universe']:
-            try:
-                tickers_all = exchange.fetch_tickers()
-                candidates = []
-                for sym, data in tickers_all.items():
-                    if not sym.endswith('/' + status['config']['base_quote']):
-                        continue
-                    if any(x in sym for x in ['UP/', 'DOWN/', 'BULL/', 'BEAR/']):
-                        continue
-                    qvol = data.get('quoteVolume') or 0
-                    if qvol >= status['config']['min_quote_vol']:
-                        candidates.append((sym, qvol))
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                symbols = [s for s, _ in candidates[:status['config']['universe_size']]] or symbols
-            except Exception as e:
-                status['logs'].append(f"Universe error: {type(e).__name__}")
-        status['universe'] = symbols
-        # Fetch live prices (with retries)
-        try:
-            def _fetch():
-                return exchange.fetch_tickers(symbols)
-            tickers = None
-            delay = 0.5
-            for attempt in range(3):
-                try:
-                    tickers = _fetch()
-                    break
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    time.sleep(delay)
-                    delay *= 2
-            status['live_prices'] = {s: tickers[s]['last'] for s in symbols}
-        except Exception as e:
-            status['live_prices'] = {s: 'N/A' for s in symbols}
-            status['logs'].append(f"Error fetching prices: {type(e).__name__}")
-        # Update P&L for local open positions
-        for pos in status['open_positions']:
-            sym = pos['symbol']
-            price = status['live_prices'].get(sym)
-            try:
-                if isinstance(price, (int, float)):
-                    pos['pnl'] = (float(price) - float(pos['entry'])) * float(pos['qty'])
-            except Exception:
-                pos['pnl'] = 0
-    # Balances disabled (no-op)
-        # recent_trades retained in memory (trim occasionally)
-        if len(status.get('recent_trades', [])) > 50:
-            status['recent_trades'] = status['recent_trades'][:50]
-        
-        # Update performance metrics (live)
-        try:
-            closed = [t for t in status.get('recent_trades', []) if t.get('side') == 'sell' and t.get('status') == 'filled']
-            wins = sum(1 for t in closed if (t.get('pnl') or 0) > 0)
-            total = len(closed)
-            win_rate = (wins / total) if total else 0.0
-
-            realized = sum(float(t.get('pnl') or 0.0) for t in closed)
-            unreal = 0.0
-            for pos in status.get('open_positions', []):
-                price = status['live_prices'].get(pos['symbol'])
-                if isinstance(price, (int, float)):
-                    try:
-                        unreal += (float(price) - float(pos['entry'])) * float(pos['qty'])
-                    except Exception:
-                        pass
-            total_profit = realized + unreal
-
-            # equity tracking (relative)
-            equity = total_profit
-            status['equity_history'].append(equity)
-            if len(status['equity_history']) > 1000:
-                status['equity_history'] = status['equity_history'][-1000:]
-            if equity > status['peak_equity']:
-                status['peak_equity'] = equity
-            peak = status['peak_equity'] or 0.0
-            drawdown = ((peak - equity) / peak * 100.0) if peak > 0 else 0.0
-
-            status['performance']['win_rate'] = win_rate
-            status['performance']['total_profit'] = round(total_profit, 4)
-            status['performance']['drawdown'] = round(drawdown, 2)
-        except Exception as e:
-            status['logs'].append(f"Perf calc error: {type(e).__name__}")
-        # Multi-timeframe signal gating: 4h trend + 1h bias + 15m execution
-        detected_signals = []
-        for symbol in symbols:
-            try:
-                df_4h_trend = fetch_ohlcv_df(exchange, symbol, '4h', 200)
-                df_1h = fetch_ohlcv_df(exchange, symbol, '1h', 200)
-                df_15m = fetch_ohlcv_df(exchange, symbol, '15m', 100)
-                # Use the same structure logic on 4h for trend
-                trend4h = daily_trend_check(df_4h_trend)
-                bias1h = bias_check_1h(df_1h)
-                exec15 = execution_check_15m(df_15m)
-                if trend4h['bullish'] and bias1h['near_ma'] and bias1h['momentum_ok'] and exec15['signal']:
-                    detected_signals.append({
-                        'symbol': symbol,
-                        'type': exec15.get('type', 'entry'),
-                        'time': now,
-                        'trend4h': trend4h,
-                        'bias1h': bias1h
-                    })
-                else:
-                    status['logs'].append(
-                        f"NoSignal {symbol}: 4hTrend={trend4h['bullish']} nearEMA1h={bias1h['near_ma']} RSI1h={bias1h['rsi']:.2f} exec={exec15['signal']}"
-                    )
-            except Exception as e:
-                status['logs'].append(f"Signal error for {symbol}: {type(e).__name__}")
-        status['signals'] = detected_signals
-        # Simulate cooldowns
-        # Build exit signals for open positions
-        exit_sigs = []
-        for pos in status['open_positions']:
-            sym = pos['symbol']
-            entry = float(pos['entry'])
-            qty = float(pos['qty'])
-            res = compute_exit_reasons(sym, entry, qty, exchange)
-            if res['should_exit']:
-                pnl = (res['price'] - entry) * qty
-                exit_sigs.append({'symbol': sym, 'reasons': res['reasons'], 'price': res['price'], 'pnl': pnl})
-        status['exit_signals'] = exit_sigs
-
-        # Simulate cooldowns
-        status['cooldowns'] = {s: 0 for s in symbols}
-        # Logs
-        status['logs'].append(f"Scanned at {now}")
-        if len(status['logs']) > 20:
-            status['logs'] = status['logs'][-20:]
-        owner.publish_scan(status)
-        owner.process_pending()
-        time.sleep(10)
+        scanner.step()
+        time.sleep(1)
 
 @app.route('/trade', methods=['POST'])
 def trade():
@@ -468,6 +381,12 @@ def api_status():
         'open_positions': observed['open_positions'],
         'performance': observed['performance'],
         'config': observed['config'],
+        'config_version': observed['config_version'],
+        'trailing_supported': False,
+        'market_health': observed['market_health'],
+        'market_prices': observed['market_prices'],
+        'market_budget': observed['market_budget'],
+        'position_rules': {s: {k: v for k, v in rule.items() if k != 'config'} for s, rule in observed['position_rules'].items()},
         'live_prices': observed['live_prices'],
         'execution_mode': 'paper' if observed['config']['paper_trading'] else 'exchange',
         'venue': runtime_environment.venue if runtime_environment else 'unconfigured',
@@ -492,11 +411,16 @@ def update_config():
                 return jsonify(error='Use a reviewed execution mode transition'), 409
         except ValueError:
             return jsonify(error='Invalid execution mode'), 400
-    coerced = coerce_config_types(updates)
+    # Validate the complete merged version within the write transaction.
     # Merge into status
     try:
-        state_store.update_config(coerced, 'operator')
+        expected = int(form.get('expected_config_version', g.operator_status['config_version']))
+        state_store.update_config(updates, 'operator', expected_version=expected)
         ok = True
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except (ConfigurationError, ValueError) as error:
+        return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; configuration unchanged'), 503
     if ok:
@@ -510,8 +434,13 @@ def reset_config():
     # Reset to DEFAULT_CONFIG and persist
     paper = g.operator_status['config']['paper_trading']
     try:
-        state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset')
+        expected = int(request.form.get('expected_config_version', g.operator_status['config_version']))
+        state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset', expected_version=expected)
         ok = True
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except (ConfigurationError, ValueError) as error:
+        return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; configuration unchanged'), 503
     if ok:
@@ -557,7 +486,7 @@ def dashboard():
                     </form>
                     <div class="flex items-center gap-2">
                         <button id="soundToggle" class="px-2 py-1 rounded border border-slate-700 text-xs text-slate-200 hover:bg-slate-800">Sound: Off</button>
-                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['bot_status']=='Running' else 'bg-rose-600 text-white' }}">
+                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['market_health']['execution_ready'] else 'bg-rose-600 text-white' }}">
                             {{ status['bot_status'] }}
                         </span>
                     </div>
@@ -763,6 +692,7 @@ def dashboard():
                             {% endwith %}
                         </div>
                         <form method="post" action="/reset-config" class="mt-3">
+                            <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="px-3 py-2 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs">Reset to defaults</button>
                         </form>
@@ -787,6 +717,7 @@ def dashboard():
                         <div class="mt-4">
                             <h3 class="text-sm font-semibold text-slate-300">Config</h3>
                             <form method="post" action="/update-config" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 text-sm">
+                                <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <label>risk
                                     <input name="risk" type="number" step="0.001" min="0" max="1" value="{{ status['config']['risk'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
@@ -817,8 +748,9 @@ def dashboard():
                                 <label>stop_loss_pct
                                     <input name="stop_loss_pct" type="number" step="0.001" min="0" value="{{ status['config']['stop_loss_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
-                                <label>trailing_pct
-                                    <input name="trailing_pct" type="number" step="0.001" min="0" value="{{ status['config']['trailing_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                <label>Trailing protection (unavailable)
+                                    <input name="trailing_pct" disabled type="number" step="0.001" min="0" value="{{ status['config']['trailing_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+                                    <span class="text-xs text-slate-400">Saved legacy value; trailing orders are not implemented.</span>
                                 </label>
                                 <label>universe_size
                                     <input name="universe_size" type="number" step="1" min="1" value="{{ status['config']['universe_size'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />

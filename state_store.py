@@ -5,10 +5,12 @@ from contextlib import closing, contextmanager
 import json
 from pathlib import Path
 import sqlite3
+import math
 from typing import Any, Iterator
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from configuration import validated_config, ConfigurationError, ConfigurationConflict
 
 
 class StateUnavailable(RuntimeError):
@@ -54,9 +56,10 @@ class StateStore:
                 existing = connection.execute('SELECT id FROM namespaces WHERE id=?', (self.namespace,)).fetchone()
                 if existing is None:
                     connection.execute('INSERT INTO namespaces VALUES (?,?,?,?)', (self.namespace, self.account, self.venue, self.mode))
-                    values = {**defaults, 'paper_trading': self.mode == 'paper'}
+                    values = validated_config({**defaults, 'paper_trading': self.mode == 'paper'})
                     connection.execute('INSERT INTO config_versions(namespace,version,values_json,actor) VALUES (?,1,?,?)',
                                        (self.namespace, json.dumps(values, sort_keys=True, allow_nan=False), 'explicit-provision'))
+            self.provision_market()
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         identity = str(uuid.uuid4())
@@ -164,13 +167,23 @@ class StateStore:
             ''')
             connection.execute('INSERT INTO store_identity VALUES (?,1)', (identity,))
             connection.execute('INSERT INTO namespaces VALUES (?,?,?,?)', (self.namespace, self.account, self.venue, self.mode))
-            values = {**defaults, 'paper_trading': self.mode == 'paper'}
+            values = validated_config({**defaults, 'paper_trading': self.mode == 'paper'})
             connection.execute('INSERT INTO config_versions(namespace,version,values_json,actor) VALUES (?,1,?,?)',
                                (self.namespace, json.dumps(values, sort_keys=True, allow_nan=False), 'explicit-provision'))
             connection.commit()
         # If the marker write fails, the database remains non-tradable until
         # reviewed repair; startup never silently provisions over that partial state.
         self.marker.write_text(json.dumps({'id': identity, 'schema_version': 1}), encoding='utf-8')
+        self.provision_market()
+
+    def provision_market(self) -> None:
+        """Explicit additive BT04 extension; existing financial schema stays at v1."""
+        self.validate()
+        with self.connection(write=True) as connection:
+            connection.execute('''CREATE TABLE IF NOT EXISTS market_budget_v1 (
+                venue TEXT PRIMARY KEY, values_json TEXT NOT NULL)''')
+            connection.execute('INSERT OR IGNORE INTO market_budget_v1 VALUES (?,?)',
+                               (self.venue, json.dumps({'limits': [], 'blocked_until': 0, 'failures': 0})))
 
     def config(self) -> tuple[int, dict[str, Any]]:
         with self.connection() as connection:
@@ -184,18 +197,21 @@ class StateStore:
         values = json.loads(row['values_json'])
         if not isinstance(values, dict) or values.get('paper_trading') is not (self.mode == 'paper'):
             raise StateUnavailable('Invalid durable configuration')
+        try:
+            values = validated_config(values)
+        except ConfigurationError as error:
+            raise StateUnavailable('Invalid durable configuration') from error
         return int(row['version']), values
 
-    def update_config(self, changes: dict[str, Any], actor: str) -> tuple[int, dict[str, Any]]:
+    def update_config(self, changes: dict[str, Any], actor: str, *, expected_version: int | None = None) -> tuple[int, dict[str, Any]]:
         with self.connection(write=True) as connection:
-            row = connection.execute('SELECT version,values_json FROM config_versions WHERE namespace=? ORDER BY version DESC LIMIT 1',
-                                     (self.namespace,)).fetchone()
-            if row is None:
-                raise StateUnavailable('Namespace requires explicit initialization')
-            values = json.loads(row['values_json'])
+            current, values = self._config(connection)
+            if expected_version is not None and expected_version != current:
+                raise ConfigurationConflict('Configuration changed; review the latest version')
             values.update(changes)
             values['paper_trading'] = self.mode == 'paper'
-            version = int(row['version']) + 1
+            values = validated_config(values)
+            version = current + 1
             connection.execute('INSERT INTO config_versions(namespace,version,values_json,actor) VALUES (?,?,?,?)',
                                (self.namespace, version, json.dumps(values, sort_keys=True, allow_nan=False), actor))
             connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
@@ -206,6 +222,8 @@ class StateStore:
         with self.connection() as connection:
             if connection.execute('PRAGMA quick_check').fetchone()[0] != 'ok' or connection.execute('PRAGMA foreign_key_check').fetchone():
                 raise StateUnavailable('Durable state integrity failure')
+            self._market_budget(connection)
+            self._prices(connection)
         self.config()
         self.positions()
 
@@ -247,6 +265,48 @@ class StateStore:
         with self.connection() as connection:
             return self._positions(connection)
 
+    def prices(self) -> dict[str, Any]:
+        with self.connection() as connection:
+            return self._prices(connection)
+
+    def market_coverage(self) -> set[str]:
+        with self.connection() as connection:
+            connection.execute('BEGIN')
+            return {row[0] for row in connection.execute('''SELECT symbol FROM positions WHERE namespace=?
+                UNION SELECT symbol FROM intents WHERE namespace=? AND state NOT IN ('filled','rejected','canceled')
+                UNION SELECT symbol FROM protection_groups WHERE namespace=? AND state NOT IN ('closed','canceled','rejected','failed')''',
+                                                        (self.namespace,) * 3)}
+
+    def _prices(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        values = {row['symbol']: {**dict(row), 'venue': self.venue} for row in connection.execute(
+            'SELECT symbol,price,fetched_at FROM market_prices WHERE namespace=?', (self.namespace,))}
+        try:
+            for quote in values.values():
+                price = Decimal(quote['price'])
+                if not price.is_finite() or price <= 0:
+                    raise StateUnavailable('Invalid durable public price')
+        except InvalidOperation as error:
+            raise StateUnavailable('Invalid durable public price') from error
+        return values
+
+    def _market_budget(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        if connection.execute("SELECT 1 FROM sqlite_master WHERE name='market_budget_v1' AND type='table'").fetchone() is None:
+            return {'state': 'uninitialized', 'reason': 'market_budget_unavailable'}
+        row = connection.execute('SELECT values_json FROM market_budget_v1 WHERE venue=?', (self.venue,)).fetchone()
+        if row is None:
+            return {'state': 'uninitialized', 'reason': 'market_budget_unavailable'}
+        values = json.loads(row[0])
+        if (not isinstance(values, dict) or not isinstance(values.get('limits'), list)
+                or type(values.get('blocked_until')) not in (int, float) or not math.isfinite(values['blocked_until'])):
+            raise StateUnavailable('Invalid durable market budget')
+        for limit in values['limits']:
+            if not isinstance(limit, dict) or limit['kind'] not in {'REQUEST_WEIGHT', 'RAW_REQUESTS'} or any(
+                type(limit[key]) is not int or limit[key] < (0 if key in {'used', 'start'} else 1)
+                for key in ('duration', 'limit', 'used', 'start')):
+                raise StateUnavailable('Invalid durable market budget')
+        return {'state': 'auth_blocked' if values.get('auth_blocked') else 'configured' if values['limits'] else 'uninitialized',
+                'limits': values['limits'], 'blocked_until': values['blocked_until'], 'reason': values.get('last_failure')}
+
     def _positions(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
         rows = [dict(row) for row in connection.execute('SELECT symbol,qty,entry,basis_status FROM positions WHERE namespace=? ORDER BY symbol',
                                                       (self.namespace,))]
@@ -259,6 +319,49 @@ class StateStore:
         except InvalidOperation as error:
             raise StateUnavailable('Invalid durable position') from error
         return rows
+
+    def position_rules(self) -> dict[str, Any]:
+        with self.connection() as connection:
+            connection.execute('BEGIN')
+            return self._position_rules(connection)
+
+    def _position_rules(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        result = {}
+        for position in self._positions(connection):
+            quantity = Decimal(0)
+            versions: set[int] = set()
+            for fill in connection.execute('''SELECT f.qty,f.side,i.config_version FROM fills f
+                JOIN intents i ON i.namespace=f.namespace AND i.operation_id=f.operation_id
+                WHERE f.namespace=? AND f.symbol=? ORDER BY f.rowid''', (self.namespace, position['symbol'])):
+                try:
+                    amount = Decimal(fill['qty'])
+                except InvalidOperation as error:
+                    raise StateUnavailable('Invalid durable fill') from error
+                if not amount.is_finite() or amount <= 0 or fill['side'] not in {'buy', 'sell'}:
+                    raise StateUnavailable('Invalid durable fill')
+                if fill['side'] == 'buy':
+                    versions.add(int(fill['config_version']))
+                    quantity += amount
+                else:
+                    quantity -= amount
+                    if quantity == 0:
+                        versions.clear()
+            # No FIFO/LIFO/lot allocation is invented for mixed entry versions.
+            rule: dict[str, Any] = {'state': 'review_required', 'config_version': None}
+            if (len(versions) == 1 and quantity == Decimal(position['qty'])
+                    and not position['basis_status'].startswith('legacy-opening')):
+                version = next(iter(versions))
+                row = connection.execute('SELECT values_json FROM config_versions WHERE namespace=? AND version=?',
+                                         (self.namespace, version)).fetchone()
+                if row is not None:
+                    try:
+                        values = validated_config(json.loads(row[0]))
+                    except ConfigurationError:
+                        pass
+                    else:
+                        rule.update(state='bound', config_version=version, config=values)
+            result[position['symbol']] = rule
+        return result
 
     def migration(self) -> list[dict[str, Any]]:
         with self.connection() as connection:
@@ -298,4 +401,6 @@ class StateStore:
             version, config = self._config(connection)
             return {'config_version': version, 'config': config, 'scan': self._scan(connection),
                     'positions': self._positions(connection), 'operations': self._operations(connection),
-                    'migration': self._migration(connection), 'ownership': self._ownership(connection)}
+                    'migration': self._migration(connection), 'ownership': self._ownership(connection),
+                    'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
+                    'position_rules': self._position_rules(connection)}

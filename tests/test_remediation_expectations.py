@@ -61,14 +61,12 @@ def test_confirmed_exchange_fill_is_visible_to_operator() -> None:
         assert any(position['symbol'] == 'BTC/USDT' and position['qty'] == 1.0 for position in positions)
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A13 / BT04: equity estimate field is currently discarded')
 def test_equity_estimate_setting_is_saved() -> None:
     with LegacySandbox() as sandbox:
         sandbox.post('/update-config', data={'paper_trading': '1', 'equity_proxy': '2000'})
         assert sandbox.client.get('/api/status').get_json()['config']['equity_proxy'] == 2000.0
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A13 / BT04: negative risk setting currently passes validation')
 def test_negative_risk_cannot_replace_valid_setting() -> None:
     with LegacySandbox() as sandbox:
         sandbox.post('/update-config', data={'paper_trading': '1', 'risk': '-2'})
