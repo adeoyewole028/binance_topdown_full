@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** open; BT08 implementation in progress; all acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce reproducible strategy signals from the same as-of inputs across runtime and replay.
 **Blocked by:** [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6).
 **Decision blockers:** None additional; applicable choices approved by the user on 2026-10-02.
@@ -72,3 +72,8 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 ## Approved decision update
 
 APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection
+
+
+## BT08 start (2026-10-03)
+
+BT07#9 CLOSED and parent#2 OPEN read-back verified. Live#10/comments inspected (OPEN/0comments), native prerequisite#6 CLOSED. Sole active ticket. Fixed review point`feed17e1c8f499ee990ff3e08335ec1ab164e748`. Approved D04 preserves both named/versioned profiles without automatic selection; pure evaluator and completed-bar seam preserved. No automation intake/replay implementation early; no actual provider/trade/deployment/push. Next: golden/causal pure-evaluator tracer, runtime/daemon adapters, focused/full checks and required two-axis review.

@@ -136,7 +136,9 @@
       "native_dependencies": [
         "BT04"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "open issue, required label, complete body, decisions and native blockers verified",
+      "implementation_status": "in_progress",
+      "review_fixed_point": "feed17e1c8f499ee990ff3e08335ec1ab164e748"
     },
     {
       "planning_id": "BT09",
