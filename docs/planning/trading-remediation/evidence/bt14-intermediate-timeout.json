@@ -1,0 +1,16 @@
+{
+  "ticket": "BT14",
+  "source_revision": "f82a186f26c1d417f5f3249cd44012754b6147e5",
+  "python": "3.11.17",
+  "platform": "Windows",
+  "collected_tests": 396,
+  "suite_timeout_seconds": 600,
+  "full_run_completed": false,
+  "passed": null,
+  "observed_failure_markers": 1,
+  "failure_identity": "unavailable: pytest summary/JUnit not emitted before aggregate timeout",
+  "runner_exit_code": 1,
+  "outcome": "subprocess.TimeoutExpired at unchanged 600s budget",
+  "follow_up": "two relevant cross-process checks passed7.39s unchanged; serial same-budget full rerun required",
+  "scope": "offline fake-provider checks only; no deployment/provider acceptance"
+}
