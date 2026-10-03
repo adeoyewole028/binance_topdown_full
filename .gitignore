@@ -40,3 +40,8 @@ node_modules/
 playwright-report/
 test-results/
 .scratch/bt14-clean-env/
+.scratch/bt14-31117-env/
+.scratch/bt14-runtime-tools/
+.scratch/bt14-python/
+.scratch/bt14-python-bin/
+.scratch/bt14-uv-cache/

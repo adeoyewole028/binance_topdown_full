@@ -29,11 +29,13 @@ class BackupSchedule:
         self.latest: float | None = None
         self.interval = self.policy.recovery_point_seconds - 2 * self.policy.reconciliation_interval
 
-    def _publish_health(self, stamp: float, identity: str) -> None:
+    def _publish_health(self, stamp: float, identity: str, snapshot: Path) -> None:
         path = self.store.path.parent / 'backup-health.json'
         temporary = path.with_suffix('.tmp')
         with temporary.open('w', encoding='utf-8') as handle:
-            handle.write(json.dumps({'as_of': stamp, 'store_id': identity}))
+            details = (snapshot / 'trading.sqlite3').stat()
+            handle.write(json.dumps({'as_of': stamp, 'store_id': identity,
+                'snapshot': snapshot.name, 'size': details.st_size, 'modified_ns': details.st_mtime_ns}))
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
@@ -84,7 +86,7 @@ class BackupSchedule:
             if latest is not None and now - latest < self.interval:
                 self.latest = latest
                 newest = max(snapshots, key=lambda pair: pair[1])[0]
-                self._publish_health(latest, self._verified(newest)[1])
+                self._publish_health(latest, self._verified(newest)[1], newest)
                 return None
             identity = uuid.uuid4().hex
             staging = self.directory / ('.incomplete-' + identity)
@@ -113,7 +115,7 @@ class BackupSchedule:
                         (candidate / name).unlink()
                     candidate.rmdir()
             self.latest = now
-            self._publish_health(now, manifest['id'])
+            self._publish_health(now, manifest['id'], published)
             return published
         except (OSError, ValueError, KeyError, TypeError, sqlite3.Error) as error:
             raise StateUnavailable('Scheduled backup unavailable; execution must stop') from error

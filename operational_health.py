@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from typing import Any
 
@@ -37,6 +38,14 @@ def backup_ready(store: StateStore, now: float) -> bool:
     try:
         metadata = json.loads((store.path.parent / 'backup-health.json').read_text(encoding='utf-8'))
         stamp = metadata['as_of']
+        if not isinstance(metadata['snapshot'], str) or not re.fullmatch(r'snapshot-[a-f0-9]{32}', metadata['snapshot']):
+            return False
+        artifact = store.path.parent / 'backups' / metadata['snapshot'] / 'trading.sqlite3'
+        if artifact.is_symlink() or artifact.parent.is_symlink() or artifact.parent.parent.is_symlink():
+            return False
+        details = artifact.stat()
+        if details.st_size != metadata['size'] or details.st_mtime_ns != metadata['modified_ns']:
+            return False
         with store.connection() as connection:
             identity = connection.execute('SELECT id FROM store_identity').fetchone()[0]
         return bool(metadata['store_id'] == identity and not isinstance(stamp, bool)
@@ -56,8 +65,13 @@ def control_ready(store: StateStore, now: float) -> bool:
         stamp = marker['as_of']
         if (isinstance(stamp, bool) or not isinstance(stamp, (int, float))
                 or not math.isfinite(now) or not math.isfinite(stamp)
-                or not 0 <= now - stamp < OperationsPolicy().reconciliation_interval):
+                or not 0 <= now - stamp < OperationsPolicy().scan_health_timeout):
             return False
+        if os.name != 'nt':
+            pid = marker['pid']
+            if type(pid) is not int or pid <= 0:
+                return False
+            os.kill(pid, 0)  # Linux signal zero observes liveness; never sends a terminating signal.
         with store.connection() as connection:
             identity = connection.execute('SELECT id FROM store_identity').fetchone()[0]
             owner = connection.execute('SELECT token,generation,state FROM execution_owners WHERE account=? AND venue=?',
@@ -79,6 +93,7 @@ def observations(store: StateStore, now: float | None = None) -> dict[str, Any]:
               if g['state'] in {'failed', 'unknown', 'canceling', 'installing'}]
     protected = {g['symbol'] for g in snapshot['protection'] if g['state'] == 'active'}
     unprotected = [p['symbol'] for p in snapshot['positions'] if p['symbol'] not in protected] if store.mode == 'exchange' else []
+    history_review = any(p['basis_status'] == 'provider_basis_unknown' for p in snapshot['positions'])
     account = snapshot['exchange_account']
     risk = snapshot['paper_account'] if store.mode == 'paper' else snapshot['exchange_risk']
     conditions = []
@@ -92,6 +107,8 @@ def observations(store: StateStore, now: float | None = None) -> dict[str, Any]:
         conditions.append('protection_review_required')
     if unprotected:
         conditions.append('unprotected_exposure')
+    if history_review:
+        conditions.append('history_review_required')
     budget = snapshot['market_budget']
     if budget.get('state') == 'auth_blocked':
         conditions.append('provider_access_blocked')
@@ -104,6 +121,7 @@ def observations(store: StateStore, now: float | None = None) -> dict[str, Any]:
             'control_ready': control_ready(store, stamp),
             'market_ready': bool(health['execution_ready']),
             'entry_ready': bool(control_ready(store, stamp) and health['execution_ready'] and not unresolved and not unsafe
+                                and not unprotected and not history_review
                                 and not risk.get('entry_blocked', True) and not snapshot['entry_control']['paused']
                                 and (store.mode == 'paper' or account.get('state') == 'ready')),
             'operation_ids': unresolved, 'protection_ids': unsafe,

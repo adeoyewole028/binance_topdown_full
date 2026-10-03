@@ -19,30 +19,40 @@ from state_store import StateStore
 
 
 def supervise(commands: Sequence[Sequence[str]], *, should_run: Callable[[], bool],
-              monitor: Callable[[], None] | None = None) -> int:
+              monitor: Callable[[], None] | None = None,
+              on_failure: Callable[[], None] | None = None) -> int:
     children: list[subprocess.Popen[bytes]] = []
+    failed = False
     try:
         for command in commands:
             children.append(subprocess.Popen(list(command), start_new_session=os.name != 'nt'))
         while should_run():
             if any(child.poll() is not None for child in children):
+                failed = True
                 return 1
             if monitor is not None:
                 monitor()
             time.sleep(1)
         return 0
+    except Exception:
+        failed = True
+        raise
     finally:
         # Stop HTTP intake and automation together; retained provider-side stops
         # are untouched. Termination cannot turn uncertain effects into retries.
         for child in children:
-            if child.poll() is None:
-                if os.name == 'nt':
-                    child.terminate()
-                else:
-                    try:
-                        getattr(os, 'killpg')(child.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
+            if os.name != 'nt':
+                try:
+                    getattr(os, 'killpg')(child.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            elif child.poll() is None:
+                child.terminate()
+        if failed and on_failure is not None:
+            try:
+                on_failure()
+            except Exception:
+                print('{"event":"service_child_failed","alert_delivery":"unavailable"}', flush=True)
         deadline = time.monotonic() + 30
         for child in children:
             try:
@@ -56,12 +66,33 @@ def supervise(commands: Sequence[Sequence[str]], *, should_run: Callable[[], boo
                     except ProcessLookupError:
                         pass
                 child.wait(timeout=5)
+        if os.name != 'nt':
+            # A dead master cannot reap or wait for its surviving descendants.
+            # Retain the original group IDs and clean their entire groups.
+            remaining = [child.pid for child in children]
+            while remaining and time.monotonic() < deadline:
+                alive = []
+                for pid in remaining:
+                    try:
+                        getattr(os, 'killpg')(pid, 0)
+                        alive.append(pid)
+                    except ProcessLookupError:
+                        pass
+                remaining = alive
+                if remaining:
+                    time.sleep(0.1)
+            for pid in remaining:
+                try:
+                    getattr(os, 'killpg')(pid, getattr(signal, 'SIGKILL'))
+                except ProcessLookupError:
+                    pass
 
 
 def main() -> int:
     runtime = load_launcher_environment()
     if runtime.development or os.name == 'nt':
         raise ValueError('The supervised production package requires Linux production runtime')
+    os.umask(0o077)
     store = StateStore(runtime.data_directory, os.environ.get('LOCAL_ACCOUNT_ID', 'operator-account'),
                        runtime.venue, runtime.mode)
     store.validate()  # Runtime mounted disk only; no automatic init/migration/repair.
@@ -83,7 +114,8 @@ def main() -> int:
     from operational_monitor import Monitor
     monitor = Monitor(store)
     monitor.step()  # Verify mounted state/backup before admitting HTTP or execution.
-    return supervise([worker, web], should_run=lambda: running, monitor=monitor.step)
+    return supervise([worker, web], should_run=lambda: running, monitor=monitor.step,
+                     on_failure=lambda: monitor.step(failure=True))
 
 
 if __name__ == '__main__':

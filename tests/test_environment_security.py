@@ -61,7 +61,9 @@ def test_normal_imports_in_fresh_process_have_no_startup_effects(tmp_path: Path)
 import importlib
 from tests.legacy_sandbox import LegacySandbox
 with LegacySandbox() as sandbox:
-    for name in ('dashboard', 'topdown_daemon', 'backtester'):
+    for name in ('dashboard', 'topdown_daemon', 'backtester', 'operational_health',
+                 'operational_monitor', 'operations_recovery', 'run_supervised',
+                 'tools.http_transport', 'tools.release_verified'):
         importlib.import_module(name)
     assert sandbox.thread_start_attempts == 0
     assert sandbox.network_attempts == 0

@@ -21,3 +21,6 @@ Account metrics rebuild from durable full history with qualified fee/basis and e
 Operator status/settings, bundled assets and browser validation: [BT12 contract](docs/operator-status.md).
 
 Reviewed manual order and recovery controls: [operator guide](docs/manual-order-review.md). Offline browser validation: `node tests/browser/manual-orders.cjs`.
+
+
+Production operations package and pending activation gates: [single-host runbook](docs/operations-runbook.md). BT14 preparation does not authorize applying the proposed paid blueprint or sending private webhook alerts.

@@ -34,6 +34,7 @@ jobs:
             requirements.txt
             requirements.lock
             requirements-dev.txt
+            requirements-dev.lock
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14.0'
@@ -46,9 +47,9 @@ jobs:
         run: python tools/check_baseline.py --timeout 600 --ticket BT14 --output bt14-ci-evidence.json
       - name: Static and type checks
         run: |
-          python -m pyflakes .
+          python -c "import subprocess,sys; paths=subprocess.check_output(['git','ls-files','--','*.py'],text=True).splitlines(); raise SystemExit(subprocess.call([sys.executable,'-m','pyflakes',*paths]))"
           python -m mypy
-          python -m compileall -q -x '/(node_modules|.git|.scratch)/' .
+          python -c "import subprocess,py_compile; paths=subprocess.check_output(['git','ls-files','--','*.py'],text=True).splitlines(); [py_compile.compile(p,doraise=True) for p in paths]"
       - name: Dashboard build and real offline browser journeys
         run: |
           npm ci
@@ -81,5 +82,6 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
           RELEASE_HEALTH_URL: ${{ vars.RELEASE_HEALTH_URL }}
+          RELEASE_APPROVED_PLAN: ${{ vars.RELEASE_APPROVED_PLAN }}
           RELEASE_REVISION: ${{ github.sha }}
         run: python tools/release_verified.py
