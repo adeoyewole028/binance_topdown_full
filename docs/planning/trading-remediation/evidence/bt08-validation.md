@@ -26,3 +26,8 @@ Required independent review pending.
 Standards at8dbfd76:0documented violations,1optional P3 possible duplication of the bias-window200 across runtime/evaluation. Bias window now lives in the immutable Profile catalog and both consumers read it.
 
 Spec at8dbfd76:1actionableP2. Daily v1 had inherited configurable dashboard near-EMA/RSI thresholds rather than preserving characterized fixed0.02/30. Independent guarded golden comparison and root red parity check reproduced bothconditionsFalse instead ofTrue at dashboard near0/RSI99. The daily immutable catalog now owns its fixed thresholds; dashboard remains configurable; no mathematical definition or separately approved version change is introduced. Documentation corrected. Final rechecks/full validation pending; ticket remains open.
+
+
+## Full-suite runner budget correction
+
+First complete run at52b5c65 reached about79percent with no reported test failure, then the pre-existing aggregate300s runner budget expired and produced no complete machine acceptance artifact. A standalone20case protection rerun passed50.70s (slowest4.04s); Python startup probe0.11s. No stalled process or source test defect was found. The suite now has271cases and this host showed slower execution than the earlier249case151.71s run. The baseline runner now offers an explicit positive --timeout budget, retaining default300s; final BT08 run uses bounded600s. Individual subprocess15s and all clock/freshness/provider/socket/credential/write/assertion gates are unchanged; no failure is waived or claimed complete. This narrowly scoped harness correction is necessary for complete evidence, not a product or risk-policy change. Independent rechecks and final complete run remain required.

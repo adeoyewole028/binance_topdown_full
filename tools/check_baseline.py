@@ -20,7 +20,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='Optional redacted JSON evidence file')
     parser.add_argument('--ticket', default='offline regression suite', help='Ticket owning this validation snapshot')
+    parser.add_argument('--timeout', type=int, default=300, help='Positive full-suite wall-clock budget in seconds; individual test gates are unchanged')
     args = parser.parse_args()
+    if args.timeout <= 0:
+        parser.error('--timeout must be positive')
     environment = os.environ.copy()
     for name in tuple(environment):
         if name.startswith(('BINANCE_', 'OPERATOR_', 'ALLOW_', 'TRADING_')) or name in (
@@ -33,7 +36,7 @@ def main() -> int:
         report = Path(directory) / 'junit.xml'
         result = subprocess.run(
             [sys.executable, '-m', 'pytest', '-q', f'--junitxml={report}'],
-            cwd=ROOT, env=environment, check=False, timeout=300,
+            cwd=ROOT, env=environment, check=False, timeout=args.timeout,
         )
         suites = ET.parse(report).getroot()
         cases = suites.findall('.//testcase')
@@ -45,6 +48,7 @@ def main() -> int:
                 xfails.append(case.attrib['name'])
         other_skips = sum(case.find('skipped') is not None for case in cases) - len(xfails)
         evidence = {
+            'suite_timeout_seconds': args.timeout,
             'ticket': args.ticket, 'scope': 'offline behavior and safety checks; not deployed/provider acceptance',
             'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             'python': platform.python_version(),
