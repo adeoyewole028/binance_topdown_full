@@ -18,7 +18,7 @@ def main() -> None:
     real_getaddrinfo=socket.getaddrinfo
     clock=ControlledClock()
     directory=Path(sys.argv[1])
-    with LegacySandbox(directory,authenticated=False) as sandbox:
+    with LegacySandbox(directory,authenticated=False,paper_setup=False) as sandbox:
         sandbox.module.initialize_runtime(clock=clock)
         with ExecutionWorker(sandbox.module.state_store,clock=clock) as owner:
             def fixture() -> Any:

@@ -614,6 +614,7 @@ def operator_label(value):
         'processing': 'Being processed', 'canceling': 'Cancellation pending', 'canceled': 'Canceled',
         'partially_filled': 'Partly filled', 'active': 'Protection active', 'closed': 'Closed',
         'installing': 'Protection being installed', 'failed': 'Protection failed; review the holding',
+        'exchange_confirmed': 'Confirmed by the exchange', 'exchange_unverified': 'Awaiting exchange confirmation',
         'simulation': 'Local paper simulation', 'unverified': 'Awaiting verification',
         'stop_market_oco': 'Stop market with linked take profit',
     }

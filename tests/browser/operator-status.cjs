@@ -52,6 +52,7 @@ const crypto=require('node:crypto');
     await expect(page.locator('[data-status-panel=performance]')).toContainText('Performance');
     await expect(page.locator('[data-status-panel=history]')).toContainText('Recent Trades');
     await expect(page.locator('[data-status-panel=health]')).toHaveText('Market data unavailable');
+    await expect(page.locator('[data-status-panel=setup-status]')).toContainText('Paper setup required');
     await page.locator('#qtyInput').fill('0.2345');
     await page.locator('#settings-risk').fill('0.023');
     await page.locator('#strategy-profile').selectOption('daemon_daily');
@@ -61,6 +62,14 @@ const crypto=require('node:crypto');
     await expect(page.locator('#settings-risk')).toHaveValue('0.023');
     await expect(page.locator('#qtyInput')).toHaveValue('0.2345');
     await expect(page.locator('#strategy-profile')).toHaveValue('daemon_daily');
+    const setupInputs={initial_cash:'10000',fee_fraction:'0',slippage_fraction:'0',risk_fraction:'1',fixed_quote:'100',
+      max_allocation_fraction:'1',max_exposure_fraction:'1',max_positions:'100',cooldown_seconds:'0',drawdown_fraction:'1'};
+    for (const [name,value] of Object.entries(setupInputs)) await page.locator('#setup-'+name).fill(value);
+    await page.locator('form[action="/paper/setup"] button[type=submit]').click();
+    await expect(page.locator('[data-status-panel=setup-status]')).toContainText('Explicit operator policy recorded.');
+    await expect(page.locator('[data-status-panel=setup-status]')).not.toContainText('Paper setup required');
+    await expect(page.locator('#settings-risk')).toHaveValue('0.023');
+    await expect(page.locator('#qtyInput')).toHaveValue('0.2345');
     await fixture('scan'); await refresh();
     await expect(page.locator('[data-status-panel=health]')).toContainText('Market data ready');
     const signal = await context.request.get(url + '/api/status');
@@ -205,7 +214,7 @@ const crypto=require('node:crypto');
       source_revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
       source_sha256:Object.fromEntries(sourceFiles.map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')])),
       polling_preserves_input_focus:true,offline_recovery:true,stale_data:true,auth_recovery:true,
-      invalid_field_preservation:true,setup_field_recovery:true,visible_performance_history_updates:true,version_conflict_review:true,candle_dedup:true,opt_in_sound:true,
+      invalid_field_preservation:true,setup_field_recovery:true,initial_setup_banner_recovery:true,visible_performance_history_updates:true,version_conflict_review:true,candle_dedup:true,opt_in_sound:true,
       keyboard_focus:focus,css_scale_200_reflow:true,minimum_24_pixel_targets:true,page_errors:failures,
       boundary:'Actual Chromium, guarded loopback Flask/temp SQLite/owned fake public provider; no provider/deployed/device acceptance'},null,2));
     console.log('BT12 browser journeys passed:',JSON.stringify(checks));
