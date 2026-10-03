@@ -2,7 +2,7 @@
   "tracker": "GitHub Issues",
   "repository": "adeoyewole028/binance_topdown_full",
   "date": "2026-10-02",
-  "implementation": "BT01-BT03 complete/closed verified; BT04 unstarted awaiting D07",
+  "implementation": "BT01-BT03 complete/closed; BT04 in progress after approved D07 targets",
   "decision_blockers": [
     "D05",
     "D07"
@@ -61,13 +61,11 @@
       "blocked_by": [
         "BT03"
       ],
-      "decision_blockers": [
-        "D07"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT03"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "BT03 native prerequisite closed verified; D07 selected; in progress"
     },
     {
       "planning_id": "BT05",
@@ -287,5 +285,6 @@
     "D03": "APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automation, disabled by default; both use the same executor",
     "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection",
     "D06": "APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation"
-  }
+  },
+  "remaining_decisions": "D05; D07 external hosting/alert/deployment/live-canary gates only"
 }

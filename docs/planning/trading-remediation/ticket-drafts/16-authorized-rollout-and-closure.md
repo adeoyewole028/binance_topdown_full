@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Activate only approved scope in a controlled environment and close only after real journeys and operational gates are satisfied.
 **Blocked by:** [BT15 #17](https://github.com/adeoyewole028/binance_topdown_full/issues/17).
-**Decision blockers:** D07.
+**Decision blockers:** D07 live canary amount/symbol/duration and explicit rollout approval remain unresolved; numerical operating targets/alert ownership are approved.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R20, R19.
 
@@ -69,3 +69,8 @@ Autonomous funding/trading outside budget, production claims without actual jour
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
 
+
+
+## Approved D07 operating targets
+
+APPROVED2026-10-03: scans300s, scan-health600s, price-refresh30s/expiry60s, reconciliation15s, backups7days/RPO15min/RTO1hour; configured operator owns private webhook alerts configured before activation. Hosting spend, deployment/provider access, actual alert destination and live-canary budget/duration remain separate gates.

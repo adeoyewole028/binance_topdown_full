@@ -1,7 +1,7 @@
 # Binance Top-Down remediation implementation specification
 
 Version: 0.3, 2026-10-02 (Africa/Lagos).
-Status: **test boundaries and 16-ticket breakdown approved; published to GitHub; material decisions pending; implementation not authorized**.
+Status: **test boundaries and 16-ticket breakdown approved; published to GitHub; strict sequential implementation authorized; BT01-BT03 complete, BT04 current; remaining decisions explicit**.
 Published specification: [2](https://github.com/adeoyewole028/binance_topdown_full/issues/2).
 
 Source revision: `a71999a136b2532e4c84ce53564a98efcf9a77fb`.
@@ -69,10 +69,10 @@ Current HTTP entry points `/`, `/api/status`, `/trade`, `/close`, `/update-confi
 | D04 Strategy contract | APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection | Choose one authoritative profile and explicitly deprecate the other | BT08, BT09, BT10 |
 | D05 Capital and protection | Separate initial paper cash from equity display; fixed/risk allocation, cap to available funds/exposure; supported Spot OCO after fills; halt new entries on unprotected exposure | Risk limits, fees, slippage, drawdown kill rules and stop-market versus stop-limit behavior require selected values; automatic emergency liquidation is not assumed | BT05, BT06, BT07, BT10, BT11 |
 | D06 Legacy identity / ownership | APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation | Unknown-origin positions remain read-only review records. Never infer real holdings from file name or old paper setting | BT03 migration, BT15 |
-| D07 Operations | Named operator, configured freshness/scan/reconciliation intervals, alert destination, backup retention, RPO/RTO and canary budget | Numerical values, hosting spend and monitoring duration are unapproved; missing settings block activation | BT04 operational targets, BT14-BT16 |
+| D07 Operations | APPROVED on 2026-10-03: scan every300s; scan unhealthy at600s; price refresh30s/expiry60s; reconciliation15s; backups retained7days, RPO15minutes/RTO1hour; configured operator owns private webhook alerts configured before activation | Hosting spend, actual alert destination, deployment access and live canary amount/symbol/duration remain separate unresolved activation gates | Resolved for BT04; remaining external/rollout gates BT14-BT16 |
 | D08 Tracker and review | Resolved: repository GitHub Issues; specification and all 16 tickets published and verified with ready-for-agent triage and native dependencies | Local artifacts mirror the published issues; remaining decision blockers are explicit | None for publication |
 
-The user approved both test boundaries and the 16-ticket granularity/dependency breakdown on 2026-10-02. This satisfies the skills' seam and breakdown review gates. The approval covered test boundaries and breakdown; the subsequent go-on instruction was applied to repository GitHub publication. Missing policy values and deployment/trading authorization remain unresolved; strict sequential implementation was authorized. D05 and D07 remain recorded material decisions; D08 is resolved to GitHub Issues and publication is verified. Do not treat a triage label as evidence that these blockers are resolved.
+The user approved both test boundaries and the 16-ticket granularity/dependency breakdown on 2026-10-02. This satisfies the skills' seam and breakdown review gates. The subsequent go-on instruction authorized repository GitHub publication and strict sequential implementation was separately authorized. On 2026-10-03 the user selected the proposed D07 operating targets; this resolves BT04's start gate. D05 remains unresolved, as do external activation and live rollout budgets; D08 is resolved. A triage label does not resolve those remaining gates.
 
 ## Implementation Decisions
 
@@ -136,6 +136,8 @@ R06: every price/candle has venue, symbol, fetched-at and completed-bar metadata
 Maintain universe symbols plus all held/pending/protected symbols. Cache only completed candles keyed by venue/symbol/timeframe/candle timestamp; invalidate on new close and verify gap/freshness. Cache loss triggers refetch/degraded status, not filled orders. Ticker cache is an estimate, never fill authority. Reuse slow timeframe history; preserve documented whitelist/blacklist and quote rules; inactive/non-Spot markets cannot enter the tradable set.
 
 R07: config updates validate finite values, numeric domains and cross-field constraints atomically. Proposed domains: risk >0 and <=1, stop distance >0 and <1, RSI thresholds in [0,100], positive integral capacities/intervals, nonnegative cooldown and volume, canonical quote/profile/mode enums and supported markets. More restrictive capital/loss bounds require D05. Every scan and intent snapshots one complete config version. Changing strategy/quote does not rewrite open position exit rules without a separately reviewed policy change. Legacy trailing_pct is explicitly unsupported/disabled unless D05 selects and specifies verified trailing behavior; never imply it is active. Successful scan time advances only after completed work; failure or death sets degraded/stale status. Ownership, heartbeat and current reason are separate from web liveness.
+
+Approved D07 operational contract: scan interval300s, scan-health timeout600s, independent price-refresh interval30s, price expiry60s and reconciliation scheduling15s. A failed refresh never advances freshness; stale/failed/clock-uncertain inputs block dispatch. The configured operator owns private webhook alerts; actual destination must be configured before activation. BT14 implements7-day backup retention and verified15-minute RPO/1-hour RTO. This approval does not authorize purchasing hosting, deployment, provider changes or live trading. BT04 must provide priority-aware scheduling/budget interfaces for future execution/reconciliation/research clients without prematurely implementing those tickets.
 
 ### S5 Orders, simulation and risk — R08-R10
 

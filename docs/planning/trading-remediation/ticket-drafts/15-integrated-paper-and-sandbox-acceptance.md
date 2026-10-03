@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Collect the independent evidence needed to distinguish local correctness from deployed paper and real sandbox financial behavior.
 **Blocked by:** [BT14 #16](https://github.com/adeoyewole028/binance_topdown_full/issues/16).
-**Decision blockers:** D07.
+**Decision blockers:** D07 operating targets approved; actual isolated deployment, Spot testnet access and acceptance authorization remain external gates.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R01, R02, R03, R04, R05, R06, R07, R08, R09, R10, R11, R12, R13, R14, R15, R16, R17, R18, R19, R20.
 
@@ -69,3 +69,8 @@ Mainnet rollout, claims that mocks/HTTP 200 certify provider operation.
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
 
+
+
+## Approved D07 operating targets
+
+APPROVED2026-10-03: scans300s, scan-health600s, price-refresh30s/expiry60s, reconciliation15s, backups7days/RPO15min/RTO1hour; configured operator owns private webhook alerts configured before activation. Hosting spend, deployment/provider access, actual alert destination and live-canary budget/duration remain separate gates.

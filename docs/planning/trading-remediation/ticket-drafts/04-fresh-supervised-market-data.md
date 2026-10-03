@@ -7,10 +7,10 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; BT03 prerequisite closed/read-back verified on 2026-10-03; implementation not started pending D07 operating targets. The ready-for-agent label does not resolve this decision.
+**Status:** in progress; BT03 closed/read-back verified and D07 operating targets approved on 2026-10-03. Sole current implementation ticket.
 **What to build:** Let the operator trust scan age and held-position data, with stale or failed inputs preventing execution.
 **Blocked by:** [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5).
-**Decision blockers:** D07.
+**Decision blockers:** none for BT04; D07 targets selected by the user.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R06, R07, R19.
 
@@ -66,5 +66,5 @@ Choosing a new strategy, automatic orders or a fabricated universal rate-limit v
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. BT03 #5 CLOSED/read-back verified with all acceptance/review/check/evidence gates. Strict sequential implementation is already authorized; the sole remaining start blocker is D07. The existing user question proposes scan300s/scan-health600s, price-refresh30s/expiry60s, reconciliation15s, backup7d/RPO15m/RTO1h and configured operator/private webhook alerts before activation; those values remain unapproved. Await response, update spec/affected tickets, then start only this ticket. No implementation, source push, service change or deployment has occurred for BT04.
+Started2026-10-03 after BT03 #5 closure/native blocker verification and user's “use these targets” selection. D07 approved: scans300s, scan-health600s, price-refresh30s/expiry60s, reconciliation15s, backups7days/RPO15min/RTO1hour, configured operator/private webhook alerts configured before activation. Backup operations belong to BT14; private reconciliation behavior belongs to BT06. Hosting spend, deployment, actual alert destination and live rollout remain separate gates. Checks/acceptance/review are not yet complete. No future ticket started and no source push, service change, provider call or deployment.
 
