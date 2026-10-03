@@ -19,13 +19,15 @@ class Profile:
     bias: str
     indicator_entry: bool
     version: int = 1
+    bias_window: int = 200
+    fixed_bias: Mapping[str,float] | None = None
     trend_window: int = 200
     execution_window: int = 100
 
 
 PROFILES: Mapping[str, Profile] = MappingProxyType({
     'dashboard_intraday': Profile('4h', '1h', True),
-    'daemon_daily': Profile('1d', '4h', False, trend_window=300, execution_window=200),
+    'daemon_daily': Profile('1d', '4h', False, fixed_bias=MappingProxyType({'near_ema_pct':0.02,'rsi_threshold':30.0}), trend_window=300, execution_window=200),
 })
 DURATIONS = {'1d': 86400, '4h': 14400, '1h': 3600, '15m': 900}
 
@@ -125,10 +127,10 @@ def evaluate(*, namespace: str, venue: str, symbol: str, profile: str,
         'signal_id': hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()}
     try:
         trend_frame = completed_frame(bars[selected.trend],selected.trend,cutoff,50,selected.trend_window)
-        bias_frame = completed_frame(bars[selected.bias],selected.bias,cutoff,21,200)
+        bias_frame = completed_frame(bars[selected.bias],selected.bias,cutoff,21,selected.bias_window)
         execution_frame = completed_frame(bars['15m'],'15m',cutoff,21,selected.execution_window)
         trend = trend_check(trend_frame)
-        bias = bias_check(bias_frame,config)
+        bias = bias_check(bias_frame,selected.fixed_bias if selected.fixed_bias is not None else config)
         execution = execution_check(execution_frame,config,indicator_entry=selected.indicator_entry)
         exits = exit_reasons(execution_frame,bias_frame.tail(100),config,position,indicator_exit=selected.indicator_entry) if position else []
     except (ValueError,KeyError,TypeError,IndexError) as error:

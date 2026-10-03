@@ -237,3 +237,13 @@ def test_dashboard_indicator_exit_reasons_keep_legacy_order_and_daily_has_no_ind
                 config_version=1,config=config,bars=data,as_of=AS_OF,position={'entry':100,'qty':1,'price':100})
             assert result['state'] == 'ready'
             assert result['exit_reasons'] == (['ema21_cross_down_15m','rsi_overbought_cross_down_15m','ema21_break_1h_rsi_down'] if profile == 'dashboard_intraday' else [])
+
+
+def test_daily_version_one_keeps_fixed_legacy_bias_when_dashboard_thresholds_change() -> None:
+    from strategy_profiles import evaluate
+    with LegacySandbox() as sandbox:
+        config = {**sandbox.module.state_store.config()[1],'near_ema_pct':0,'rsi_threshold':99}
+        result = evaluate(namespace='paper:testnet:test',venue='testnet',symbol='BTC/USDT',profile='daemon_daily',
+            config_version=2,config=config,bars=inputs('daemon_daily'),as_of=AS_OF)
+        assert result['state'] == 'ready'
+        assert result['bias'] == FIXTURES['profiles']['bias_expected']

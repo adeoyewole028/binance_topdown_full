@@ -228,7 +228,7 @@ class MarketRuntime:
             requirements: dict[str,int] = {}
             for name in profiles:
                 contract = PROFILES[name]
-                for timeframe, count in ((contract.trend,contract.trend_window),(contract.bias,200),('15m',contract.execution_window)):
+                for timeframe, count in ((contract.trend,contract.trend_window),(contract.bias,contract.bias_window),('15m',contract.execution_window)):
                     requirements[timeframe] = max(requirements.get(timeframe,0),count)
             timeframes = set(requirements)
             health['timeframes'] = sorted(timeframes)

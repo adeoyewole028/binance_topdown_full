@@ -19,3 +19,10 @@ Required independent review pending.
 ## Spec
 
 Required independent review pending.
+
+
+## Initial reviews and corrections
+
+Standards at8dbfd76:0documented violations,1optional P3 possible duplication of the bias-window200 across runtime/evaluation. Bias window now lives in the immutable Profile catalog and both consumers read it.
+
+Spec at8dbfd76:1actionableP2. Daily v1 had inherited configurable dashboard near-EMA/RSI thresholds rather than preserving characterized fixed0.02/30. Independent guarded golden comparison and root red parity check reproduced bothconditionsFalse instead ofTrue at dashboard near0/RSI99. The daily immutable catalog now owns its fixed thresholds; dashboard remains configurable; no mathematical definition or separately approved version change is introduced. Documentation corrected. Final rechecks/full validation pending; ticket remains open.
