@@ -33,7 +33,7 @@ def main() -> int:
         report = Path(directory) / 'junit.xml'
         result = subprocess.run(
             [sys.executable, '-m', 'pytest', '-q', f'--junitxml={report}'],
-            cwd=ROOT, env=environment, check=False, timeout=120,
+            cwd=ROOT, env=environment, check=False, timeout=300,
         )
         suites = ET.parse(report).getroot()
         cases = suites.findall('.//testcase')

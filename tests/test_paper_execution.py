@@ -91,6 +91,20 @@ def test_zero_fee_exponent_does_not_expand_setup_payload() -> None:
         assert policy['fee_fraction'] == '0'
 
 
+def test_fee_triggered_drawdown_stop_survives_a_price_rebound() -> None:
+    with LegacySandbox(paper_setup=False) as sandbox:
+        assert setup(sandbox, slippage_fraction='0', cooldown_seconds='0', drawdown_fraction='0.0001') == 302
+        sandbox.seed_price('BTC/USDT', 100.0)
+        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
+        assert sandbox.client.get('/api/status').get_json()['paper_account']['entry_blocked'] is True
+        sandbox.seed_price('BTC/USDT', 102.0)
+        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['positions'][0]['qty'] == '1'
+        assert state['paper_account']['entry_block_reason'] == 'entry_halted'
+        assert state['operations'][-1]['state'] == 'rejected'
+
+
 def setup(sandbox: LegacySandbox, **changes: str) -> int:
     version = sandbox.client.get('/api/status').get_json()['config_version']
     return int(sandbox.post('/paper/setup', data={**PAPER_INPUTS, **changes, 'expected_config_version': str(version)}).status_code)

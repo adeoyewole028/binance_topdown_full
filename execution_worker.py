@@ -189,3 +189,4 @@ class ExecutionWorker(ExecutionOwner):
         connection.execute("UPDATE intents SET state='filled',error_class=NULL WHERE namespace=? AND operation_id=?", (namespace, operation['operation_id']))
         connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
                            (namespace, operation['operation_id'], 'paper_fill', json.dumps({'qty': str(quantity), 'price': str(price), 'profile': policy['model'], 'fee_amount': str(fee), 'fee_asset': quote})))
+        self.store.record_paper_risk(connection)
