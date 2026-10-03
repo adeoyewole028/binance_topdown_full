@@ -91,8 +91,8 @@ def test_zero_fee_exponent_does_not_expand_setup_payload() -> None:
         assert policy['fee_fraction'] == '0'
 
 
-def test_fee_triggered_drawdown_stop_survives_a_price_rebound() -> None:
-    with LegacySandbox(paper_setup=False) as sandbox:
+def test_fee_triggered_drawdown_stop_survives_a_price_rebound(tmp_path: Path) -> None:
+    with LegacySandbox(tmp_path, paper_setup=False) as sandbox:
         assert setup(sandbox, slippage_fraction='0', cooldown_seconds='0', drawdown_fraction='0.0001') == 302
         sandbox.seed_price('BTC/USDT', 100.0)
         sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
@@ -103,6 +103,15 @@ def test_fee_triggered_drawdown_stop_survives_a_price_rebound() -> None:
         assert state['positions'][0]['qty'] == '1'
         assert state['paper_account']['entry_block_reason'] == 'entry_halted'
         assert state['operations'][-1]['state'] == 'rejected'
+    with LegacySandbox(tmp_path, paper_setup=False) as restarted:
+        restarted.seed_price('BTC/USDT', 102.0)
+        restarted.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
+        assert restarted.client.get('/api/status').get_json()['operations'][-1]['state'] == 'rejected'
+        restarted.post('/close', data={'symbol': 'BTC/USDT', 'qty': '0.5'})
+        state = restarted.client.get('/api/status').get_json()
+        assert state['positions'][0]['qty'] == '0.5'
+        assert state['operations'][-1]['state'] == 'filled'
+        assert state['paper_account']['entry_blocked'] is True
 
 
 def setup(sandbox: LegacySandbox, **changes: str) -> int:
