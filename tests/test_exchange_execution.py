@@ -299,7 +299,11 @@ def test_pinned_ccxt_precision_adapter_uses_only_explicit_spot_transport() -> No
         exchange = ccxt.binance({'apiKey': 'offline-key', 'secret': 'offline-secret', 'options': {'defaultType': 'spot'}})
         exchange.set_sandbox_mode(True)
         exchange.private_get_account = lambda params: transport.account()
-        exchange.private_post_order = lambda params: transport.submit('BTC/USDT', params['side'].lower(), params['quantity'], params['newClientOrderId'])
+        def full_response(params: dict[str, Any]) -> dict[str, Any]:
+            result = transport.submit('BTC/USDT', params['side'].lower(), params['quantity'], params['newClientOrderId'])
+            result['transactTime'] = result.pop('updateTime')
+            return result
+        exchange.private_post_order = full_response
         exchange.private_get_order = lambda params: transport.query('BTC/USDT', params['origClientOrderId'])
         exchange.private_get_mytrades = lambda params: transport.trades('BTC/USDT', from_id=params.get('fromId', 0), order_id=str(params['orderId']) if 'orderId' in params else None)
         exchange.private_get_openorders = lambda params: transport.open_orders('BTC/USDT' if 'symbol' in params else None)
@@ -744,11 +748,41 @@ def test_malformed_fill_after_submit_cannot_be_classified_as_rejected() -> None:
         state = sandbox.client.get('/api/status').get_json()
         assert state['operations'][0]['state'] == 'dispatching'
         assert state['exchange_account']['balances']['USDT']['reserved'] == '102.01'
+        assert state['exchange_account']['state'] == 'reconciliation_required'
         assert state['fills'] == []
         provider.fills[-1]['commission'] = '0.202'
         with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as recovered:
             recovered.process_pending()
         state = sandbox.client.get('/api/status').get_json()
         assert state['operations'][0]['state'] == 'filled'
+        assert state['positions'][0]['qty'] == '1'
+        assert len(provider.submissions) == 1
+
+
+def test_sparse_ids_and_delayed_lower_trade_ids_cannot_escape_review() -> None:
+    from execution_worker import ExecutionWorker
+    class SparseProvider(SpotFixture):
+        def submit(self, symbol: str, side: str, quantity: str, client_id: str) -> dict[str, Any]:
+            result = super().submit(symbol, side, quantity, client_id)
+            self.fills[-1]['id'] = 200000
+            return result
+    with LegacySandbox(paper_setup=False, environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100.0)
+        provider = SparseProvider()
+        with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as owner:
+            owner.reconcile_exchange()
+            sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+            assert sandbox.client.get('/api/status').get_json()['exchange_account']['state'] == 'ready'
+            for identity, buyer in [(100000, True), (100001, False)]:
+                provider.fills.append({'symbol': 'BTCUSDT', 'id': identity, 'orderId': identity, 'price': '100', 'qty': '1',
+                                       'quoteQty': '100', 'commission': '0', 'commissionAsset': 'USDT',
+                                       'isBuyer': buyer, 'time': int(time.time()*1000)})
+            owner.reconcile_exchange()
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['exchange_account']['state'] == 'review_required'
+        assert state['exchange_account']['reason'] == 'unexpected_trade_history'
+        assert len(state['fills']) == 1
         assert state['positions'][0]['qty'] == '1'
         assert len(provider.submissions) == 1

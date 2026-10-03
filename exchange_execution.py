@@ -147,8 +147,10 @@ class ExchangeExecution:
             self._event(connection, 'exchange_account_observed', {'identity': identity, 'venue': self.store.venue,
                                                                 'balances': balances, 'movement_sequence': sequence,
                                                                 'observed_at': self.owner.clock()})
-            for symbol, cursor in history.items():
-                self._event(connection, 'exchange_history_cursor', {'symbol': symbol, 'next_id': cursor})
+            for symbol, values in history.items():
+                self._event(connection, 'exchange_history_cursor', {'symbol': symbol, 'next_id': values['next_id']})
+                if values['baseline_ids'] is not None:
+                    self._event(connection, 'exchange_history_baseline', {'symbol': symbol, 'ids': values['baseline_ids']})
             self.store.record_exchange_risk(connection, now=self.owner.clock())
             unresolved = connection.execute("SELECT 1 FROM intents WHERE namespace=? AND state IN ('dispatching','unknown','accepted','partially_filled','fills_pending') LIMIT 1", (self.store.namespace,)).fetchone()
             review = connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='exchange_review_required' LIMIT 1", (self.store.namespace,)).fetchone()
@@ -185,28 +187,39 @@ class ExchangeExecution:
                 return trades
             cursor = max(ids) + 1
 
-    def _history(self, snapshot: dict[str, Any], identities: dict[str, dict[str, Any]]) -> dict[str, int] | None:
+    def _history(self, snapshot: dict[str, Any], identities: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]] | None:
         with self.store.connection() as connection:
             cursors = {}
+            baselines = {}
             identities = {row['provider_client_id']: dict(row) for row in connection.execute('SELECT * FROM intents WHERE namespace=?', (self.store.namespace,))}
             for row in connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='exchange_history_cursor' ORDER BY sequence", (self.store.namespace,)):
                 values = json.loads(row[0])
                 if type(values['next_id']) is not int or values['next_id'] < 0:
                     raise StateUnavailable('Invalid durable trade cursor')
                 cursors[values['symbol']] = values['next_id']
+            for row in connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='exchange_history_baseline' ORDER BY sequence", (self.store.namespace,)):
+                values = json.loads(row[0])
+                if not isinstance(values['ids'], list) or any(type(identity) is not int or identity < 0 for identity in values['ids']):
+                    raise StateUnavailable('Invalid durable history baseline')
+                baselines[values['symbol']] = set(values['ids'])
         symbols = set(snapshot['market_prices']) | {p['symbol'] for p in snapshot['positions']} | {o['symbol'] for o in identities.values()} | set(cursors)
         by_order = {(o['symbol'], str(o['provider_order_id'])): o for o in identities.values() if o['provider_order_id']}
         result = {}
         for symbol in sorted(symbols):
             next_id = cursors.get(symbol, 0)
-            trades = self._trades(symbol, cursor=max(0, next_id-1000))
+            if symbol in cursors and symbol not in baselines:
+                self._health('review_required', 'history_baseline_review_required')
+                return None
+            # A numeric trade ID is not an account-trade count. Complete,
+            # budgeted overlap retains arbitrarily sparse/delayed identities.
+            trades = self._trades(symbol, cursor=0)
             observed_orders: set[str] = set()
             for trade in trades:
                 if trade['symbol'] != symbol.replace('/', ''):
                     raise StateUnavailable('Provider trade symbol mismatch')
                 operation = by_order.get((symbol, str(trade['orderId'])))
                 if operation is None:
-                    if snapshot['exchange_account'].get('identity') and trade['id'] >= next_id:
+                    if snapshot['exchange_account'].get('identity') and trade['id'] not in baselines.get(symbol, set()):
                         self._health('review_required', 'unexpected_trade_history')
                         return None
                     continue  # Pre-baseline history has no invented cost basis.
@@ -217,7 +230,8 @@ class ExchangeExecution:
                         return None
                     self.observe(operation, order)
                     observed_orders.add(operation['operation_id'])
-            result[symbol] = max(next_id, max((trade['id']+1 for trade in trades), default=0))
+            result[symbol] = {'next_id': max(next_id, max((trade['id']+1 for trade in trades), default=0)),
+                              'baseline_ids': [trade['id'] for trade in trades] if symbol not in baselines else None}
         return result
 
     @financial_arithmetic
@@ -469,6 +483,10 @@ class ExchangeExecution:
                                         Decimal(account['balances'].get(base, {}).get('total', '0')) + quantity)
             connection.execute('INSERT INTO reservations VALUES (?,?,?,?,?)', (self.store.namespace, operation['operation_id'], asset, decimal_text(amount), 'active'))
             connection.execute("UPDATE intents SET state='dispatching' WHERE namespace=? AND operation_id=?", (self.store.namespace, operation['operation_id']))
+            connection.execute("UPDATE execution_owners SET state='recovering' WHERE token=? AND generation=?",
+                               (self.owner.token, self.owner.generation))
+            self._event(connection, 'exchange_health', {'state': 'reconciliation_required', 'reason': 'dispatch_in_flight',
+                                                       'as_of': self.owner.clock(), 'owner_generation': self.owner.generation})
             self._event(connection, 'exchange_dispatching', {'client_order_id': operation['provider_client_id'],
                                                             'reservation_amount': decimal_text(amount), 'asset': asset}, operation['operation_id'])
         return symbol, formatted

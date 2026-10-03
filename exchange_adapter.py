@@ -89,9 +89,14 @@ class BinanceSpotOrders:
         return dict(self._call('private_get_account', {'omitZeroBalances': False}))
 
     def submit(self, symbol: str, side: str, quantity: str, client_id: str) -> dict[str, Any]:
-        return dict(self._call('private_post_order', {'symbol': self._symbol(symbol), 'type': 'MARKET',
+        result = dict(self._call('private_post_order', {'symbol': self._symbol(symbol), 'type': 'MARKET',
                                                     'side': side.upper(), 'quantity': quantity,
                                                     'newClientOrderId': client_id, 'newOrderRespType': 'FULL'}))
+        stamp = result.get('transactTime')
+        if type(stamp) is not int or stamp < 0:
+            raise ProviderFailure('data_quality')
+        result['updateTime'] = stamp
+        return result
 
     def query(self, symbol: str, client_id: str) -> dict[str, Any] | None:
         value = self._call('private_get_order', {'symbol': self._symbol(symbol), 'origClientOrderId': client_id})
