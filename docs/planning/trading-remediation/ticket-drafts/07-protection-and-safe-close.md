@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** implementation complete; all six local acceptance gates passed; tracker closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** CLOSED; all six local acceptance gates passed; tracker closure/read-back verified2026-10-03T14:19:47Z. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give filled positions confirmed protective orders and a safe manual close, with explicit partial-failure recovery.
 **Blocked by:** [BT06 #8](https://github.com/adeoyewole028/binance_topdown_full/issues/8).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -73,7 +73,7 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 ## D05 approved contract (2026-10-03)
 
 APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippage/cooldown/drawdown inputs before paper trading; deterministic full paper fills, quote-currency fees, weighted-average cost basis, adverse slippage and gap prices, stop first when both stop/profit targets touch one candle. Exchange-supported stop-market protection; refuse unsupported symbols; re-protect confirmed remaining holdings after partial closes; failed/uncertain protection blocks entries; automatic emergency liquidation and trailing remain disabled.
-Implement only this ticket’s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.
+Implement only this ticketâ€™s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.
 
 ## BT07 start (2026-10-03)
 
