@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from decimal import Decimal, InvalidOperation
 
 from execution_worker import ExecutionWorker
+from operations_policy import OperationsPolicy
 from request_budget import ProviderFailure, RequestBudget, BudgetDeferred
 
 
@@ -173,6 +174,7 @@ class MarketRuntime:
             self.budget.configure(metadata)
             self.budget.observe(getattr(self.provider, 'headers', {}))
             tickers = self._request('reduction' if financial_coverage else 'market', 80, self.provider.tickers)
+            ticker_received = self.clock()
             valid = {f"{s['baseAsset']}/{s['quoteAsset']}" for s in metadata['symbols']
                      if s.get('status') == 'TRADING' and s.get('isSpotTradingAllowed') is True}
             eligible = {s for s in valid if s.endswith('/' + config['base_quote']) and s not in self.blacklist
@@ -191,7 +193,7 @@ class MarketRuntime:
             for symbol in sorted(required, key=lambda s: (s not in financial_coverage, s)):
                 for timeframe in INTERVALS:
                     self._candles(symbol, timeframe, server_time)
-            self.owner.publish_prices({s: tickers[s]['last'] for s in required})
+            self.owner.publish_prices({s: tickers[s]['last'] for s in required}, fetched_at=ticker_received)
             if self.evaluate is not None:
                 self.snapshot.update(self.evaluate(CachedMarketView(self.owner.store.venue, self.cache, tickers), universe, config))
             health.update(state='ready', reason=None, last_completed_scan=iso(self.clock()), coverage=sorted(required), failures=0, retry_at=0)
@@ -217,7 +219,7 @@ class MarketRuntime:
         health.update(failures=failures, retry_at=now + max(error.retry_after, min(2 ** failures, 60)) + random.random())
 
 
-def observed_health(snapshot: dict[str, Any], now: float, timeout: int = 600) -> dict[str, Any]:
+def observed_health(snapshot: dict[str, Any], now: float, timeout: int = OperationsPolicy().scan_health_timeout) -> dict[str, Any]:
     health = dict(snapshot.get('market_health', {'state': 'degraded', 'reason': 'scanner_uninitialized'}))
     completed = health.get('last_completed_scan')
     try:
@@ -253,7 +255,7 @@ def observed_health(snapshot: dict[str, Any], now: float, timeout: int = 600) ->
                 quote = snapshot['market_prices'][symbol]
                 price = Decimal(quote['price'])
                 stamp = datetime.fromisoformat(quote['fetched_at'])
-                if not price.is_finite() or price <= 0 or stamp.tzinfo is None or not 0 <= now - stamp.timestamp() < 60:
+                if not price.is_finite() or price <= 0 or stamp.tzinfo is None or not 0 <= now - stamp.timestamp() < OperationsPolicy().price_expiry:
                     raise ValueError('Stale price')
             except (KeyError, ValueError, TypeError, InvalidOperation):
                 health.update(execution_ready=False, state='degraded', reason='price_stale')

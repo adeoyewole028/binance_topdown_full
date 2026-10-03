@@ -525,3 +525,47 @@ def test_mixed_entry_configurations_require_review_instead_of_guessed_exit_rules
             assert state['positions'][0]['qty'] == '2'
             assert state['position_rules']['BTC/USDT']['state'] == 'review_required'
             assert state['exit_signals'] == []
+
+
+def test_slow_history_fetch_never_freshens_the_earlier_ticker_observation() -> None:
+    from execution_worker import ExecutionWorker
+    from market_runtime import MarketRuntime
+    clock = ControlledClock()
+    class SlowProvider(MarketFixture):
+        def candles(self, symbol: str, timeframe: str, limit: int) -> list[list[float]]:
+            rows = super().candles(symbol, timeframe, limit)
+            clock.value += 21
+            return rows
+    provider = SlowProvider(clock())
+    with LegacySandbox() as sandbox:
+        sandbox.module.initialize_runtime(clock=clock)
+        with ExecutionWorker(sandbox.module.state_store, clock=clock) as owner:
+            scanner = MarketRuntime(owner, provider, clock=clock)
+            scanner.scan_once()
+            sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+            state = sandbox.client.get('/api/status').get_json()
+            assert state['market_prices']['BTC/USDT']['age_seconds'] == 63
+            assert state['market_health']['execution_ready'] is False
+            assert state['positions'] == []
+            scanner.refresh_prices()
+            owner.process_pending()
+            assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == '1'
+
+
+def test_response_crossing_budget_window_preserves_reported_usage_and_urgent_headroom() -> None:
+    from request_budget import RequestBudget, BudgetDeferred
+    clock = ControlledClock()
+    clock.value += 59
+    provider = MarketFixture(clock())
+    with LegacySandbox() as sandbox:
+        budget = RequestBudget(sandbox.module.state_store, clock=clock)
+        budget.configure(provider.metadata())
+        def delayed_response() -> dict[str, Any]:
+            clock.value += 2
+            return provider.tickers()
+        budget.request('research', 80, delayed_response)
+        budget.observe({'X-MBX-USED-WEIGHT-1M': '900'})
+        with pytest.raises(BudgetDeferred):
+            budget.request('research', 80, provider.tickers)
+        assert budget.request('reconciliation', 80, provider.tickers)['BTC/USDT']['last'] == 100

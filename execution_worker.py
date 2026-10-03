@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 import json
+import math
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -41,11 +42,14 @@ class ExecutionWorker(ExecutionOwner):
             if self.store.mode == 'paper' and unresolved is None and values.get('market_health', {}).get('state') == 'ready':
                 connection.execute("UPDATE execution_owners SET state='ready',updated_at=? WHERE token=?", (now, self.token))
 
-    def publish_prices(self, prices: dict[str, Any]) -> None:
+    def publish_prices(self, prices: dict[str, Any], *, fetched_at: float | None = None) -> None:
         parsed_prices = {symbol: Decimal(str(price)) for symbol, price in prices.items()}
         if not parsed_prices or any(not p.is_finite() or p <= 0 for p in parsed_prices.values()):
             raise ValueError('Invalid public prices')
-        now = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
+        received = self.clock() if fetched_at is None else fetched_at
+        if not math.isfinite(received) or not 0 <= received <= self.clock():
+            raise ValueError('Invalid public price receipt time')
+        now = datetime.fromtimestamp(received, timezone.utc).isoformat()
         with self.store.connection(write=True) as connection:
             if not self._matches_owner(connection):
                 raise OwnershipUnavailable('Execution ownership uncertain')

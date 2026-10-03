@@ -37,3 +37,5 @@ Fresh explicit `manage_state.py init` installs market_budget_v1. Existing BT03 s
 Keep current journal/backups; use compatible read-only readers on rollback. Never reactivate an executor predating these freshness guards. Actual migration, supervision, restore rehearsal, provider certification and deployment are separate gates; none was performed on existing account data.
 
 Primary contract checked 2026-10-03: [Binance Spot REST endpoints and limits](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md). Installed CCXT 4.5.3's raw Spot method names and endpoint costs were inspected locally; no upgrade or remote market call was needed.
+
+Review corrections: full-scan prices retain their original ticker receipt time even when historical fetches are slow. Crossing a request-window boundary carries local reservations conservatively into the response window before applying reported weight, preserving urgent headroom. Health uses the shared approved operating-policy thresholds.

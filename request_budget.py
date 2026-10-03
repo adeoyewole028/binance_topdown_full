@@ -162,7 +162,12 @@ class RequestBudget:
     def observe(self, headers: dict[str, Any]) -> None:
         with self._state() as state:
             lowered = {k.lower(): v for k, v in headers.items()}
+            received = self.clock() + state.get('clock_skew', 0)
             for item in state['limits']:
+                # A transport can span a boundary. Carry local reservations
+                # conservatively into its receipt window before attaching the
+                # provider counter; the next claim must not erase that usage.
+                item['start'] = int(received // item['duration']) * item['duration']
                 if item['kind'] != 'REQUEST_WEIGHT':
                     continue
                 duration = item['duration']
