@@ -16,3 +16,13 @@ Focused initial tracer: 2 red assertions before implementation, then both pass. 
 Required integration corrections within BT07: entry-rule quantity accounts for actual base fees; protective child intents are exposed under the group/legs rather than reordered canonical manual operations; healthy protection legs do not count as unresolved ordinary market orders; provider cancel aliases preserve verified provider-ID ownership; full-close dispatch records reconciled reduced quantity while preserving original reviewed intent. These are demonstrated protection/accounting seams, not unrelated completed-ticket rewrites.
 
 Runbook: [position protection](../../../position-protection.md). Actual provider sandbox behavior is a BT15 gate; external alerts/deployment/mainnet remain later authorized gates. No real private provider call, funding, trade, migration, deployment or push occurred.
+
+## Standards
+
+Initial independent review at b90f30d:0hard violations/1optional P3 duplicated fresh group lookup. A centralized fresh group reader now handles missing state explicitly; no stale cache crosses provider observations. Correction review pending.
+
+## Spec
+
+Initial independent review at b90f30d:1P1, request-budget deferral incorrectly became transmitted uncertainty for placement and cancellation. Two independent guarded HTTP reproductions showed no calls and permanently blocked reductions, contrary to R03 risk reduction and R11 resolved/canceled remaining-quantity close. Root red checks reproduced the failed placement state and deferred cancel path. Dispatch markers/base reservations and canceling now commit only after budget admission; proven no-attempt states fail locally and allow reviewed reduction, while actual transmitted ambiguity remains unresolved. Two correction checks pass; a separate crash-before-admission proof and final independent recheck remain required.
+
+Initial full suite245cases242passed/3failed at b90f30d (see initial machine artifact). Separate HTTP subprocess15s startup timeout reran alone successfully3.53s without changing its gate. Two old fixtures crossed newly active paper take-profit or used pre-contract creating state; fixture policy/state updated while preserving original accounting/coverage assertions. Paper maintenance explicitly ignores non-simulation/unmanaged groups. Final full run and re-review supersede initial output; ticket stays open meanwhile.

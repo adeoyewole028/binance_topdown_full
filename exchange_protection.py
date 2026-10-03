@@ -70,10 +70,30 @@ class ExchangeProtection:
         with self.store.connection() as connection:
             return self.store._protection(connection)
 
+    def group(self, identity: str) -> dict[str, Any]:
+        group = next((g for g in self.groups() if g['group_id'] == identity), None)
+        if group is None:
+            raise StateUnavailable('Required protection group unavailable')
+        return group
+
+    def fail_unattempted(self, identity: str) -> None:
+        if self.group(identity).get('dispatch_attempted') is not False:
+            raise StateUnavailable('Protection dispatch outcome is uncertain')
+        with self.store.connection(write=True) as connection:
+            self._owned(connection)
+            for row in connection.execute("SELECT operation_id FROM intents WHERE namespace=? AND request_hash=?", (self.store.namespace, 'protection:'+identity)):
+                connection.execute("UPDATE intents SET state='rejected',error_class='protection_not_dispatched' WHERE namespace=? AND operation_id=?", (self.store.namespace, row[0]))
+                connection.execute("UPDATE reservations SET state='released' WHERE namespace=? AND operation_id=?", (self.store.namespace, row[0]))
+        self.state(identity, 'failed', reason='protection_request_not_attempted',
+                   next_action='No protection call was sent. Review the unprotected holding and submit an authenticated reduction')
+
     def verify_all(self) -> None:
         for group in self.groups():
             if group['state'] in {'installing', 'unknown', 'active', 'canceling'}:
-                self.verify(group)
+                if group['state'] in {'installing', 'unknown'} and group.get('dispatch_attempted') is False:
+                    self.fail_unattempted(group['group_id'])
+                else:
+                    self.verify(group)
 
     def maintain(self) -> None:
         snapshot = self.store.snapshot(now=self.owner.clock())
@@ -84,7 +104,7 @@ class ExchangeProtection:
                 # Only verified, owned protection is canceled. A new generation
                 # must cover the complete confirmed holding after additional fills.
                 self.prepare_close({'symbol': group['symbol'], 'requested_qty': '0', 'operation_id': group['group_id']})
-            elif group['state'] == 'failed' and held == 0 and (not group.get('dispatch_attempted') or group.get('rejected_before_engine')):
+            elif group['state'] == 'failed' and held == 0 and (group.get('dispatch_attempted') is False or group.get('rejected_before_engine')):
                 self.state(group['group_id'], 'closed')
         self.install_missing()
 
@@ -173,13 +193,10 @@ class ExchangeProtection:
                                    (self.store.namespace, group, symbol, entry_operation[0], decimal_text(quantity), 'failed' if failure else 'installing', None, None))
                 self._event(connection, group, values)
                 if failure is None:
-                    for index, client in enumerate((above, below)):
+                    for client in (above, below):
                         connection.execute('''INSERT INTO intents(namespace,operation_id,idempotency_key,request_hash,kind,symbol,side,requested_qty,config_version,state,provider_client_id)
                                               VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                                           (self.store.namespace, client, client, 'protection:'+group, 'protection', symbol, 'sell', decimal_text(quantity), rule['config_version'], 'dispatching', client))
-                        amount = quantity if index == 0 else Decimal(0)
-                        connection.execute('INSERT INTO reservations VALUES (?,?,?,?,?)', (self.store.namespace, client, symbol.split('/')[0], decimal_text(amount), 'active'))
-                        self.execution._event(connection, 'exchange_dispatching', {'reservation_amount': decimal_text(amount), 'asset': symbol.split('/')[0], 'group_id': group}, client)
+                                           (self.store.namespace, client, client, 'protection:'+group, 'protection', symbol, 'sell', decimal_text(quantity), rule['config_version'], 'prepared', client))
             if failure:
                 self.state(group, 'failed', reason=failure)
                 continue
@@ -188,8 +205,13 @@ class ExchangeProtection:
                     with self.store.connection(write=True) as connection:
                         self._owned(connection)
                         self._event(connection, group, {'dispatch_attempted': True})
+                        for index, client in enumerate((above, below)):
+                            amount = quantity if index == 0 else Decimal(0)
+                            connection.execute("UPDATE intents SET state='dispatching' WHERE namespace=? AND operation_id=? AND state='prepared'", (self.store.namespace, client))
+                            connection.execute('INSERT INTO reservations VALUES (?,?,?,?,?)', (self.store.namespace, client, symbol.split('/')[0], decimal_text(amount), 'active'))
+                            self.execution._event(connection, 'exchange_dispatching', {'reservation_amount': decimal_text(amount), 'asset': symbol.split('/')[0], 'group_id': group}, client)
                 self.execution._request('reduction', 1, lambda _: self.execution.provider.protect(symbol, decimal_text(quantity), values['stop_price'], values['take_profit_price'], group, above, below), prepare=prepare)
-                current = next(g for g in self.groups() if g['group_id'] == group)
+                current = self.group(group)
                 self.verify(current)
             except SubmissionRejected as error:
                 with self.store.connection(write=True) as connection:
@@ -199,7 +221,10 @@ class ExchangeProtection:
                         connection.execute("UPDATE reservations SET state='released' WHERE namespace=? AND operation_id=?", (self.store.namespace, client))
                 self.state(group, 'failed', reason=error.kind, rejected_before_engine=True)
             except (ProviderFailure, TimeoutError, ConnectionError):
-                self.state(group, 'unknown', reason='protection_dispatch_unknown')
+                if self.group(group).get('dispatch_attempted') is False:
+                    self.fail_unattempted(group)
+                else:
+                    self.state(group, 'unknown', reason='protection_dispatch_unknown')
 
     def prepare_close(self, operation: dict[str, Any]) -> bool:
         """Cancellation uncertainty retains reservations and blocks market sells."""
@@ -208,25 +233,25 @@ class ExchangeProtection:
                 continue
             if group['state'] == 'failed' and group.get('rejected_before_engine'):
                 continue
-            if group['state'] == 'failed' and not group.get('dispatch_attempted'):
+            if group['state'] == 'failed' and group.get('dispatch_attempted') is False:
                 continue  # Local validation failed without any provider dispatch.
             was_canceling = group['state'] == 'canceling'
             if not self.verify(group):
                 return False
-            current = next(g for g in self.groups() if g['group_id'] == group['group_id'])
+            current = self.group(group['group_id'])
             if current['state'] == 'closed':
                 continue
             if was_canceling:
                 return False  # Never repeat an uncertain cancel as permission to sell.
             cancel_id = uuid.uuid4().hex
-            self.state(group['group_id'], 'canceling', cancel_id=cancel_id)
             try:
-                self.execution._request('reduction', 1, lambda: self.execution.provider.cancel_list(group['symbol'], group['group_id'], cancel_id))
+                self.execution._request('reduction', 1, lambda _: self.execution.provider.cancel_list(group['symbol'], group['group_id'], cancel_id),
+                                        prepare=lambda: self.state(group['group_id'], 'canceling', cancel_id=cancel_id))
             except (ProviderFailure, TimeoutError, ConnectionError):
                 return False
-            current = next(g for g in self.groups() if g['group_id'] == group['group_id'])
+            current = self.group(group['group_id'])
             self.verify(current)
-            if next(g for g in self.groups() if g['group_id'] == group['group_id'])['state'] != 'closed':
+            if self.group(group['group_id'])['state'] != 'closed':
                 return False
         self.execution.reconcile()
         snapshot = self.store.snapshot(now=self.owner.clock())

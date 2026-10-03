@@ -18,6 +18,7 @@ def test_paper_buy_is_visible_in_operator_status() -> None:
 
 def test_paper_partial_sell_preserves_remaining_quantity() -> None:
     with LegacySandbox() as sandbox:
+        sandbox.post('/update-config', data={'take_profit_pct': '0.5'})
         sandbox.seed_price('BTC/USDT', 100.0)
         sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '2'})
         sandbox.seed_price('BTC/USDT', 125.0)

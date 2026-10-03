@@ -233,6 +233,7 @@ class StateStore:
             self._exchange_account(connection)
             self._entry_control(connection)
             self._fills(connection)
+            self._protection(connection)
         self.config()
         self.positions()
 

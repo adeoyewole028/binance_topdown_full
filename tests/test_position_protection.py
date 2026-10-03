@@ -379,3 +379,124 @@ def test_partial_entry_fill_is_protected_while_unfilled_buy_stays_reserved() -> 
         assert state['protection'][-1]['state'] == 'active'
         assert state['exchange_account']['balances']['USDT']['reserved'] == '61.206'
         assert state['exchange_risk']['entry_blocked'] is True
+
+
+def test_budget_deferred_protection_has_no_dispatch_and_allows_reduction_after_recovery() -> None:
+    from execution_worker import ExecutionWorker
+    from market_runtime import MarketRuntime
+    from tests.test_market_runtime import MarketFixture
+    class ExhaustedPlacement(SpotFixture):
+        account_receipts = 0
+        exhaust = True
+        def account(self) -> dict[str, Any]:
+            self.headers = {}
+            if self.submissions and not self.lists:
+                self.account_receipts += 1
+                if self.exhaust and self.account_receipts == 2:
+                    self.headers = {'x-mbx-used-weight-1m': '100000'}
+            return super().account()
+    with LegacySandbox(paper_setup=False, environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100)
+        provider = ExhaustedPlacement()
+        tick = [float(int(time.time()))]
+        with ExecutionWorker(sandbox.module.state_store, clock=lambda: tick[0], exchange_provider=provider) as owner:
+            owner.reconcile_exchange()
+            sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+            state = sandbox.client.get('/api/status').get_json()
+            assert provider.protect_submissions == []
+            assert state['operations'][0]['state'] == 'filled'
+            assert state['protection'][-1]['state'] == 'failed'
+            assert state['protection'][-1]['dispatch_attempted'] is False
+            assert state['exchange_account']['balances']['BTC']['reserved'] == '0'
+            provider.exhaust = False
+            provider.headers = {}
+            tick[0] += 61
+            MarketRuntime(owner, MarketFixture(tick[0]), clock=lambda: tick[0]).scan_once()
+            sandbox.client.post('/close', data={'symbol': 'BTC/USDT', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['positions'] == []
+        assert state['operations'][-1]['state'] == 'filled'
+        assert len(provider.submissions) == 2
+
+
+def test_budget_deferred_cancel_retains_active_pair_and_retries_after_recovery() -> None:
+    from execution_worker import ExecutionWorker
+    from market_runtime import MarketRuntime
+    from tests.test_market_runtime import MarketFixture
+    class ExhaustedCancel(SpotFixture):
+        exhaust = False
+        trade_receipts = 0
+        def trades(self, symbol: str, *, from_id: int = 0, order_id: str | None = None) -> list[dict[str, Any]]:
+            self.headers = {}
+            if self.exhaust and order_id is not None:
+                self.trade_receipts += 1
+                # Reconciliation first verifies both legs and observes both open
+                # orders plus buy history (five); close preparation adds two.
+                if self.trade_receipts == 7:
+                    self.headers = {'x-mbx-used-weight-1m': '100000'}
+            return super().trades(symbol, from_id=from_id, order_id=order_id)
+    with LegacySandbox(paper_setup=False, environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100)
+        provider = ExhaustedCancel()
+        tick = [float(int(time.time()))]
+        if tick[0] % 60 == 0:
+            tick[0] += 1
+        with ExecutionWorker(sandbox.module.state_store, clock=lambda: tick[0], exchange_provider=provider) as owner:
+            owner.reconcile_exchange()
+            sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+            provider.exhaust = True
+            sandbox.client.post('/close', data={'symbol': 'BTC/USDT', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+            state = sandbox.client.get('/api/status').get_json()
+            assert provider.cancel_submissions == []
+            assert state['protection'][-1]['state'] == 'active'
+            assert state['operations'][-1]['state'] == 'queued'
+            provider.exhaust = False
+            provider.headers = {}
+            tick[0] += 60-int(tick[0] % 60)
+            MarketRuntime(owner, MarketFixture(tick[0]), clock=lambda: tick[0]).scan_once()
+            owner.process_pending()
+        assert sandbox.client.get('/api/status').get_json()['positions'] == []
+        assert len(provider.cancel_submissions) == 1
+        assert len(provider.submissions) == 2
+
+
+def test_crash_before_protection_budget_admission_recovers_proven_no_dispatch() -> None:
+    from execution_worker import ExecutionWorker
+    class ProcessCrash(BaseException):
+        pass
+    with LegacySandbox(paper_setup=False, environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100)
+        provider = SpotFixture()
+        with pytest.raises(ProcessCrash):
+            with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as owner:
+                owner.reconcile_exchange()
+                execution = owner.exchange_execution
+                assert execution is not None
+                request = execution._request
+                def interrupted(lane: str, *args: Any, **kwargs: Any) -> Any:
+                    if lane == 'reduction':
+                        raise ProcessCrash()
+                    return request(lane, *args, **kwargs)
+                execution._request = interrupted  # type: ignore[method-assign]
+                sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+                owner.process_pending()
+        assert provider.protect_submissions == []
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['protection'][-1]['state'] == 'installing'
+        assert state['protection'][-1]['dispatch_attempted'] is False
+        with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as recovered:
+            recovered.reconcile_exchange()
+            state = sandbox.client.get('/api/status').get_json()
+            assert state['protection'][-1]['state'] == 'failed'
+            assert state['exchange_account']['balances']['BTC']['reserved'] == '0'
+            sandbox.client.post('/close', data={'symbol': 'BTC/USDT', 'csrf_token': sandbox.csrf})
+            recovered.process_pending()
+        assert sandbox.client.get('/api/status').get_json()['positions'] == []
+        assert len(provider.submissions) == 2

@@ -385,8 +385,13 @@ class ExchangeExecution:
         with self.store.connection() as connection:
             queued = [dict(r) for r in connection.execute("SELECT * FROM intents WHERE namespace=? AND state='queued' ORDER BY intake_sequence", (self.store.namespace,))]
         for operation in queued:
-            if operation['side'] == 'sell' and not self.protection.prepare_close(operation):
-                continue
+            if operation['side'] == 'sell':
+                try:
+                    if not self.protection.prepare_close(operation):
+                        continue
+                except (ProviderFailure, TimeoutError, ConnectionError) as error:
+                    self._health('reconciliation_required', getattr(error, 'kind', 'transient'))
+                    return count
             try:
                 observed = self._request('entry' if operation['side'] == 'buy' else 'reduction', 1,
                                          lambda prepared: self.provider.submit(prepared[0], operation['side'], prepared[1], operation['provider_client_id']),

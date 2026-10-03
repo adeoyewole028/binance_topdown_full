@@ -481,7 +481,7 @@ def test_protected_symbol_remains_covered_after_the_position_and_universe_change
             # Durable in-flight protection fixture, not a claim of BT07 activation.
             with closing(sqlite3.connect(sandbox.directory / 'trading.sqlite3')) as fixture:
                 fixture.execute('INSERT INTO protection_groups(namespace,group_id,symbol,operation_id,quantity,state) VALUES (?,?,?,?,?,?)',
-                                (sandbox.module.state_store.namespace, 'fixture-protection', 'BTC/USDT', operation, '1', 'creating'))
+                                (sandbox.module.state_store.namespace, 'fixture-protection', 'BTC/USDT', operation, '1', 'installing'))
                 fixture.commit()
             sandbox.client.post('/close', data={'symbol': 'BTC/USDT', 'qty': '1', 'csrf_token': sandbox.csrf})
             owner.process_pending()

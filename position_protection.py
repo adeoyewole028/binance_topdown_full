@@ -40,7 +40,7 @@ class PaperProtection:
     def sync(self, connection: Any) -> None:
         namespace = self.store.namespace
         positions = {p['symbol']: p for p in self.store._positions(connection)}
-        groups = self.store._protection(connection)
+        groups = [g for g in self.store._protection(connection) if g.get('semantics') == 'simulation']
         active = {g['symbol']: g for g in groups if g['state'] not in {'closed', 'canceled'}}
         rules = self.store._position_rules(connection)
         for symbol in set(active) | set(positions):

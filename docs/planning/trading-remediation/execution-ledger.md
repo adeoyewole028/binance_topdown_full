@@ -193,3 +193,7 @@ BT06#8 CLOSED/read-back verified2026-10-03T12:59:45Z; parent#2 OPEN. Evidence co
 ## BT07 start (2026-10-03)
 
 Live #9 OPEN/no comments; native #8 CLOSED verified. Sole active ticket BT07. Fixed review point `000913cbc8c6860fba9750cf62764a79cf87adac`. All six criteria open. D05 remains approved; no additional decision needed. Next: verify Spot order-list contracts and implement offline confirmed protection/safe close at approved seams. No future ticket or actual private provider/funding/trade/deployment/push.
+
+## BT07 review snapshot (2026-10-03)
+
+Source commit b90f30dc21033c55f4dfa8bca46ca8736c52e6d6; sole active ticket. Focused16 protection cases pass; strict type38, repository pyflakes/diff checks and26source compilation pass. Full suite running with regressions to resolve; independent Spec review pending. Standards review0hard violations/1optional duplication heuristic. All six acceptance gates remain open. No future implementation or real provider/funding/trade/migration/deploy/push. Next: receive complete test/review findings, reproduce and correct them, refresh final checks and evidence before closing #9.
