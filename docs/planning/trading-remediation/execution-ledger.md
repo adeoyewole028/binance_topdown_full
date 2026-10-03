@@ -311,3 +311,8 @@ Allsix local criteria pass at6ae3b965b20ed2e039b56d480a1a908b07fa517c; applicati
 
 
 BT12#14 CLOSED at2026-10-03T20:55:48Z; complete body/state read-back exactly matches local mirror. Acceptance commit8c62fdb; source6ae3b96/applicationfc47de9. Next permitted step:inspect liveBT13#15/comments/native blocker#14 and capture clean fixedpoint before BT13 alone. Parent#2 remainsOPEN; no actualprovider/trade/activation/deployment/push.
+
+
+## BT13 start (2026-10-03)
+
+Live#15OPEN/0comments/native#14CLOSED verified; cleanfixedpointdf35364e87345ff4f9d462e9a7c4a630121c7c6f. BT13soleactive/fivecriteriaopen. Approved review/confirm +durable same-intent recovery/namespace operation status and independent partial/full closes through existing owned service; typed drafts/auth/mode mismatch, provider partial/unknown/protection/cancel races and realbrowser proof required. No new business decision or capitalvalues. First permitted step: authenticated HTTP side-effect-free preview/stale/duplicate-intent and namespace lookup tracer, then UI stable-token/context review and owned fake-provider/browser recovery checks. Allprerequisites satisfied; no futureticket/actualprovider/keys/trades/activation/deployment/push.

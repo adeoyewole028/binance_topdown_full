@@ -7,10 +7,10 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** open; BT13 sole active implementation ticket; five local acceptance gates open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Let an authenticated operator submit a reviewed intent and understand confirmed, rejected, unknown and unprotected outcomes.
 **Blocked by:** [BT12 #14](https://github.com/adeoyewole028/binance_topdown_full/issues/14).
-**Decision blockers:** None additional; implementation requires a separate instruction.
+**Decision blockers:** None additional; strict sequential implementation authorized on2026-10-02 and carried forward.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R16, R17, R10, R11.
 
@@ -67,3 +67,8 @@ Mainnet execution, bypassing safety gates for UI convenience.
 ## Execution record
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+
+
+## BT13 start (2026-10-03)
+
+Live#15OPEN/0comments/native#14CLOSED verified. BT01-BT12 complete; BT13 soleactive/fivecriteriaopen. Fixedpointdf35364e87345ff4f9d462e9a7c4a630121c7c6f. Preserve approved HTTP->transactional StateStore->kernel-owned execution->fake public/private provider and actual browser seams. Add side-effect-free reviewed order preview, signed semantic request/config/quote/holding context, stable namespace idempotency through retries/refresh, authenticated namespace operation lookup with actual fills/protection/recovery, and reviewed partial/full close for every applicable current holding independently of exit signals. Server canonical sizing/admission/protection cancellation/reconciliation remain authoritative; no numeric capital/risk policies invented. Forms and auth interruption preserve drafts; unresolved outcomes never imply fills or authorize another sell. Quarantined legacy data read-only. Existing safe /trade and /close adapters remain shared-intake compatibility routes; actual first-class UI review replaces their raw one-click forms. No real provider/keys/trades/mainnet/activation/deployment/push or futureticket.
