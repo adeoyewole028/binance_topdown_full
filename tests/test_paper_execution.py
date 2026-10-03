@@ -295,6 +295,7 @@ def test_drawdown_stop_blocks_entries_but_preserves_manual_risk_reduction() -> N
     with LegacySandbox(paper_setup=False) as sandbox:
         assert setup(sandbox, fee_fraction='0', slippage_fraction='0', risk_fraction='1',
                      max_allocation_fraction='1', max_exposure_fraction='1', cooldown_seconds='0') == 302
+        sandbox.post('/update-config', data={'stop_loss_pct': '0.9'})
         sandbox.seed_price('BTC/USDT', 100.0)
         sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '6'})
         sandbox.seed_price('BTC/USDT', 20.0)
@@ -384,6 +385,7 @@ def test_oversell_and_duplicate_close_cannot_spend_the_same_holdings() -> None:
 def test_fees_and_weighted_average_basis_remain_observable_after_partial_sale() -> None:
     with LegacySandbox(paper_setup=False) as sandbox:
         assert setup(sandbox, cooldown_seconds='0') == 302
+        sandbox.post('/update-config', data={'take_profit_pct': '10'})
         sandbox.seed_price('BTC/USDT', 100.0)
         sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
         sandbox.seed_price('BTC/USDT', 200.0)

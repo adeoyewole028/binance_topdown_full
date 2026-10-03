@@ -23,8 +23,10 @@ if TYPE_CHECKING:
 class ExchangeExecution:
     def __init__(self, owner: ExecutionWorker, provider: Any) -> None:
         self.owner, self.store, self.provider = owner, owner.store, provider
-        self.budget = RequestBudget(self.store, clock=owner.clock, reserve_weight=149)
+        self.budget = RequestBudget(self.store, clock=owner.clock, reserve_weight=172)
         self.last_reconcile_attempt: float | None = None
+        from exchange_protection import ExchangeProtection
+        self.protection = ExchangeProtection(self)
 
     def _event(self, connection: Any, event: str, values: dict[str, Any], operation: str | None = None) -> None:
         connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
@@ -56,6 +58,25 @@ class ExchangeExecution:
             if attempted:
                 self.budget.observe(getattr(self.provider, 'headers', {}))
 
+    def query_operation(self, operation: dict[str, Any]) -> dict[str, Any] | None:
+        if operation['kind'] == 'protection' and operation.get('provider_order_id'):
+            observed = self.provider.query_order(operation['symbol'], operation['provider_order_id'])
+            if observed is not None and observed.get('status') == 'CANCELED' and str(observed.get('orderId')) == operation['provider_order_id']:
+                # Binance may replace a canceled order's client ID. The already
+                # verified immutable provider ID identifies this owned leg.
+                observed = {**observed, 'clientOrderId': operation['provider_client_id']}
+            return dict(observed) if observed is not None else None
+        value = self.provider.query(operation['symbol'], operation['provider_client_id'])
+        return dict(value) if value is not None else None
+
+    def dispatch_quantity(self, operation: dict[str, Any]) -> Decimal:
+        with self.store.connection() as connection:
+            row = connection.execute("SELECT payload FROM journal WHERE namespace=? AND operation_id=? AND event='close_reconciled_quantity' ORDER BY sequence DESC LIMIT 1", (self.store.namespace, operation['operation_id'])).fetchone()
+        quantity = number(json.loads(row[0])['quantity']) if row else number(operation['requested_qty'])
+        if not 0 < quantity <= number(operation['requested_qty']):
+            raise StateUnavailable('Invalid reconciled close quantity')
+        return quantity
+
     @financial_arithmetic
     def reconcile(self) -> None:
         if not self.owner.ownership_confirmed():
@@ -82,6 +103,7 @@ class ExchangeExecution:
         if snapshot['exchange_account'].get('identity') and snapshot['exchange_account']['identity'] != identity:
             self._health('review_required', 'account_identity_mismatch')
             return
+        self.protection.verify_all()
         with self.store.connection() as connection:
             identities = {row['provider_client_id']: dict(row) for row in connection.execute('SELECT * FROM intents WHERE namespace=?', (self.store.namespace,))}
         open_orders = self._request('reconciliation', 80, self.provider.open_orders)
@@ -152,7 +174,7 @@ class ExchangeExecution:
                 if values['baseline_ids'] is not None:
                     self._event(connection, 'exchange_history_baseline', {'symbol': symbol, 'ids': values['baseline_ids']})
             self.store.record_exchange_risk(connection, now=self.owner.clock())
-            unresolved = connection.execute("SELECT 1 FROM intents WHERE namespace=? AND state IN ('dispatching','unknown','accepted','partially_filled','fills_pending') LIMIT 1", (self.store.namespace,)).fetchone()
+            unresolved = connection.execute("SELECT 1 FROM intents WHERE namespace=? AND (state IN ('dispatching','unknown','fills_pending') OR (kind!='protection' AND state IN ('accepted','partially_filled'))) LIMIT 1", (self.store.namespace,)).fetchone()
             review = connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='exchange_review_required' LIMIT 1", (self.store.namespace,)).fetchone()
             self._event(connection, 'exchange_health', {'state': 'review_required' if review else 'reconciliation_required' if unresolved else 'ready',
                                                        'reason': 'provider_order_unresolved' if unresolved else None,
@@ -173,6 +195,14 @@ class ExchangeExecution:
             self.reconcile()
         except ProviderFailure as error:
             self._health('reconciliation_required', error.kind)
+
+    def _safe_reconcile(self) -> bool:
+        try:
+            self.reconcile()
+            return True
+        except (ProviderFailure, TimeoutError, ConnectionError) as error:
+            self._health('reconciliation_required', getattr(error, 'kind', 'transient'))
+            return False
 
     def _trades(self, symbol: str, *, cursor: int = 0, order_id: str | None = None) -> list[dict[str, Any]]:
         trades: list[dict[str, Any]] = []
@@ -224,7 +254,7 @@ class ExchangeExecution:
                         return None
                     continue  # Pre-baseline history has no invented cost basis.
                 if operation['operation_id'] not in observed_orders:
-                    order = self._request('reconciliation', 4, lambda: self.provider.query(symbol, operation['provider_client_id']))
+                    order = self._request('reconciliation', 4, lambda: self.query_operation(operation))
                     if order is None:
                         self._health('reconciliation_required', 'provider_order_unresolved')
                         return None
@@ -241,7 +271,8 @@ class ExchangeExecution:
             raise StateUnavailable('Provider order identity mismatch')
         if operation.get('provider_order_id') and str(operation['provider_order_id']) != str(observed['orderId']):
             raise StateUnavailable('Provider order identity changed')
-        if number(observed['origQty']) != number(operation['requested_qty']):
+        requested = self.dispatch_quantity(operation)
+        if number(observed['origQty']) != requested:
             raise StateUnavailable('Provider order quantity mismatch')
         trades = self._trades(symbol, order_id=str(observed['orderId']))
         namespace = self.store.namespace
@@ -312,7 +343,7 @@ class ExchangeExecution:
             observations = [json.loads(r[0]) for r in connection.execute('SELECT payload FROM provider_observations WHERE namespace=? AND operation_id=?', (namespace, operation['operation_id']))]
             current = max(observations, key=lambda p: (number(p['executedQty']), rank.get(p['status'], 0), int(p['updateTime'])))
             reported = number(current['executedQty'])
-            if min(filled, reported) < 0 or max(filled, reported) > number(operation['requested_qty']):
+            if min(filled, reported) < 0 or max(filled, reported) > requested:
                 raise StateUnavailable('Provider fill exceeds requested quantity')
             cost = sum((Decimal(r[0]) for r in connection.execute('SELECT quote_cost FROM fills WHERE namespace=? AND operation_id=?', (namespace, operation['operation_id']))), Decimal(0))
             status = current['status']
@@ -321,8 +352,8 @@ class ExchangeExecution:
             if dispatch is None:
                 raise StateUnavailable('Durable dispatch reservation unavailable')
             reservation = json.loads(dispatch[0])
-            remaining = max(Decimal(0), number(operation['requested_qty'])-filled)
-            reserved = Decimal(reservation['reservation_amount'])*remaining/number(operation['requested_qty'])
+            remaining = max(Decimal(0), requested-filled)
+            reserved = Decimal(reservation['reservation_amount'])*remaining/requested
             connection.execute('UPDATE reservations SET amount=? WHERE namespace=? AND operation_id=?',
                                (decimal_text(reserved), namespace, operation['operation_id']))
             connection.execute('UPDATE intents SET state=?,provider_order_id=? WHERE namespace=? AND operation_id=?',
@@ -348,11 +379,14 @@ class ExchangeExecution:
             return 0
         snapshot = self.store.snapshot()
         if snapshot['exchange_account']['state'] != 'ready':
+            self.protection.maintain()
             return 0
         count = 0
         with self.store.connection() as connection:
             queued = [dict(r) for r in connection.execute("SELECT * FROM intents WHERE namespace=? AND state='queued' ORDER BY intake_sequence", (self.store.namespace,))]
         for operation in queued:
+            if operation['side'] == 'sell' and not self.protection.prepare_close(operation):
+                continue
             try:
                 observed = self._request('entry' if operation['side'] == 'buy' else 'reduction', 1,
                                          lambda prepared: self.provider.submit(prepared[0], operation['side'], prepared[1], operation['provider_client_id']),
@@ -393,9 +427,14 @@ class ExchangeExecution:
                 self._health('reconciliation_required', 'dispatch_unknown' if dispatched else getattr(error, 'kind', 'transient'))
                 return count
             count += 1
-            self.reconcile()
+            if not self._safe_reconcile():
+                return count
+            self.protection.maintain()
+            if not self._safe_reconcile():
+                return count
             if self.store.snapshot()['exchange_account']['state'] != 'ready':
                 break
+        self.protection.maintain()
         return count
 
     @financial_arithmetic
@@ -409,7 +448,7 @@ class ExchangeExecution:
                 raise StateUnavailable('Order is no longer queued for dispatch')
             version, config = self.store._config(connection)
             policy = config['execution_policy']
-            quantity = number(operation['requested_qty'])
+            quantity = self.dispatch_quantity(operation)
             if quantity <= 0 or operation['side'] not in {'buy', 'sell'} or operation['kind'] not in {'trade', 'close'}:
                 raise ConfigurationError('Canonical positive order required')
             symbol = operation['symbol']
@@ -454,6 +493,12 @@ class ExchangeExecution:
             if amount > Decimal(account['balances'].get(asset, {}).get('available', '0')):
                 raise ConfigurationError('Insufficient confirmed free assets')
             if operation['side'] == 'buy':
+                from exchange_protection import protection_terms
+                try:
+                    protection_terms(scan.get('market_metadata', {}), symbol, quantity, price, config,
+                                     self.owner.clock(), self.store.venue)
+                except ValueError as error:
+                    raise ConfigurationError(str(error)) from error
                 risk = self.store.exchange_risk(connection, now=self.owner.clock())
                 if risk['entry_blocked']:
                     raise ConfigurationError(risk['reason'])

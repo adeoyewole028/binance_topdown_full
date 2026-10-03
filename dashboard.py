@@ -490,6 +490,7 @@ def api_status():
         'entry_control': observed['entry_control'],
         'exchange_risk': observed['exchange_risk'],
         'fills': observed['fills'],
+        'protection': observed['protection'],
     }
     resp = make_response(jsonify(payload), 200)
     return resp
@@ -662,6 +663,17 @@ def dashboard():
                             </table>
                         </div>
                     </div>
+                </section>
+
+                <section aria-label="Position protection" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                    <h2 class="text-sm font-semibold text-slate-300">Position protection</h2>
+                    {% for group in status['protection'] %}
+                    <p>{{ group['symbol'] }}: {{ group['state'] }} — {{ group.get('semantics', 'unverified') }};
+                        quantity {{ group['quantity'] }}. Stop {{ group.get('stop_price', 'unavailable') }};
+                        take profit {{ group.get('take_profit_price', 'unavailable') }}.</p>
+                    {% if group.get('next_action') %}<p role="alert">{{ group['next_action'] }}</p>{% endif %}
+                    {% endfor %}
+                    <p>Simulation is local. Exchange protection requires provider confirmation; stop execution price is not guaranteed.</p>
                 </section>
 
                 <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">

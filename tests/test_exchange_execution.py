@@ -24,6 +24,45 @@ class SpotFixture:
         self.orders: dict[str, dict[str, Any]] = {}
         self.fills: list[dict[str, Any]] = []
         self.submissions: list[str] = []
+        self.lists: dict[str, dict[str, Any]] = {}
+        self.protect_submissions: list[str] = []
+        self.cancel_submissions: list[str] = []
+        self.timeout_install = False
+        self.timeout_cancel = False
+
+    def protect(self, symbol: str, quantity: str, stop: str, target: str,
+                list_id: str, above_id: str, below_id: str) -> dict[str, Any]:
+        self.protect_submissions.append(list_id)
+        group: dict[str, Any] = {'symbol': symbol.replace('/', ''), 'orderListId': len(self.lists)+1,
+                                 'listClientOrderId': list_id, 'listOrderStatus': 'EXECUTING',
+                                 'contingencyType': 'OCO', 'quantity': quantity, 'orders': []}
+        for client, kind, trigger in ((above_id, 'TAKE_PROFIT', target), (below_id, 'STOP_LOSS', stop)):
+            order = {'symbol': group['symbol'], 'orderId': len(self.orders)+1, 'clientOrderId': client,
+                     'orderListId': group['orderListId'], 'side': 'SELL', 'type': kind, 'stopPrice': trigger,
+                     'status': 'NEW', 'origQty': quantity, 'executedQty': '0', 'cummulativeQuoteQty': '0',
+                     'updateTime': int(time.time()*1000)}
+            self.orders[client] = order
+            group['orders'].append({'symbol': order['symbol'], 'orderId': order['orderId'], 'clientOrderId': client})
+        self.lists[list_id] = group
+        if self.timeout_install:
+            raise TimeoutError('Offline protection response lost')
+        return dict(group)
+
+    def query_list(self, list_id: str) -> dict[str, Any] | None:
+        return self.lists.get(list_id)
+
+    def cancel_list(self, symbol: str, list_id: str, cancel_id: str) -> dict[str, Any]:
+        self.cancel_submissions.append(list_id)
+        if self.timeout_cancel:
+            raise TimeoutError('Offline cancellation unresolved')
+        group = self.lists[list_id]
+        group['listOrderStatus'] = 'ALL_DONE'
+        for leg in group['orders']:
+            order = self.orders[leg['clientOrderId']]
+            if order['status'] in {'NEW', 'PARTIALLY_FILLED'}:
+                order['status'] = 'CANCELED'
+        return dict(group)
+
 
     def configure(self, metadata: dict[str, Any]) -> None:
         pass
@@ -32,8 +71,9 @@ class SpotFixture:
         return value
 
     def account(self) -> dict[str, Any]:
+        locked = min(self.balances.get('BTC', Decimal(0)), sum((Decimal(group['quantity']) for group in self.lists.values() if group['listOrderStatus'] == 'EXECUTING'), Decimal(0)))
         return {'uid': self.uid, 'canTrade': True, 'accountType': 'SPOT', 'permissions': ['SPOT'],
-                'balances': [{'asset': a, 'free': str(q), 'locked': '0'} for a, q in self.balances.items()]}
+                'balances': [{'asset': a, 'free': str(q-locked if a == 'BTC' else q), 'locked': str(locked if a == 'BTC' else 0)} for a, q in self.balances.items()]}
 
     def submit(self, symbol: str, side: str, quantity: str, client_id: str) -> dict[str, Any]:
         self.submissions.append(client_id)
@@ -53,6 +93,9 @@ class SpotFixture:
 
     def query(self, symbol: str, client_id: str) -> dict[str, Any] | None:
         return self.orders.get(client_id)
+
+    def query_order(self, symbol: str, order_id: str) -> dict[str, Any] | None:
+        return next((dict(o) for o in self.orders.values() if str(o['orderId']) == order_id and o['symbol'] == symbol.replace('/', '')), None)
 
     def open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         return [dict(o) for o in self.orders.values() if (symbol is None or o['symbol'] == symbol.replace('/', '')) and o['status'] in {'NEW', 'PARTIALLY_FILLED'}]
@@ -237,7 +280,8 @@ def test_partial_cancel_and_old_observations_preserve_fills_and_remainder() -> N
             return order
         def confirm_cancel(self) -> None:
             for order in self.orders.values():
-                order['status'] = 'CANCELED'
+                if order['side'] == 'BUY':
+                    order['status'] = 'CANCELED'
         def query(self, symbol: str, client_id: str) -> dict[str, Any] | None:
             order = super().query(symbol, client_id)
             if self.stale and order:
@@ -298,13 +342,16 @@ def test_pinned_ccxt_precision_adapter_uses_only_explicit_spot_transport() -> No
         transport = SpotFixture()
         exchange = ccxt.binance({'apiKey': 'offline-key', 'secret': 'offline-secret', 'options': {'defaultType': 'spot'}})
         exchange.set_sandbox_mode(True)
+        exchange.private_post_orderlist_oco = lambda params: transport.protect('BTC/USDT', params['quantity'], params['belowStopPrice'], params['aboveStopPrice'], params['listClientOrderId'], params['aboveClientOrderId'], params['belowClientOrderId'])
+        exchange.private_get_orderlist = lambda params: transport.query_list(params['origClientOrderId'])
+        exchange.private_delete_orderlist = lambda params: transport.cancel_list('BTC/USDT', params['listClientOrderId'], params['newClientOrderId'])
         exchange.private_get_account = lambda params: transport.account()
         def full_response(params: dict[str, Any]) -> dict[str, Any]:
             result = transport.submit('BTC/USDT', params['side'].lower(), params['quantity'], params['newClientOrderId'])
             result['transactTime'] = result.pop('updateTime')
             return result
         exchange.private_post_order = full_response
-        exchange.private_get_order = lambda params: transport.query('BTC/USDT', params['origClientOrderId'])
+        exchange.private_get_order = lambda params: transport.query_order('BTC/USDT', str(params['orderId'])) if 'orderId' in params else transport.query('BTC/USDT', params['origClientOrderId'])
         exchange.private_get_mytrades = lambda params: transport.trades('BTC/USDT', from_id=params.get('fromId', 0), order_id=str(params['orderId']) if 'orderId' in params else None)
         exchange.private_get_openorders = lambda params: transport.open_orders('BTC/USDT' if 'symbol' in params else None)
         provider = BinanceSpotOrders(sandbox.module.runtime_environment, exchange=exchange)
@@ -544,7 +591,10 @@ def test_base_asset_fee_reduces_confirmed_sellable_quantity() -> None:
             owner.process_pending()
         state = sandbox.client.get('/api/status').get_json()
         assert state['positions'][0]['qty'] == '0.998'
-        assert state['exchange_account']['balances']['BTC']['available'] == '0.998'
+        assert state['exchange_account']['balances']['BTC']['total'] == '0.998'
+        assert state['exchange_account']['balances']['BTC']['locked'] == '0.998'
+        assert state['protection'][-1]['quantity'] == '0.998'
+        assert state['protection'][-1]['state'] == 'active'
         assert state['exchange_account']['balances']['USDT']['total'] == '899'
         assert state['fills'][0]['fee_asset'] == 'BTC'
         assert Decimal(state['positions'][0]['entry']).quantize(Decimal('0.00000001')) == Decimal('101.20240481')

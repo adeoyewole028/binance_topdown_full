@@ -416,7 +416,7 @@ class StateStore:
 
     def _operations(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
         return [dict(row) for row in connection.execute('''SELECT operation_id,kind,symbol,side,requested_qty,
-                       config_version,state,error_class FROM intents WHERE namespace=? ORDER BY intake_sequence''',
+                       config_version,state,error_class FROM intents WHERE namespace=? AND kind!='protection' ORDER BY intake_sequence''',
                                                        (self.namespace,))]
 
     def set_price(self, symbol: str, price: str) -> None:
@@ -496,7 +496,7 @@ class StateStore:
         for position in self._positions(connection):
             quantity = Decimal(0)
             versions: set[int] = set()
-            for fill in connection.execute('''SELECT f.qty,f.side,i.config_version FROM fills f
+            for fill in connection.execute('''SELECT f.qty,f.side,f.fee_amount,f.fee_asset,i.config_version FROM fills f
                 JOIN intents i ON i.namespace=f.namespace AND i.operation_id=f.operation_id
                 WHERE f.namespace=? AND f.symbol=? ORDER BY f.rowid''', (self.namespace, position['symbol'])):
                 try:
@@ -510,8 +510,13 @@ class StateStore:
                     quantity += amount
                 else:
                     quantity -= amount
-                    if quantity == 0:
-                        versions.clear()
+                if fill['fee_asset'] == position['symbol'].split('/')[0]:
+                    fee = Decimal(fill['fee_amount'])
+                    if not fee.is_finite() or fee < 0:
+                        raise StateUnavailable('Invalid durable base fee')
+                    quantity -= fee
+                if quantity == 0:
+                    versions.clear()
             # No FIFO/LIFO/lot allocation is invented for mixed entry versions.
             rule: dict[str, Any] = {'state': 'review_required', 'config_version': None}
             if (len(versions) == 1 and quantity == Decimal(position['qty'])
@@ -659,7 +664,8 @@ class StateStore:
         peak = max(peak, equity)
         drawdown = (peak - equity) / peak if peak else Decimal(0)
         halted = connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='paper_entry_stop' LIMIT 1", (self.namespace,)).fetchone() is not None
-        reason = 'paper_history_review_required' if incomplete else 'drawdown_limit' if policy and drawdown >= Decimal(policy['drawdown_fraction']) else 'entry_halted' if halted else None
+        protection_failed = connection.execute("SELECT 1 FROM protection_groups WHERE namespace=? AND state IN ('failed','unknown','installing','canceling') LIMIT 1", (self.namespace,)).fetchone() is not None
+        reason = 'paper_history_review_required' if incomplete else 'drawdown_limit' if policy and drawdown >= Decimal(policy['drawdown_fraction']) else 'entry_halted' if halted else 'protection_review_required' if protection_failed else None
         return {'state': 'configured' if policy else 'setup_required', 'policy': policy,
                 'entry_blocked': bool(reason) or not policy, 'entry_block_reason': reason or ('setup_required' if not policy else None),
                 'equity': None if incomplete or not policy else decimal_text(equity),
@@ -734,7 +740,14 @@ class StateStore:
             peak = max(peak, value)
         halted = connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='exchange_entry_stop' LIMIT 1", (self.namespace,)).fetchone() is not None
         drawdown = (peak-equity)/peak if peak else Decimal(0)
-        reason = 'entry_halted' if halted else 'drawdown_limit' if drawdown >= Decimal(policy['drawdown_fraction']) else (account.get('reason') or 'reconciliation_required') if account['state'] != 'ready' else 'entry_paused' if self._entry_control(connection)['paused'] else 'unfunded_account' if equity <= 0 else None
+        protection_failed = connection.execute("SELECT 1 FROM protection_groups WHERE namespace=? AND state IN ('failed','unknown','installing','canceling') LIMIT 1", (self.namespace,)).fetchone() is not None
+        for position in self._positions(connection):
+            if position['basis_status'] == 'provider_basis_unknown':
+                continue
+            covered = sum((Decimal(row[0]) for row in connection.execute("SELECT quantity FROM protection_groups WHERE namespace=? AND symbol=? AND state='active'", (self.namespace, position['symbol']))), Decimal(0))
+            if covered != Decimal(position['qty']):
+                protection_failed = True
+        reason = 'entry_halted' if halted else 'drawdown_limit' if drawdown >= Decimal(policy['drawdown_fraction']) else (account.get('reason') or 'reconciliation_required') if account['state'] != 'ready' else 'protection_review_required' if protection_failed else 'entry_paused' if self._entry_control(connection)['paused'] else 'unfunded_account' if equity <= 0 else None
         return {'entry_blocked': reason is not None, 'reason': reason, 'equity': decimal_text(equity),
                 'peak_equity': decimal_text(peak), 'drawdown': decimal_text(drawdown)}
 
@@ -772,6 +785,20 @@ class StateStore:
                     'positions': self._positions(connection), 'operations': self._operations(connection),
                     'migration': self._migration(connection), 'ownership': self._ownership(connection),
                     'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
-                    'fills': self._fills(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),
+                    'fills': self._fills(connection), 'protection': self._protection(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),
                     'exchange_account': self._exchange_account(connection), 'entry_control': self._entry_control(connection),
                     'exchange_risk': self.exchange_risk(connection, now=time.time() if now is None else now) if self.mode == 'exchange' else {'state': 'not_applicable'}}
+
+    def _protection(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
+        groups = []
+        for row in connection.execute('SELECT * FROM protection_groups WHERE namespace=? ORDER BY rowid', (self.namespace,)):
+            group = dict(row)
+            quantity = Decimal(group['quantity'])
+            if not quantity.is_finite() or quantity <= 0 or group['state'] not in {'installing', 'unknown', 'active', 'failed', 'canceling', 'closed', 'canceled'}:
+                raise StateUnavailable('Invalid protection projection')
+            group['quantity'] = decimal_text(quantity)
+            for event in connection.execute("SELECT payload FROM journal WHERE namespace=? AND operation_id=? AND event='protection_observed' ORDER BY sequence", (self.namespace, group['group_id'])):
+                group.update(json.loads(event[0]))
+            group['legs'] = [dict(leg) for leg in connection.execute("SELECT operation_id,provider_client_id,provider_order_id,state,requested_qty FROM intents WHERE namespace=? AND request_hash=? ORDER BY rowid", (self.namespace, 'protection:'+group['group_id']))]
+            groups.append(group)
+        return groups

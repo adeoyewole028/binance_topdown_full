@@ -1,4 +1,4 @@
-"""Owned atomic paper accounting; exchange/protection lifecycles remain later tickets."""
+"""Owned atomic paper accounting and explicit exchange/protection coordination."""
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -23,6 +23,8 @@ class ExecutionWorker(ExecutionOwner):
         self.clock = clock
         self.policy = OperationsPolicy()
         self.exchange_execution = None
+        from position_protection import PaperProtection
+        self.paper_protection = PaperProtection(self)
         if exchange_provider is not None:
             if store.mode != 'exchange':
                 raise ConfigurationError('Private provider cannot attach to paper execution')
@@ -82,8 +84,7 @@ class ExecutionWorker(ExecutionOwner):
     def process_pending(self) -> int:
         if not self.ownership_confirmed():
             raise OwnershipUnavailable('Execution ownership uncertain')
-        # No provider dispatch is implemented in this foundation. Exchange
-        # recovery and fills require the separately approved BT06 lifecycle.
+        # Private submission exists only on the explicitly attached owned adapter.
         if self.store.mode != 'paper':
             return self.exchange_execution.process_pending() if self.exchange_execution is not None else 0
         self.store.positions()  # Corrupt required projections block all dispatch.
@@ -97,6 +98,8 @@ class ExecutionWorker(ExecutionOwner):
             if unresolved is not None:
                 return 0
             connection.execute("UPDATE execution_owners SET state='ready' WHERE token=?", (self.token,))
+            self.paper_protection.sync(connection)
+            self.paper_protection.trigger(connection)
             operations = connection.execute("SELECT * FROM intents WHERE namespace=? AND state IN ('queued','waiting_for_market_data','waiting_for_setup') ORDER BY intake_sequence",
                                             (self.store.namespace,)).fetchall()
             for operation in operations:
@@ -116,10 +119,11 @@ class ExecutionWorker(ExecutionOwner):
                 else:
                     connection.execute('RELEASE paper_operation')
                 processed += 1
+                self.paper_protection.sync(connection)
         return processed
 
     @financial_arithmetic
-    def _paper_effect(self, connection: sqlite3.Connection, operation: sqlite3.Row) -> None:
+    def _paper_effect(self, connection: sqlite3.Connection, operation: sqlite3.Row, *, protective_price: Decimal | None = None) -> None:
         namespace, symbol = self.store.namespace, operation['symbol']
         policy = self.store._config(connection)[1].get('paper_policy')
         if not policy:
@@ -149,21 +153,27 @@ class ExecutionWorker(ExecutionOwner):
             return
         assert price_row is not None
         review = connection.execute("SELECT payload FROM journal WHERE namespace=? AND operation_id=? AND event='intent_queued'", (namespace, operation['operation_id'])).fetchone()
-        if review is None or operation['config_version'] != self.store._config(connection)[0]:
+        if protective_price is None and (review is None or operation['config_version'] != self.store._config(connection)[0]):
             raise ValueError('configuration_changed_review_required')
-        reviewed_context = json.loads(review[0])
-        reviewed_stamp = datetime.fromisoformat(reviewed_context['reviewed_at'])
-        if reviewed_stamp.tzinfo is None or not 0 <= self.clock() - reviewed_stamp.timestamp() < self.policy.price_expiry:
-            raise ValueError('reviewed_price_expired')
-        reviewed_price = reviewed_context.get('reviewed_price')
-        if reviewed_price is None or Decimal(reviewed_price) != Decimal(price_row[0]):
-            raise ValueError('price_changed_review_required')
+        if protective_price is None:
+            assert review is not None
+            reviewed_context = json.loads(review[0])
+            reviewed_stamp = datetime.fromisoformat(reviewed_context['reviewed_at'])
+            if reviewed_stamp.tzinfo is None or not 0 <= self.clock() - reviewed_stamp.timestamp() < self.policy.price_expiry:
+                raise ValueError('reviewed_price_expired')
+            reviewed_price = reviewed_context.get('reviewed_price')
+            if reviewed_price is None or Decimal(reviewed_price) != Decimal(price_row[0]):
+                raise ValueError('price_changed_review_required')
         price = Decimal(price_row[0])
         if not price.is_finite() or price <= 0:
             raise ValueError('Invalid paper projection price')
         from paper_filters import validate_market_quantity
         validate_market_quantity(scan.get('market_metadata', {}), symbol, requested, price, self.clock(), self.store.venue)
         self.store.reserve_paper(connection, operation['operation_id'], symbol, operation['side'], requested, price, now=self.clock())
+        if protective_price is not None:
+            if operation['side'] != 'sell' or protective_price <= 0:
+                raise ValueError('Invalid protective reduction')
+            price = protective_price
         price *= 1 + Decimal(policy['slippage_fraction']) * (1 if operation['side'] == 'buy' else -1)
         cost = requested * price
         fee = cost * Decimal(policy['fee_fraction'])

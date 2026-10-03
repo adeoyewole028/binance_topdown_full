@@ -64,9 +64,11 @@ class FakeExchange:
         return {'serverTime': int(time.time() * 1000), 'rateLimits': [
             {'rateLimitType': 'REQUEST_WEIGHT', 'interval': 'MINUTE', 'intervalNum': 1, 'limit': 100000}],
             'symbols': [{'symbol': s.replace('/', ''), 'baseAsset': s.split('/')[0], 'quoteAsset': s.split('/')[1],
-                         'status': 'TRADING', 'isSpotTradingAllowed': True, 'orderTypes': ['MARKET'],
+                         'status': 'TRADING', 'isSpotTradingAllowed': True, 'ocoAllowed': True,
+                         'orderTypes': ['MARKET', 'STOP_LOSS', 'TAKE_PROFIT'],
                          'filters': self.market_filters.get(s, [{'filterType': 'LOT_SIZE', 'minQty': '0.001', 'maxQty': '100000', 'stepSize': '0.001'},
-                                     {'filterType': 'MIN_NOTIONAL', 'minNotional': '5', 'applyToMarket': True, 'avgPriceMins': 0}])} for s in self.prices]}
+                                     {'filterType': 'MIN_NOTIONAL', 'minNotional': '5', 'applyToMarket': True, 'avgPriceMins': 0}]) +
+                                    [{'filterType': 'PRICE_FILTER', 'minPrice': '0.01', 'maxPrice': '1000000', 'tickSize': '0.01'}]} for s in self.prices]}
 
     def tickers(self, symbols: list[str] | None = None) -> dict[str, Any]:
         return {s: {'last': p, 'quoteVolume': 20000000.0} for s, p in self.prices.items()

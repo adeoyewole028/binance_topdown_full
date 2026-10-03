@@ -73,7 +73,7 @@ class BinanceSpotOrders:
             payload = error_payload(error)
             code = payload.get('code')
             code = code if type(code) is int else None
-            if method == 'private_get_order' and type(code) is int and code == -2013:
+            if method in {'private_get_order', 'private_get_orderlist'} and type(code) is int and code == -2013:
                 return None  # Never evidence that an uncertain submit failed.
             name = type(error).__name__
             kind = 'auth' if code in {-2014, -2015, -1022} or name in {'AuthenticationError', 'PermissionDenied'} else 'rate_limit' if name in {'RateLimitExceeded', 'DDoSProtection'} else 'transient' if name in {'TimeoutError', 'ConnectionError', 'NetworkError', 'RequestTimeout', 'ExchangeNotAvailable'} else 'data_quality'
@@ -82,7 +82,7 @@ class BinanceSpotOrders:
                 retry = retry if math.isfinite(retry) and retry >= 0 else 0
             except (TypeError, ValueError):
                 retry = 0
-            failure = SubmissionRejected if method == 'private_post_order' and type(code) is int and code in {-1013, -1021, -1022, -2014, -2015} else ProviderFailure
+            failure = SubmissionRejected if method in {'private_post_order', 'private_post_orderlist_oco'} and type(code) is int and code in {-1013, -1021, -1022, -2014, -2015} else ProviderFailure
             raise failure(kind, retry_after=retry) from None
 
     def account(self) -> dict[str, Any]:
@@ -102,6 +102,10 @@ class BinanceSpotOrders:
         value = self._call('private_get_order', {'symbol': self._symbol(symbol), 'origClientOrderId': client_id})
         return dict(value) if value is not None else None
 
+    def query_order(self, symbol: str, order_id: str) -> dict[str, Any] | None:
+        value = self._call('private_get_order', {'symbol': self._symbol(symbol), 'orderId': order_id})
+        return dict(value) if value is not None else None
+
     def open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         return list(self._call('private_get_openorders', {'symbol': self._symbol(symbol)} if symbol else {}))
 
@@ -110,3 +114,19 @@ class BinanceSpotOrders:
         if order_id is not None:
             params['orderId'] = order_id
         return list(self._call('private_get_mytrades', params))
+
+    def protect(self, symbol: str, quantity: str, stop: str, target: str,
+                list_id: str, above_id: str, below_id: str) -> dict[str, Any]:
+        return dict(self._call('private_post_orderlist_oco', {
+            'symbol': self._symbol(symbol), 'side': 'SELL', 'quantity': quantity,
+            'listClientOrderId': list_id, 'aboveType': 'TAKE_PROFIT', 'aboveClientOrderId': above_id,
+            'aboveStopPrice': target, 'belowType': 'STOP_LOSS', 'belowClientOrderId': below_id,
+            'belowStopPrice': stop, 'newOrderRespType': 'FULL'}))
+
+    def query_list(self, list_id: str) -> dict[str, Any] | None:
+        result = self._call('private_get_orderlist', {'origClientOrderId': list_id})
+        return dict(result) if result is not None else None
+
+    def cancel_list(self, symbol: str, list_id: str, cancel_id: str) -> dict[str, Any]:
+        return dict(self._call('private_delete_orderlist', {'symbol': self._symbol(symbol),
+                                                         'listClientOrderId': list_id, 'newClientOrderId': cancel_id}))
