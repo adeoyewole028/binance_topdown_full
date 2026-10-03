@@ -1,0 +1,46 @@
+{
+  "ticket": "BT03",
+  "scope": "offline behavior and safety checks; not deployed/provider acceptance",
+  "source_revision": "b60b4b2e3f23c5909051ee4f2dfe269977da0bb2",
+  "python": "3.11.3",
+  "dependencies": {
+    "ccxt": "4.5.3",
+    "pandas": "2.3.2",
+    "Flask": "3.1.2",
+    "gunicorn": "23.0.0",
+    "python-dotenv": "1.1.1",
+    "pytest": "8.4.2",
+    "pyflakes": "3.4.0",
+    "mypy": "1.18.2"
+  },
+  "source_sha256": {
+    "dashboard.py": "c0444de68760b0504228eb688ff9cb9cc4b30f2f58c957662fc5a0412b86180b",
+    "topdown_daemon.py": "7f2e0f4d9b773cea3998864b989a5273e76d983af08128d3dbeb1aa9f729c147",
+    "backtester.py": "5871f8cefdb9ccbb6d07c98fe43fb417ba7350fa2580116b73d2e31e5167f5d2",
+    "utils.py": "25f983276908426bd065e3c2f2ff515c121e071f8328f119b67183a12880ddb6",
+    "operator_security.py": "4c53cdfafb86e9767149235e6aabe689cec4429f5bf9d7f9ab823a98c8f23554",
+    "runtime_environment.py": "e6abb4a2264f2cf9c913cc2f33947e291ab3fa51b4bc0f5f0f8f176c319f36ee",
+    "wsgi.py": "fc95f37fa77935b551363780ea58be4aaec25b0041c20a1f6a5db0f19b3d507f",
+    "run_scanner.py": "1a15a2c1deb73b308962063352ba80c16bf760c2c311e2dd7047d1df00432c3c",
+    "gunicorn.conf.py": "b20b3fde0d21d1426470da38b508920031afd510243d7840db17ba5f6ca36dd6",
+    "state_store.py": "58e79a0b758ca182a8462f57bf69e424dbeda921e7ac962c4b84600b26d3bdd3",
+    "execution_owner.py": "e75c568b84c7e63f2fb108c48fe209cb6e4eeb7aa9579ec53b2bb2720a40ecd3",
+    "execution_worker.py": "90456238366a4266f813046904f1862122254d86b2a91c72c73f3b3e795bfe8a",
+    "state_admin.py": "1a6bcdcdfc249a1bfbdbfc6985a353737bab5ab7842496bc990e9ffda493e25e",
+    "manage_state.py": "f4c3fb8eccf19e91fedfd337005cc8342855ab6de818f96c4efe13aa4dde109d",
+    "run_worker.py": "d1bff4c87583fc109918a24bd589f5b18970a261dfae372c34bde074f5c85b85"
+  },
+  "fixture_sha256": "efb98e3182c57acc67c6a5f60cb02fc7af87610754da8ef094e5afc308d8b93b",
+  "tests": 101,
+  "passed": 97,
+  "known_defects_expected_failure": [
+    "test_duplicate_operation_has_one_exchange_effect",
+    "test_confirmed_exchange_fill_is_visible_to_operator",
+    "test_equity_estimate_setting_is_saved",
+    "test_negative_risk_cannot_replace_valid_setting"
+  ],
+  "failures": 0,
+  "other_skips": 0,
+  "pytest_exit_code": 0,
+  "boundaries": "Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; unmodified normal imports; explicit guarded launch checks."
+}

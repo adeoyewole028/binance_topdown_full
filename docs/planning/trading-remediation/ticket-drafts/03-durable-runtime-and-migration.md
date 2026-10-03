@@ -9,7 +9,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** in progress; prerequisite BT02 closed/read-back verified; D02/D06 approved. No dependent ticket started.
+**Status:** complete; all six acceptance gates, checks, review corrections, evidence and scoped commits satisfied. Tracker closure is read-back verified in the execution ledger. No dependent ticket started.
 **What to build:** Give dashboard workers and the daemon one consistent durable state namespace that survives restart without duplicate ownership.
 **Blocked by:** [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4).
 **Decision blockers:** None additional; D02 and D06 were selected by the user.
@@ -32,12 +32,12 @@ Runtime supervision/ownership, transactional store, migration/import, config/ope
 
 ## Acceptance criteria
 
-- [ ] Two HTTP workers read the same committed state; second execution owner cannot dispatch while first owns account.
-- [ ] Config/intent/projection updates are atomic; store unavailability or ownership uncertainty blocks new dispatch without losing recoverable intent.
-- [ ] Legacy repeat import has no duplicate effects; confirmed paper quantities and quarantine counts match approved manifest.
-- [ ] Unknown legacy origin never becomes mainnet holdings; paper/testnet/mainnet records cannot be queried/mutated across namespace.
-- [ ] Restart restores pending operations, positions/config and ownership state; corrupted or absent required state never yields a tradable empty account.
-- [ ] Rollback/restore preserves journal effects and forbids old JSON writers after cutover.
+- [x] Two HTTP workers read the same committed state; second execution owner cannot dispatch while first owns account.
+- [x] Config/intent/projection updates are atomic; store unavailability or ownership uncertainty blocks new dispatch without losing recoverable intent.
+- [x] Legacy repeat import has no duplicate effects; confirmed paper quantities and quarantine counts match approved manifest.
+- [x] Unknown legacy origin never becomes mainnet holdings; paper/testnet/mainnet records cannot be queried/mutated across namespace.
+- [x] Restart restores pending operations, positions/config and ownership state; corrupted or absent required state never yields a tradable empty account.
+- [x] Rollback/restore preserves journal effects and forbids old JSON writers after cutover.
 
 ## Testing and validation
 
@@ -69,9 +69,9 @@ Mainnet reconciliation implementation, distributed platform or new custody model
 
 ## Execution record
 
-Implementation in progress on 2026-10-03, fixed point dd950b8f01565eba61b5e79e9b5beb0d2484b338. Shared namespace-qualified config, durable HTTP intake, lifetime kernel ownership, atomic paper projections/journals and shared scan snapshots are implemented. Explicit quarantine/checksum/paper-origin attestation and online backup/isolated restore candidates are exercised on disposable fixtures. Unknown prior dispatch blocks new work. Real subprocess contention/death/handover passes; failed commits retain queued intent. Missing/corrupt state fails closed; source JSON writers and independent daemon execution are retired. Read-only config/CSV remain review inputs, not fabricated history. Restore refuses older journal effects and never overwrites the current DB.
+Completed on 2026-10-03, fixed point dd950b8f01565eba61b5e79e9b5beb0d2484b338. Shared namespace-qualified config, durable HTTP intake, lifetime kernel ownership, atomic paper projections/journals and shared scan snapshots are implemented. Explicit quarantine/checksum/paper-origin attestation and online backup/isolated restore candidates are exercised on disposable fixtures. Unknown prior dispatch blocks new work. Real subprocess contention/death/handover passes; failed commits retain queued intent. Missing/corrupt state fails closed; source JSON writers and independent daemon execution are retired. Read-only config/CSV remain review inputs, not fabricated history. Restore refuses older journal effects and never overwrites the current DB.
 
-Validation before review: 93 pass/4 strict future expected failures (97 cases); mypy22, repository lint and 15-source compile pass. BT03 necessarily corrected three projection preconditions (negative buy/sell and missing priced fill); those baseline regressions are ordinary passing tests, without implementing BT05 capital/risk/fees/protection policy. All six criteria remain unchecked pending two-axis review, final evidence and scoped commits. D05/D07 and provider/deployment gates remain open. No source push, real migration, provider call, active-service change or deployment. Next step is review and corrections within BT03.
+Final validation: 97 pass/4 strict future expected failures (101 cases); mypy23, repository lint, diff and 15-source compile pass. BT03 necessarily corrected three projection preconditions (negative buy/sell and missing priced fill); those baseline regressions are ordinary passing tests, without implementing BT05 capital/risk/fees/protection policy. Standards0/Spec0 remaining actionable findings after two P2 fixes (verified backup metadata and single request-local read snapshot). Scoped commits96b3887/a1f13a7/b60b4b2. Durable evidence: docs/planning/trading-remediation/evidence/bt03-validation.md and bt03-durable-state.json; runbook docs/durable-state.md. The criterion map covers multi-process shared config/fills, killed owner/exclusion/fencing, atomic failed-commit restart, repeat/anomalous namespace-bound quarantine/import, corrupt/missing state and journal-preserving restore/JSON retirement. D05/D07 and provider/deployment gates remain open. No source push, real migration, provider call, active-service change or deployment. Next sole ticket BT04 #6 remains unstarted awaiting the existing D07 decision question.
 
 
 ## Approved decision update
