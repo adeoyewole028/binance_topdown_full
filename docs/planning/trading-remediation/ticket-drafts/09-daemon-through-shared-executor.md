@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; BT09 implementation in progress; all acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** complete local acceptance; all five gates passed. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Allow explicitly enabled automation to enter and exit safely without bypassing operator controls or duplicating ownership.
 **Blocked by:** [BT07 #9](https://github.com/adeoyewole028/binance_topdown_full/issues/9), [BT08 #10](https://github.com/adeoyewole028/binance_topdown_full/issues/10).
 **Decision blockers:** None additional; applicable choices approved by the user on 2026-10-02.
@@ -30,11 +30,11 @@ Explicit daemon automation launcher, shared signals/admission/executor/protectio
 
 ## Acceptance criteria
 
-- [ ] Selected approved automation produces an intent from a completed-bar signal through the same admission/executor as manual orders.
-- [ ] Duplicate scan/restart cannot create a second automatic intent for one signal identity; max open/reserved positions and cooldown survive restart.
-- [ ] Confirmed exits free open slots; protection/order partial failure does not erase holdings or incorrectly release risk.
-- [ ] Automation remains disabled absent explicit setting/authorization and cannot start from imports/reset or unresolved startup state.
-- [ ] Second launcher cannot dispatch; graceful termination preserves operation recovery and confirmed protection.
+- [x] Selected approved automation produces an intent from a completed-bar signal through the same admission/executor as manual orders.
+- [x] Duplicate scan/restart cannot create a second automatic intent for one signal identity; max open/reserved positions and cooldown survive restart.
+- [x] Confirmed exits free open slots; protection/order partial failure does not erase holdings or incorrectly release risk.
+- [x] Automation remains disabled absent explicit setting/authorization and cannot start from imports/reset or unresolved startup state.
+- [x] Second launcher cannot dispatch; graceful termination preserves operation recovery and confirmed protection.
 
 ## Testing and validation
 
@@ -66,7 +66,7 @@ Selecting autonomous mainnet authorization, opportunistic strategy redesign.
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+Implementation: shared explicit automation/launcher/admission/protection/recovery complete at4f83d79. Validation:296fullpassed/0failures/skips/xfails217.77s; type43/lint/diff/28source compilation pass. Review:Standards0/Spec0 after provider-clock boundary and canonical review-context corrections, plus necessary controlled external regression-fixture correction. Evidence:[criterion/review record](../evidence/bt09-validation.md),[exact revision/hashes](../evidence/bt09-automation.json),[runbook](../../automation.md). Source commits a542148/e889870/4f83d79. No current local blockers. Actual provider/deployment/activation gates belong to later tickets; no real provider/funding/trade/migration/deploy/push. Next:publish/close/read-back#11, then inspectBT10#12 and its live blockers before starting it alone.
 
 
 ## Approved decision update
@@ -77,3 +77,8 @@ APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automati
 ## BT09 start (2026-10-03)
 
 Live#11 body/comments inspected OPEN/0comments, native#9/#10 CLOSED verified; parent#2 OPEN. Sole active ticket. Fixed review point`d4900456c4dfa6b36eb0c02e8850d3f22af576a1`. D03 explicit automation disabled by default, same evaluator/admission/risk/executor/protection; D04 both profiles preserved. No future replay/metrics/UI/release implementation early; no actual automation activation/provider/trade/funding/deployment/push. Next: approved HTTP→ownedworker→fake-market/provider→HTTP tracer for explicit signal intake and restart dedup, then lifecycle/launcher/failure gates and final review/checks.
+
+
+## Final acceptance (2026-10-03)
+
+All five local criteria passed at4f83d79, with296fullpass,type43/lint/diff/28source compilation and both finalreviews0.24newautomation cases demonstrate shared lifecycle, identity/limits/cooldown, bothprofiles/sizing/gates, confirmed/unknown safety, actual processfencing and graceful/fault shutdown. Completed manual/protection behavior remains covered in the complete suite. No schema/data migration, profile redesign, capital invention, actual activation/provider/trade/deployment/push. Native GitHub status controls tracker closure; parent#2 remains open.

@@ -113,3 +113,8 @@ R11/R03/R09 map to completed owned protection/serialized close lifecycle at18b1b
 ## BT08 local completion trace
 
 R12/R06 map to versioned pure causal profiles/runtime adapters at933c9f9. Original indicator/pivot/pattern math and profile windows/fixed daily thresholds preserved; completed UTC as-of/gap/warmup/future isolation, position exit precedence, shared adapter parity, restart-stable identity and immutable intent config/profile provenance covered by22newversioned cases within271fullpass. Type40/lint/27source compile, Standards0/Spec0. Evidence:`evidence/bt08-validation.md` and`evidence/bt08-versioned-strategies.json`. Automatic-intake dedup/lifecycle remainsBT09; real replay/coverageBT10; deployed/provider/closure gates remain later owners.
+
+
+## BT09 local completion trace
+
+R13/R03/R08 map to explicit shared owned automation at4f83d79. Bothprofile/fixed-risk completed entry traces and measured provider-clock boundaries, original-rule/current-review automatic closes, restart signal identity/cooldown/slot reservations, unset/configstale/unresolved/default/import/reset gates, fake Spot unknown protection/paused reductions, actual child process exclusion and graceful/fault stop cover all five criteria.24newautomation cases plus one necessary existing recovery-fixture boundary case within296fullpass; type43/lint/28sourcecompile, Standards0/Spec0. Evidence:`evidence/bt09-validation.md`, `evidence/bt09-automation.json`. Actual provider/deployed acceptance and initiative closure remain separate later gates.
