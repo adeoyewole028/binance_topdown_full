@@ -121,3 +121,6 @@ R13/R03/R08 map to explicit shared owned automation at4f83d79. Bothprofile/fixed
 
 
 BT10 local acceptance R14/R09/R12 completed atab5f9a9ea88d622e142a284cd65be7e691b5f0fe:327fullpass/0failures/skips/xfails261.03s,type48/lint/diff/31sourcecompile,Standards0/Spec0. [Criterion map](evidence/bt10-validation.md), [source hashes](evidence/bt10-historical-replay.json), [explicit fixture](evidence/bt10-deterministic-example.json), [public/offline replay contract](../../historical-replay.md). No actualprovider/activation or later metrics/UI/ops/acceptance/rollout implementation.
+
+
+BT11 local acceptance R15/R05 at2d8b08c: full durable fill history/pagination/restart, shared fee-inclusive basis/fullposition-exit win denominator, actual seeded equity/drawdown, unique partial/base/quote/thirdassetfee qualification, stale/unresolved account and missing fill-prefix valuation gates, immutable seed and snapshot/history consistency.344fullpass520.07s/type50/lint/diff/32compile,Standards0/Spec0. [Criterion evidence](evidence/bt11-validation.md), [source hashes](evidence/bt11-account-performance.json). Later browser/provider/operational/rollout gates remain assigned; no actualprovider/activation claim.
