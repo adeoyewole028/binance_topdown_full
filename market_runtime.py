@@ -171,7 +171,7 @@ class MarketRuntime:
             health['clock_rtt_seconds'] = received - before
             if not math.isfinite(server_time) or abs(health['clock_skew_seconds']) >= self.owner.policy.price_expiry or not 0 <= received - before < self.owner.policy.price_expiry:
                 raise DataQualityError('Clock uncertainty')
-            self.budget.configure(metadata)
+            self.budget.configure(metadata, request_started=before)
             self.budget.observe(getattr(self.provider, 'headers', {}))
             tickers = self._request('reduction' if financial_coverage else 'market', 80, self.provider.tickers)
             ticker_received = self.clock()

@@ -9,6 +9,7 @@ import time
 from contextlib import contextmanager
 from collections.abc import Iterator
 from state_store import StateStore, StateUnavailable
+from operations_policy import OperationsPolicy
 from execution_owner import ExecutionOwner, OwnershipUnavailable
 
 T = TypeVar('T')
@@ -76,9 +77,12 @@ class RequestBudget:
             connection.execute('UPDATE market_budget_v1 SET values_json=? WHERE venue=?',
                                (json.dumps(values, allow_nan=False), self.store.venue))
 
-    def configure(self, metadata: dict[str, Any]) -> None:
+    def configure(self, metadata: dict[str, Any], *, request_started: float | None = None) -> None:
         limits = []
         now = self.clock()
+        uncertainty = OperationsPolicy().price_expiry if request_started is None else now - request_started
+        if not math.isfinite(uncertainty) or not 0 <= uncertainty <= OperationsPolicy().price_expiry:
+            raise ProviderFailure('data_quality')
         for raw in metadata['rateLimits']:
             if raw['rateLimitType'] not in {'REQUEST_WEIGHT', 'RAW_REQUESTS'}:
                 continue
@@ -93,12 +97,13 @@ class RequestBudget:
             # Last measured server timestamp is a conservative lower bound at
             # receipt, so local clock skew cannot open a request window early.
             state['clock_skew'] = float(metadata['serverTime']) / 1000 - now
+            state['clock_uncertainty'] = uncertainty
             now += state['clock_skew']
             previous = {(r['kind'], r['duration']): r for r in state['limits']}
             for item in limits:
                 old = previous.get((item['kind'], item['duration']))
                 start = int(now // item['duration']) * item['duration']
-                item.update(start=start, used=old['used'] if old and old['start'] == start else
+                item.update(start=max(start, old['start']) if old else start, used=old['used'] if old and old['start'] >= start else
                             (21 if item['kind'] == 'REQUEST_WEIGHT' else 2))
             state['limits'] = limits
             state['reserve_weight'] = max(self.reserve_weight, state.get('reserve_weight', 0))
@@ -125,13 +130,13 @@ class RequestBudget:
             now += state.get('clock_skew', 0)
             for limit in state['limits']:
                 start = int(now // limit['duration']) * limit['duration']
-                if start != limit['start']:
+                if start > limit['start']:
                     limit.update(start=start, used=0)
                 cost = weight if limit['kind'] == 'REQUEST_WEIGHT' else raw_requests
                 reserve = state['reserve_weight'] if limit['kind'] == 'REQUEST_WEIGHT' else state['reserve_requests']
                 capacity = limit['limit'] if lane in {'reduction', 'reconciliation'} else max(0, limit['limit'] - reserve)
                 if limit['used'] + cost > capacity:
-                    refusal = max(refusal or 0, start + limit['duration'])
+                    refusal = max(refusal or 0, limit['start'] + limit['duration'] - state.get('clock_skew', 0))
             if refusal is None:
                 for limit in state['limits']:
                     limit['used'] += weight if limit['kind'] == 'REQUEST_WEIGHT' else raw_requests
@@ -167,7 +172,11 @@ class RequestBudget:
                 # A transport can span a boundary. Carry local reservations
                 # conservatively into its receipt window before attaching the
                 # provider counter; the next claim must not erase that usage.
-                item['start'] = int(received // item['duration']) * item['duration']
+                # Without authoritative response time, count the request in
+                # the latest possible receipt window. Keep that window until
+                # even the server-time lower bound has passed its end.
+                latest = received + state.get('clock_uncertainty', OperationsPolicy().price_expiry)
+                item['start'] = max(item['start'], int(latest // item['duration']) * item['duration'])
                 if item['kind'] != 'REQUEST_WEIGHT':
                     continue
                 duration = item['duration']

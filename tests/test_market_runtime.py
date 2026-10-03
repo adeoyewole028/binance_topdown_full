@@ -569,3 +569,23 @@ def test_response_crossing_budget_window_preserves_reported_usage_and_urgent_hea
         with pytest.raises(BudgetDeferred):
             budget.request('research', 80, provider.tickers)
         assert budget.request('reconciliation', 80, provider.tickers)['BTC/USDT']['last'] == 100
+
+
+@pytest.mark.parametrize('timing_known', [False, True])
+def test_uncertain_server_clock_cannot_discard_response_usage_at_rollover(timing_known: bool) -> None:
+    from request_budget import RequestBudget, BudgetDeferred
+    clock = ControlledClock()
+    clock.value += 59
+    provider = MarketFixture(clock() - 2)
+    with LegacySandbox() as sandbox:
+        budget = RequestBudget(sandbox.module.state_store, clock=clock)
+        budget.configure(provider.metadata(), request_started=clock() - 2 if timing_known else None)
+        def delayed_response() -> dict[str, Any]:
+            clock.value += 2
+            return provider.tickers()
+        budget.request('research', 80, delayed_response)
+        budget.observe({'X-MBX-USED-WEIGHT-1M': '900'})
+        clock.value += 2
+        with pytest.raises(BudgetDeferred):
+            budget.request('research', 80, provider.tickers)
+        assert budget.request('reconciliation', 80, provider.tickers)['BTC/USDT']['last'] == 100
