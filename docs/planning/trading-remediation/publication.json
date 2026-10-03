@@ -136,10 +136,12 @@
       "native_dependencies": [
         "BT04"
       ],
-      "verification": "All local criteria/checks/reviews/evidence passed; tracker closure/read-back pending",
+      "verification": "All local criteria/checks/reviews/evidence passed; CLOSED read-back2026-10-03T15:15:28Z",
       "implementation_status": "complete",
       "review_fixed_point": "feed17e1c8f499ee990ff3e08335ec1ab164e748",
-      "source_revision": "933c9f9f76ac1a6b9f1ef2367de81d064c2c6859"
+      "source_revision": "933c9f9f76ac1a6b9f1ef2367de81d064c2c6859",
+      "state": "CLOSED",
+      "evidence_commit": "e80e4de"
     },
     {
       "planning_id": "BT09",

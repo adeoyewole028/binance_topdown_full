@@ -213,3 +213,5 @@ Live#10 OPEN/0comments/native#6 CLOSED verified; BT07 closed. Sole active ticket
 ## BT08 final acceptance (2026-10-03)
 
 All five local criteria complete at933c9f9. Full271pass/0fail/skips/xfail235.30s; type40/lint/diff/27source compilation pass. Standards0/Spec0 after fixed daily thresholds and catalog bias-window corrections; incomplete300s aggregate run recorded and complete600s-budget run supersedes it without changing individual safety/timing gates. [Criterion/review evidence](evidence/bt08-validation.md), [machine hashes](evidence/bt08-versioned-strategies.json), [contract](../../strategy-profiles.md). No actual provider/funding/trade/migration/deployment/push. Publish/close/read-back#10 next; only then inspect/start BT09#11. Parent#2 remains open.
+
+BT08#10 CLOSED read-back verified2026-10-03T15:15:28Z; parent#2 OPEN; acceptance commit e80e4de. LiveBT09#11 body/comments inspected (OPEN/0comments), native prerequisites#9/#10 bothCLOSED verified. Next:capture clean fixedpoint and start BT09 alone under explicit disabled-by-default D03 automation.
