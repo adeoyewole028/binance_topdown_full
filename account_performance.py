@@ -6,6 +6,25 @@ from typing import Any
 from paper_policy import decimal_text,financial_arithmetic
 from operations_policy import OperationsPolicy
 
+REASON_MESSAGES={
+    'setup_required':'Configure starting capital and trading assumptions.',
+    'initial_equity_unavailable':'Starting account equity is unavailable.',
+    'imported_history_unknown':'Imported records lack a complete financial history.',
+    'conversion_unavailable':'No current currency conversion is available for {asset}.',
+    'valuation_stale':'The {asset} valuation is stale.',
+    'valuation_invalid':'The {asset} price observation is invalid.',
+    'reconciliation_required':'Account reconciliation is required.',
+    'account_observation_stale':'The account observation is stale.',
+    'fee_history_unknown':'Recorded fees are incomplete.',
+    'historical_quote_conversion_unavailable':'A historical currency conversion is unavailable for {asset}.',
+    'historical_fee_conversion_unavailable':'A historical fee conversion is unavailable for {asset}.',
+    'cost_basis_unknown':'Cost basis is unknown for {asset}.',
+    'fill_cost_unknown':'A recorded fill lacks confirmed cost.',
+    'holding_balance_mismatch':'The {asset} holding does not match account balances.',
+    'balance_history_mismatch':'Balances do not match the recorded financial history.',
+    'historical_equity_incomplete':'Historical equity observations are incomplete.',
+}
+
 
 def ledger_value(value: Any) -> Decimal:
     """Derived stored money may exceed the precision of operator inputs."""
@@ -36,7 +55,7 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
     config=snapshot['config']
     policy=config.get('paper_policy' if mode=='paper' else 'execution_policy')
     currency=policy['quote'] if policy else None
-    result: dict[str,Any]={'state':'unavailable','reasons':[], 'currency':currency,
+    result: dict[str,Any]={'state':'unavailable','reasons':[],'reason_messages':[], 'currency':currency,
         'realized':None,'unrealized':None,'equity':None,'initial_equity':None,'peak_equity':None,
         'drawdown':None,'return_fraction':None,'win_rate':None,'completed_trades':None,
         'win_rate_denominator':'completed_full_position_exits','cost_basis':'fee_inclusive_weighted_average',
@@ -47,6 +66,7 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
     reasons: set[str]=set()
     if not policy:
         result['reasons']=['setup_required']
+        result['reason_messages']=[REASON_MESSAGES['setup_required']]
         return result
     assert isinstance(currency,str)
     def conversion(asset: str) -> Decimal | None:
@@ -203,6 +223,7 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
             maximum=max(maximum,(peak-equity)/peak)
             result.update(peak_equity=decimal_text(peak),drawdown=decimal_text(maximum))
     result['reasons']=sorted(reasons)
+    result['reason_messages']=[REASON_MESSAGES[reason.split(':',1)[0]].format(asset=reason.partition(':')[2]) for reason in result['reasons']]
     result['realized_by_currency_status']='partial_before_unknown_basis_or_fees' if unknown else 'confirmed_net_native_currency'
     result['history_fills']=len(seen)
     result['state']='partial' if reasons else 'complete'

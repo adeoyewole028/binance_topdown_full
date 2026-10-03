@@ -855,7 +855,8 @@ def dashboard():
                             <div class="text-base">{{ (status['performance']['drawdown']|float*100)|round(2) ~ '%' if status['performance']['drawdown'] is not none else 'Unavailable' }}</div>
                             <p>Confirmed realized: {{ status['performance']['realized'] if status['performance']['realized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
                             <p>Estimated unrealized: {{ status['performance']['unrealized'] if status['performance']['unrealized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
-                            <p>{{ status['performance']['state'] }}{% if status['performance']['reasons'] %}: {{ status['performance']['reasons']|join(', ') }}{% endif %}</p>
+                            <p>{{ status['performance']['state']|capitalize }}</p>
+                            {% for message in status['performance']['reason_messages'] %}<p>{{ message }}</p>{% endfor %}
                         </div>
                         <div class="mt-4">
                             <h3 class="text-sm font-semibold text-slate-300">Config</h3>
