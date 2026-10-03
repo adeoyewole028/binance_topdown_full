@@ -50,7 +50,7 @@ def install_operator_security(app: Flask) -> None:
 
     @app.before_request
     def protect_request() -> WerkzeugResponse | tuple[dict[str, str], int] | None:
-        public = request.endpoint == 'operator_login'
+        public = request.endpoint in {'operator_login', 'service_health'}
         authenticated = (
             app.config.get('AUTH_REVISION') is not None
             and hmac.compare_digest(str(session.get('operator', '')), app.config['AUTH_REVISION'])

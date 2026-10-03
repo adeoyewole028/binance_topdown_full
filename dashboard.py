@@ -273,7 +273,7 @@ def initialize_runtime(environment: Mapping[str, str] | None = None, *, clock=ti
 
 @app.before_request
 def refresh_durable_state():
-    if request.endpoint in {'operator_login', 'logout','static'} or state_store is None:
+    if request.endpoint in {'operator_login', 'logout','static','service_health'} or state_store is None:
         return None
     try:
         snapshot = state_store.snapshot(now=app.config['MARKET_CLOCK']())
@@ -297,6 +297,19 @@ def refresh_durable_state():
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; execution paused'), 503
     return None
+
+
+@app.get('/healthz', endpoint='service_health')
+def service_health():
+    from operational_health import control_ready
+    ready = state_store is not None and control_ready(state_store, app.config['MARKET_CLOCK']())
+    return jsonify(control_ready=ready), 200 if ready else 503
+
+
+@app.get('/api/operational-health')
+def operator_health():
+    from operational_health import observations
+    return jsonify(observations(state_store, app.config['MARKET_CLOCK']()))
 
 
 @app.after_request

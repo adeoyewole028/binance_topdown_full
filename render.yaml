@@ -1,23 +1,44 @@
+# Reviewable proposal only. Apply after BT14 host budget/access approval.
+# One paid service owns the sole disk; HTTP workers never create execution owners.
 services:
   - type: web
     name: binance-topdown-dashboard
-    env: python
+    runtime: python
     region: oregon
-    plan: free
-    autoDeploy: true
+    plan: 1c-2g
+    numInstances: 1
+    autoDeployTrigger: off
+    healthCheckPath: /healthz
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_supervised.py
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.3
-      - key: FLASK_ENV
+        value: 3.11.17
+      - key: APP_ENV
         value: production
-      - key: PORT
-        value: 10000
       - key: DATA_DIR
-        value: /opt/render/project/src/data
-      # Add API_KEY/API_SECRET and other sensitive keys in Render dashboard
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -c gunicorn.conf.py -w 2 -k gthread -b 0.0.0.0:$PORT wsgi:app
+        value: /var/data/trading
+      - key: TRADING_MODE
+        value: paper
+      - key: BINANCE_VENUE
+        value: testnet
+      - key: AUTOMATION_ENABLED
+        value: "false"
+      - key: ALLOW_EXCHANGE_EXECUTION
+        value: "false"
+      - key: ALLOW_MAINNET_EXECUTION
+        value: "false"
+      - key: OPERATOR_ALERT_DELIVERY_AUTHORIZED
+        value: "false"
+      - key: OPERATOR_USERNAME
+        sync: false
+      - key: OPERATOR_PASSWORD_HASH
+        sync: false
+      - key: FLASK_SECRET_KEY
+        sync: false
+      - key: OPERATOR_ALERT_WEBHOOK
+        sync: false
     disk:
-      name: data
-      mountPath: /opt/render/project/src/data
+      name: trading-state
+      mountPath: /var/data/trading
       sizeGB: 1

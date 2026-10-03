@@ -19,7 +19,8 @@ from strategy_profiles import evaluate_observation
 def run_owned_loop(owner: ExecutionWorker, provider: MarketProvider | None = None, *,
                    automate: bool = False, sizing: str = 'risk', once: bool = False,
                    should_run: Callable[[], bool], whitelist: set[str] | None = None,
-                   blacklist: set[str] | None = None) -> None:
+                   blacklist: set[str] | None = None,
+                   maintenance: Callable[[], None] | None = None) -> None:
     """Run under an already acquired owner; stop intake at supervisor shutdown."""
     if once and (provider is not None or automate):
         raise ValueError('Scanning/automation requires a persistent owner; --once is incompatible')
@@ -31,6 +32,8 @@ def run_owned_loop(owner: ExecutionWorker, provider: MarketProvider | None = Non
         whitelist=whitelist,blacklist=blacklist,automation=control)
     try:
         while should_run():
+            if maintenance is not None:
+                maintenance()
             if scanner is None:
                 owner.process_pending()
             else:
@@ -48,6 +51,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument('--automate',action='store_true',help='Explicit automation; also requires AUTOMATION_ENABLED=true')
     parser.add_argument('--sizing',choices=('fixed','risk'),default='risk',help='Use configured currency allocation or stop-based risk sizing')
     parser.add_argument('--once',action='store_true',help='Process one queued batch then stop')
+    parser.add_argument('--operations',action='store_true',help='Supervised backup and heartbeat maintenance')
     arguments = parser.parse_args(argv)
     if arguments.once and (arguments.scan or arguments.automate):
         raise ValueError('Scanning/automation requires a persistent owner; --once is incompatible')
@@ -64,6 +68,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         for sig in handlers:
             signal.signal(sig,stop)
         with ExecutionWorker(store) as owner:
+            maintenance = None
+            if arguments.operations:
+                from operational_health import OwnerMaintenance
+                maintenance = OwnerMaintenance(owner).step
             if runtime.mode == 'exchange':
                 from exchange_adapter import BinanceSpotOrders
                 from exchange_execution import ExchangeExecution
@@ -75,11 +83,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             run_owned_loop(owner,public,automate=arguments.automate,sizing=arguments.sizing,once=arguments.once,
                 should_run=lambda: running,
                 whitelist={s.strip() for s in os.environ.get('WHITELIST','').split(',') if s.strip()},
-                blacklist={s.strip() for s in os.environ.get('BLACKLIST','').split(',') if s.strip()})
+                blacklist={s.strip() for s in os.environ.get('BLACKLIST','').split(',') if s.strip()},
+                maintenance=maintenance)
     finally:
         for sig, handler in handlers.items():
             signal.signal(sig,handler)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        print('Execution owner unavailable; state retained for reconciliation')
+        raise SystemExit(1) from None

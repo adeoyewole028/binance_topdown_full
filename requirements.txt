@@ -1,5 +1,1 @@
-ccxt>=4.3.53
-pandas>=2.0.0
-python-dotenv>=1.0.0
-Flask>=3.0.0
-gunicorn>=21.2.0
+-r requirements.lock
