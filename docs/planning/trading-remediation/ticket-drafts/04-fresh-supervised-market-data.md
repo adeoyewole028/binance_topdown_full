@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** completed locally; all acceptance/check/review/evidence gates passed on 2026-10-03. Tracker closure pending read-back.
+**Status:** completed locally; all acceptance/check/review/evidence gates passed on 2026-10-03. GitHub#6 CLOSED and read-back verified.
 **What to build:** Let the operator trust scan age and held-position data, with stale or failed inputs preventing execution.
 **Blocked by:** [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5).
 **Decision blockers:** none for BT04; D07 targets selected by the user.

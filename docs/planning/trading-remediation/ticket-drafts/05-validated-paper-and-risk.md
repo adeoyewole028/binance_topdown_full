@@ -68,3 +68,7 @@ Real exchange dispatch, guaranteed profit, selecting unapproved risk/fee assumpt
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
 
+
+## Current handoff (2026-10-03)
+
+BT04#6 CLOSED/read-back and native prerequisite verified. BT05 remains unstarted. D05 capital input contract selected: explicit operator setup required, execution blocked while seed/fee/slippage/allocation/exposure/cooldown/drawdown inputs are unset; no invented numerical values. Accounting/replay and protection selections remain pending. This supersedes the preliminary execution record only for prerequisite/decision status; no BT05 effects or acceptance claimed.

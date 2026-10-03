@@ -2,7 +2,7 @@
   "tracker": "GitHub Issues",
   "repository": "adeoyewole028/binance_topdown_full",
   "date": "2026-10-02",
-  "implementation": "BT01-BT03 complete/closed; BT04 in progress after approved D07 targets",
+  "implementation": "BT01-BT04 complete/closed; BT05 unstarted pending remaining D05 selections",
   "decision_blockers": [
     "D05"
   ],
@@ -64,7 +64,8 @@
       "native_dependencies": [
         "BT03"
       ],
-      "verification": "BT03 native prerequisite closed verified; D07 selected; in progress"
+      "verification": "All criteria/checks/two-axis reviews passed; issue6 CLOSED read-back verified2026-10-03 at source d34b004",
+      "state": "CLOSED"
     },
     {
       "planning_id": "BT05",
@@ -296,7 +297,8 @@
     "D03": "APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automation, disabled by default; both use the same executor",
     "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection",
     "D06": "APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation",
-    "D07": "APPROVED on 2026-10-03: scans300s/health600s, prices30s/expiry60s, reconciliation15s, backup7days/RPO15min/RTO1hour; configured operator owns private webhook alerts configured before activation. External activation gates remain separate."
+    "D07": "APPROVED on 2026-10-03: scans300s/health600s, prices30s/expiry60s, reconciliation15s, backup7days/RPO15min/RTO1hour; configured operator owns private webhook alerts configured before activation. External activation gates remain separate.",
+    "D05_capital_inputs": "Explicit operator setup required before paper execution; no inferred numeric defaults/funding; accounting and protection choices pending"
   },
   "remaining_decisions": "D05; external activation gates listed separately; D07 operating targets approved",
   "external_activation_gates": [
