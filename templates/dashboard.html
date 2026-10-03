@@ -7,6 +7,7 @@
             <title>Binance Topdown Bot Dashboard</title>
             <link rel="stylesheet" href="{{ url_for('static',filename='dashboard.css') }}">
             <script src="{{ url_for('static',filename='dashboard.js') }}" defer></script>
+            <script src="{{ url_for('static',filename='manual-orders.js') }}" defer></script>
         </head>
         <body class="h-full text-slate-100" data-namespace="{{ namespace }}">
             <a class="skip-link" href="#main-content">Skip to dashboard</a>
@@ -97,7 +98,7 @@
                                         <th scope="col" class="text-left py-2">Symbol</th>
                                         <th scope="col" class="text-left py-2">Entry</th>
                                         <th scope="col" class="text-left py-2">Qty</th>
-                                        <th scope="col" class="text-left py-2">Estimated unrealized</th>
+                                        <th scope="col" class="text-left py-2">Estimated unrealized</th><th scope="col" class="text-left py-2">Close</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -107,7 +108,7 @@
                                         <td class="py-2">{{ pos['symbol'] }}</td>
                                         <td class="py-2">{{ pos['entry'] if pos['entry'] is not none else 'Basis unavailable' }}</td>
                                         <td class="py-2">{{ pos['qty'] }}</td>
-                                        <td class="py-2 {{ pnlpos }}">{{ pos['unrealized'] if pos['unrealized'] is not none else 'Unavailable' }} {{ pos['currency'] or 'currency unavailable' }}</td>
+                                        <td class="py-2 {{ pnlpos }}">{{ pos['unrealized'] if pos['unrealized'] is not none else 'Unavailable' }} {{ pos['currency'] or 'currency unavailable' }}</td><td><button type="button" data-close-symbol="{{ pos['symbol'] }}" data-close-quantity="{{ pos['qty'] }}" class="px-3 py-2 rounded border border-slate-600">Review close {{ pos['symbol'] }}</button></td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -119,7 +120,7 @@
                 <section data-status-panel="protection" aria-label="Position protection" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                     <h2 class="text-sm font-semibold text-slate-300">Position protection</h2>
                     {% for group in status['protection'] %}
-                    <p>{{ group['symbol'] }}: {{ operator_label(group['state']) }} — {{ operator_label(group.get('semantics', 'unverified')) }};
+                    <p>{{ group['symbol'] }}: {{ operator_label(group['state']) }} â€” {{ operator_label(group.get('semantics', 'unverified')) }};
                         quantity {{ group['quantity'] }}. Stop {{ group.get('stop_price', 'unavailable') }};
                         take profit {{ group.get('take_profit_price', 'unavailable') }}.</p>
                     {% if group.get('next_action') %}<p role="alert">{{ group['next_action'] }}</p>{% endif %}
@@ -193,14 +194,7 @@
                                             {% endfor %}
                                         </td>
                                         <td class="py-2">
-                                            <form method="post" action="/close" class="inline-flex">
-                                                <input type="hidden" name="order_review" value="{{ order_review }}">
-                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}-close-{{ loop.index }}">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <input type="hidden" name="symbol" value="{{ es['symbol'] }}">
-                                                <input type="hidden" name="qty" value="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}">
-                                                <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
-                                            </form>
+                                            <button type="button" data-close-symbol="{{ es['symbol'] }}" data-close-quantity="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}" class="px-3 py-2 rounded border border-slate-600">Review close</button>
                                         </td>
                                     </tr>
                                     {% endfor %}
@@ -218,7 +212,7 @@
                         {% set is_paper = status['config']['paper_trading'] %}
                         <h2 class="text-sm font-semibold text-slate-300">{{ 'Paper account setup' if is_paper else 'Exchange risk setup' }}</h2>
                         {% set policy = (status['paper_account'].get('policy') if is_paper else status['config'].get('execution_policy')) or {} %}
-                        <p data-status-panel="setup-status" role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ operator_label(status['exchange_account']['state']) }}{% if status['exchange_account'].get('reason') %} — {{ operator_label(status['exchange_account']['reason']) }}{% endif %}.{% endif %}</p>
+                        <p data-status-panel="setup-status" role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ operator_label(status['exchange_account']['state']) }}{% if status['exchange_account'].get('reason') %} â€” {{ operator_label(status['exchange_account']['reason']) }}{% endif %}.{% endif %}</p>
                         <form method="post" action="{{ '/paper/setup' if is_paper else '/exchange/setup' }}" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="expected_config_version" value="{{ setup_submitted.get('expected_config_version',status['config_version']) }}">
@@ -249,14 +243,17 @@
                         </form>
                         {% endif %}
                         <h2 class="text-sm font-semibold text-slate-300 mt-3">Order operations</h2>
-                        <ul data-status-panel="operations">{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operator_label(operation['state']) }}{% if operation['error_class'] %}: {{ operator_label(operation['error_class']) }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
-                        <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
-                                    <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                        <ul data-status-panel="operations">{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} â€” {{ operator_label(operation['state']) }}{% if operation['error_class'] %}: {{ operator_label(operation['error_class']) }}{% endif %}<button type="button" data-operation-id="{{ operation['operation_id'] }}" class="px-3 py-2 rounded border border-slate-600">View saved outcome</button>{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
+                        <p id="operation-history-detail" tabindex="-1" role="status"></p><h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
+                                    <form id="manual-order" method="post" action="/orders/review" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <input type="hidden" name="order_review" value="{{ order_review }}">
+                                        <input type="hidden" name="kind" value="trade">
+                                        <input type="hidden" name="namespace" value="{{ namespace }}">
+                                        <input type="hidden" name="mode" value="{{ 'paper' if status['config']['paper_trading'] else 'exchange' }}">
+                                        <input type="hidden" name="venue" value="{{ venue }}">
                                         <input type="hidden" name="idempotency_key" value="{{ order_key }}">
                                         <label class="text-sm">Sizing
-                                            <select name="sizing" class="mt-1 rounded bg-slate-800 border border-slate-700 px-2 py-1"><option value="quantity">Explicit quantity</option><option value="fixed">Configured fixed quote allocation</option><option value="risk">Configured risk allocation</option></select>
+                                            <select name="sizing" class="mt-1 rounded bg-slate-800 border border-slate-700 px-2 py-1"><option value="quantity">Explicit quantity</option><option value="fixed">Configured fixed quote allocation</option><option value="risk">Configured risk allocation</option><option value="full_close">Full confirmed holding (close only)</option></select>
                                         </label>
                                         <label class="text-sm">Symbol
                                             {% if status['universe'] %}
@@ -275,15 +272,25 @@
                                     <option value="sell">Sell</option>
                                 </select>
                             </label>
-                            <div class="text-sm"><label for="qtyInput">Quantity</div>
+                            <label class="text-sm">Quantity
                                 <div class="flex gap-2 items-center">
                                     <input class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="qty" id="qtyInput" type="number" step="any" value="0.01" />
                                     <button type="button" id="riskSizeBtn" class="mt-1 px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Size by risk</button>
                                 </div>
                                 <div class="text-xs text-slate-400 mt-1">Browser estimates do not authorize spending. The server uses funded capital and explicit paper limits.</div>
                             </label>
-                            <button type="submit" class="w-full sm:w-auto px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Submit</button>
+                            <button type="submit" class="w-full sm:w-auto px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Review order</button>
                         </form>
+                        <p id="order-message" tabindex="-1" role="status" class="my-3"></p>
+                        <section id="order-review" aria-label="Order review and recovery" hidden class="my-3 rounded border border-slate-600 p-3">
+                            <h3 class="font-semibold">Order review and recovery</h3>
+                            <p>Estimates are provisional. Only the confirmed fills below establish execution. Recovery checks read saved state; the supervised owner reconciles provider outcomes.</p>
+                            <dl id="order-details"></dl>
+                            <button type="button" id="confirm-order" hidden class="px-3 py-2 rounded bg-indigo-600">Confirm reviewed intent</button>
+                            <button type="button" id="check-order" hidden class="px-3 py-2 rounded border border-slate-600">Check recovery status</button>
+                            <button type="button" id="new-order" hidden class="px-3 py-2 rounded border border-slate-600">Start another order</button>
+                        </section>
+                        <noscript>Order review and recovery require JavaScript. No order is sent until a separate confirmation.</noscript>
                         <div class="mt-3 space-y-1">
                             {% with messages = get_flashed_messages(with_categories=true) %}
                                 {% if messages %}

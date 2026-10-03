@@ -303,7 +303,7 @@ def refresh_durable_state():
 def dashboard_asset_type(response):
     # Windows registry MIME mappings may report .js as text/plain. Keep
     # nosniff protection and explicitly serve our bundled script as JavaScript.
-    if request.endpoint=='static' and request.view_args.get('filename')=='dashboard.js':
+    if request.endpoint=='static' and request.view_args.get('filename') in {'dashboard.js','manual-orders.js'}:
         response.headers['Content-Type']='text/javascript; charset=utf-8'
     return response
 
@@ -403,6 +403,90 @@ def exchange_entries():
         return jsonify(error='Entry control was not saved; durable state unavailable'), 503
     flash('New entries paused; reductions and reconciliation remain available' if action == 'pause' else 'Entry pause cleared; all risk and reconciliation gates still apply', 'info')
     return redirect('/')
+
+
+def manual_operation(operation_id):
+    operation=next((o for o in g.operator_status['operations'] if o['operation_id']==operation_id),None)
+    if operation is None:return None
+    state=operation['state']
+    recovery={
+        'filled':'Execution is confirmed in the fills below. Review remaining position protection before another entry.',
+        'partially_filled':'Only the fills below are confirmed. Remaining quantity needs supervised reconciliation; do not submit a replacement.',
+        'rejected':'The owner rejected this intent. Review the reported reason and current account before a new order.',
+        'canceled':'Cancellation is recorded. Confirmed fills remain effective; review the remaining holding.',
+        'unknown':'Provider outcome is unresolved. Keep this intent and wait for supervised reconciliation; do not submit a replacement.'}
+    groups=[p for p in g.operator_status['protection'] if p['symbol']==operation['symbol']]
+    unsafe=any(p['state'] not in {'active','closed','canceled'} for p in groups)
+    next_action=recovery.get(state,'Intent accepted for supervision; execution is not confirmed. Check recovery status for actual fills.')
+    if unsafe:next_action+=' Protection needs recovery. New entries remain gated; the owner reconciles orders and protection.'
+    return {**operation,'namespace':state_store.namespace,'mode':runtime_environment.mode,'venue':runtime_environment.venue,
+        'state_label':operator_label(state),'error_message':operator_label(operation['error_class']),
+        'next_action':next_action,'can_start_another':state in {'filled','rejected','canceled'} and not unsafe,
+        'fills':[f for f in g.operator_status['fills'] if f['operation_id']==operation_id],
+        'protection':[{**group,'state_label':operator_label(group['state'])} for group in groups]}
+
+
+@app.get('/api/operations/<operation_id>')
+def operation_status(operation_id):
+    operation=manual_operation(operation_id)
+    if operation is None:return jsonify(error='Operation is not available in this account'),404
+    return jsonify(operation=operation)
+
+
+@app.get('/api/order-token/<token>')
+def operation_token_status(token):
+    try:
+        operation_id=state_store.operation_for_token(token)
+        return jsonify(operation=manual_operation(operation_id) if operation_id else None)
+    except StateUnavailable:return jsonify(error='Recovery status unavailable; retain the original intent token'),503
+
+
+@app.post('/orders/review')
+def review_manual_order():
+    form=request.form
+    try:
+        if form.get('namespace')!=state_store.namespace or form.get('mode')!=runtime_environment.mode or form.get('venue')!=runtime_environment.venue:
+            raise ConfigurationConflict('Account, mode or venue changed; review this account again')
+        if runtime_environment.mode=='exchange':require_exchange_execution()
+        key=form.get('idempotency_key','')
+        import re
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',key):raise ConfigurationError('A reusable order token is required')
+        receipt=state_store.preview_manual(form.get('kind','trade'),form.get('symbol',''),form.get('side',''),
+            form.get('qty',''),form.get('sizing','quantity'),now=app.config['MARKET_CLOCK']())
+        receipt.update(idempotency_key=key,namespace=state_store.namespace,mode=runtime_environment.mode,venue=runtime_environment.venue)
+        token=URLSafeSerializer(app.secret_key,salt='manual-order-review-v1').dumps(receipt)
+        return jsonify(review_token=token,idempotency_key=key,preview=receipt['preview'])
+    except ConfigurationConflict as error:return jsonify(error=str(error)),409
+    except ConfigurationError as error:return jsonify(error=str(error)),422
+    except ValueError:return jsonify(error='Exchange execution is not permitted by this server'),403
+    except StateUnavailable:return jsonify(error='Order review unavailable; durable state needs recovery'),503
+
+
+@app.post('/orders/confirm')
+def confirm_manual_order():
+    try:
+        receipt=URLSafeSerializer(app.secret_key,salt='manual-order-review-v1').loads(request.form.get('review_token',''))
+        if not isinstance(receipt,dict):raise BadSignature('Invalid review')
+        if receipt['namespace']!=state_store.namespace or receipt['mode']!=runtime_environment.mode or receipt['venue']!=runtime_environment.venue:
+            raise ConfigurationConflict('Account, mode or venue changed; review this account again')
+        for name in ('namespace','mode','venue','idempotency_key'):
+            if name in request.form and request.form[name]!=receipt[name]:raise ConfigurationConflict('Reviewed order inputs changed; review again')
+        intent=receipt['request']
+        from manual_orders import canonical_request
+        supplied={name:request.form.get(name,value) for name,value in intent.items()}
+        if canonical_request(supplied['kind'],supplied['symbol'],supplied['side'],supplied['qty'],supplied['sizing'])!=intent:
+            raise ConfigurationConflict('Reviewed order inputs changed; review again')
+        if runtime_environment.mode=='exchange':require_exchange_execution()
+        operation_id=state_store.enqueue(intent['kind'],intent['symbol'],intent['side'],intent['qty'],
+            sizing=intent['sizing'],idempotency_key=receipt['idempotency_key'],review=receipt['context'],now=app.config['MARKET_CLOCK']())
+        # Read the committed intake result; this is never a claim of a fill.
+        g.operator_status=state_store.snapshot(now=app.config['MARKET_CLOCK']())
+        operation=manual_operation(operation_id)
+        return jsonify(operation_id=operation_id,operation=operation),202
+    except (BadSignature,KeyError,ConfigurationConflict) as error:return jsonify(error='Review changed or invalid; review the current order again' if isinstance(error,(BadSignature,KeyError)) else str(error)),409
+    except ConfigurationError as error:return jsonify(error=str(error)),422
+    except ValueError:return jsonify(error='Exchange execution is not permitted by this server'),403
+    except StateUnavailable:return jsonify(error='Submission outcome unavailable; retain this order token and check status before retrying'),503
 
 
 @app.route('/trade', methods=['POST'])

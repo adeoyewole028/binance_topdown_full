@@ -2,7 +2,8 @@
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i assets/dashboard.css -o static/dashboard.css --minify",
-    "test:browser": "node tests/browser/operator-status.cjs"
+    "test:browser": "node tests/browser/operator-status.cjs",
+    "test:browser:orders": "node tests/browser/manual-orders.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.1",

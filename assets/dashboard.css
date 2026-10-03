@@ -71,6 +71,8 @@
 }
 /* Control boundaries must remain visible when utility classes set colors. */
 input:not([type=hidden]), select, button { border:1px solid #94a3b8; }
+#order-details dt { font-weight:600; margin-top:.5rem; }
+#order-details dd { margin-bottom:.5rem; }
 a { display:inline-block; }
 @layer components {
  .text-slate-500 { color:#94a3b8; }

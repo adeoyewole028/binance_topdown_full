@@ -19,3 +19,5 @@ Historical research now uses explicit UTC/profile/policy inputs and versioned ca
 Account metrics rebuild from durable full history with qualified fee/basis and equity availability: [performance contract](docs/account-performance.md).
 
 Operator status/settings, bundled assets and browser validation: [BT12 contract](docs/operator-status.md).
+
+Reviewed manual order and recovery controls: [operator guide](docs/manual-order-review.md). Offline browser validation: `node tests/browser/manual-orders.cjs`.

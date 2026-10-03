@@ -241,14 +241,10 @@ class StateStore:
     def enqueue(self, kind: str, symbol: str, side: str, quantity: str, *, idempotency_key: str | None = None, now: float | None = None, sizing: str = 'quantity', review: dict[str, Any] | None = None, automatic_signal: dict[str, Any] | None = None, expected_owner: tuple[str,int] | None = None) -> str:
         import hashlib
         from paper_policy import number
-        if kind not in {'trade', 'close'} or side not in {'buy', 'sell'} or not isinstance(symbol, str) or not re.fullmatch(r'[A-Z0-9]{2,12}/[A-Z0-9]{2,12}', symbol):
-            raise ConfigurationError('Invalid order side or canonical symbol')
-        if sizing not in {'quantity', 'fixed', 'risk', 'full_close'} or (sizing in {'fixed', 'risk'} and side != 'buy') or (sizing == 'full_close' and (kind != 'close' or side != 'sell')):
-            raise ConfigurationError('Invalid sizing mode')
+        from manual_orders import canonical_request
+        canonical = canonical_request(kind,symbol,side,quantity,sizing)
+        quantity = canonical['qty']
         amount = number(quantity) if sizing == 'quantity' else Decimal(0)
-        if sizing == 'quantity' and amount <= 0:
-            raise ConfigurationError('Order quantity must be positive')
-        quantity = decimal_text(amount) if sizing == 'quantity' else ''
         operation = uuid.uuid4().hex
         key = operation if idempotency_key is None else idempotency_key
         if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', key):
@@ -265,6 +261,18 @@ class StateStore:
                 if repeated['request_hash'] != digest:
                     raise ConfigurationConflict('Idempotency key already used for a different order')
                 return str(repeated['operation_id'])
+            if review is not None and 'manual' in review:
+                from manual_orders import financial_fingerprint
+                guard = review['manual']
+                current_time = time.time() if now is None else now
+                current = self._snapshot(connection, now=current_time)
+                from operations_policy import OperationsPolicy
+                quoted = current['market_prices'].get(symbol)
+                stamp = datetime.fromisoformat(quoted['fetched_at']) if quoted else None
+                if stamp is None or stamp.tzinfo is None or not 0 <= current_time-stamp.timestamp() < OperationsPolicy().price_expiry:
+                    raise ConfigurationConflict('Price is stale; refresh the order review')
+                if guard.get('request') != canonical or guard.get('fingerprint') != financial_fingerprint(current):
+                    raise ConfigurationConflict('Order inputs, account or protection changed; review again')
             row = connection.execute('SELECT max(version) FROM config_versions WHERE namespace=?',
                                      (self.namespace,)).fetchone()
             if row is None or row[0] is None:
@@ -285,7 +293,7 @@ class StateStore:
                 amount = number(held[0])
                 quantity = decimal_text(amount)
             elif sizing != 'quantity':
-                amount = self.size_paper(connection, symbol, sizing) if self.mode == 'paper' else self._size_order(connection, symbol, sizing, exchange=True)
+                amount = self.size_paper(connection, symbol, sizing) if self.mode == 'paper' else self._size_order(connection, symbol, sizing, exchange=True, now=now)
                 quantity = decimal_text(amount)
             connection.execute('''INSERT INTO intents(namespace,operation_id,idempotency_key,request_hash,kind,symbol,side,
                                    requested_qty,config_version,provider_client_id) VALUES (?,?,?,?,?,?,?,?,?,?)''',
@@ -319,18 +327,90 @@ class StateStore:
                                        (self.namespace, operation, 'paper_rejected', json.dumps({'reason': str(error)})))
         return operation
 
+    @financial_arithmetic
+    def preview_manual(self, kind: str, symbol: str, side: str, quantity: str, sizing: str, *, now: float) -> dict[str,Any]:
+        from manual_orders import canonical_request, financial_fingerprint
+        from paper_policy import fill_terms, number
+        from paper_filters import validate_market_quantity
+        from operations_policy import OperationsPolicy
+        canonical=canonical_request(kind,symbol,side,quantity,sizing)
+        with self.connection() as connection:
+            connection.execute('BEGIN')
+            snapshot=self._snapshot(connection,now=now)
+            config=snapshot['config']
+            policy=config.get('paper_policy' if self.mode=='paper' else 'execution_policy')
+            if not policy:raise ConfigurationError('Supply explicit account setup before reviewing orders')
+            quote=snapshot['market_prices'].get(symbol)
+            if not quote:raise ConfigurationConflict('Wait for a fresh price before reviewing the order')
+            stamp=datetime.fromisoformat(quote['fetched_at'])
+            if stamp.tzinfo is None or not 0<=now-stamp.timestamp()<OperationsPolicy().price_expiry:
+                raise ConfigurationConflict('Price is stale; refresh the order review')
+            account=snapshot['paper_account'] if self.mode=='paper' else snapshot['exchange_account']
+            if self.mode=='exchange' and account['state']!='ready':
+                raise ConfigurationConflict('Wait for supervised exchange reconciliation before reviewing orders')
+            if side=='buy' and (snapshot['performance']['equity'] is None or
+                               (account.get('entry_blocked') if self.mode=='paper' else snapshot['exchange_risk']['entry_blocked'])):
+                raise ConfigurationConflict('Account valuation or risk needs review before new entries')
+            from market_runtime import observed_health
+            health=observed_health({**snapshot['scan'],**snapshot},now)
+            if not health['execution_ready'] or symbol not in health.get('coverage',[]):
+                raise ConfigurationConflict('Fresh supervised market coverage is required before review')
+            if sizing=='quantity':amount=number(canonical['qty'])
+            elif sizing=='full_close':
+                held=next((p for p in snapshot['positions'] if p['symbol']==symbol),None)
+                if held is None:raise ConfigurationError('No confirmed holding to close')
+                amount=number(held['qty'])
+            else:amount=self._size_order(connection,symbol,sizing,exchange=self.mode=='exchange',now=now)
+            try:validate_market_quantity(snapshot['scan'].get('market_metadata',{}),symbol,amount,Decimal(quote['price']),now,self.venue)
+            except ValueError as error:raise ConfigurationError('The selected quantity does not meet verified market rules. Review the quantity and market data.') from error
+            base,quote_asset=symbol.split('/')
+            if quote_asset!=policy['quote']:raise ConfigurationError('Use the configured funding quote asset')
+            held=next((p for p in snapshot['positions'] if p['symbol']==symbol),None)
+            if side=='sell' and (held is None or amount>number(held['qty'])):
+                raise ConfigurationError('Quantity exceeds the confirmed holding')
+            terms=fill_terms(amount,Decimal(quote['price']),side,policy)
+            if self.mode=='exchange' and side=='buy':
+                from exchange_protection import protection_terms
+                try:protection_terms(snapshot['scan'].get('market_metadata',{}),symbol,amount,Decimal(quote['price']),config,now,self.venue)
+                except ValueError as error:raise ConfigurationError('Verified exchange protection is required before new entries') from error
+            available=account['balances'].get(quote_asset if side=='buy' else base,{}).get('available','0')
+            if side=='buy' and terms['cost']+terms['fee']>number(available):
+                raise ConfigurationError('Quantity exceeds the available funding balance')
+            from manual_orders import fresh_price
+            valued=all(fresh_price(snapshot['market_prices'].get(p['symbol']),now) and p['symbol'].split('/')[1]==policy['quote']
+                       for p in snapshot['positions'])
+            exposure=sum((Decimal(p['qty'])*Decimal(snapshot['market_prices'][p['symbol']]['price'])
+                          for p in snapshot['positions']),Decimal(0)) if valued else None
+            context=self.review_context(snapshot)
+            context['manual']={'request':canonical,'fingerprint':financial_fingerprint(snapshot)}
+            return {'request':canonical,'context':context,'preview':{'namespace':self.namespace,
+                'mode':self.mode,'venue':self.venue,'kind':kind,'symbol':symbol,'side':side,'sizing':sizing,
+                'quantity':decimal_text(amount),'estimated_price':decimal_text(terms['price']),
+                'estimated_fee':decimal_text(terms['fee']),'fee_asset':quote_asset,'available_funds':available,
+                'funding_asset':quote_asset if side=='buy' else base,
+                'estimated_exposure':decimal_text(exposure) if exposure is not None else None,'config_version':snapshot['config_version'],
+                'strategy_profile':config['strategy_profile'],'strategy_version':config['strategy_version'],
+                'price_observed_at':quote['fetched_at'],'data_age_seconds':now-stamp.timestamp(),
+                'protection':[g for g in snapshot['protection'] if g['symbol']==symbol]}}
+
     def review_context(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         """Canonical current admission review, unsigned until the HTTP adapter."""
         return {'namespace':self.namespace,'config_version':snapshot['config_version'],
                 'prices':{s:{'price':q['price'],'fetched_at':q['fetched_at']} for s,q in snapshot['market_prices'].items()},
                 'holdings':{p['symbol']:p['qty'] for p in snapshot['positions']}}
 
+    def operation_for_token(self, token: str) -> str | None:
+        with self.connection() as connection:
+            row=connection.execute('SELECT operation_id FROM intents WHERE namespace=? AND idempotency_key=?',
+                                   (self.namespace,token)).fetchone()
+            return str(row[0]) if row is not None else None
+
     @financial_arithmetic
     def size_paper(self, connection: sqlite3.Connection, symbol: str, mode: str) -> Decimal:
         return self._size_order(connection, symbol, mode, exchange=False)
 
     @financial_arithmetic
-    def _size_order(self, connection: sqlite3.Connection, symbol: str, mode: str, *, exchange: bool) -> Decimal:
+    def _size_order(self, connection: sqlite3.Connection, symbol: str, mode: str, *, exchange: bool, now: float | None = None) -> Decimal:
         from decimal import ROUND_FLOOR
         config = self._config(connection)[1]
         policy = config.get('execution_policy' if exchange else 'paper_policy')
@@ -343,7 +423,7 @@ class StateStore:
         exposure = sum((Decimal(p['qty']) * Decimal(prices[p['symbol']]['price']) for p in self._positions(connection)), Decimal(0))
         equity = Decimal(account['balances'][policy['quote']]['total']) + exposure
         if exchange:
-            risk = self.exchange_risk(connection, now=time.time())
+            risk = self.exchange_risk(connection, now=time.time() if now is None else now)
             if risk.get('equity') is None or risk['entry_blocked']:
                 raise ConfigurationError('Confirmed capital and risk valuation required for sizing')
             equity = Decimal(risk['equity'])
@@ -819,16 +899,19 @@ class StateStore:
         """One committed observation for an entire HTTP request, including joins."""
         with self.connection() as connection:
             connection.execute('BEGIN')
-            version, config = self._config(connection)
-            observed = {'config_version': version, 'config': config, 'scan': self._scan(connection),
-                    'automation':self._automation(connection),'positions': self._positions(connection), 'operations': self._operations(connection),
-                    'migration': self._migration(connection), 'ownership': self._ownership(connection),
-                    'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
-                    'fills': self._fills(connection), 'protection': self._protection(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),
-                    'exchange_account': self._exchange_account(connection), 'entry_control': self._entry_control(connection),
-                    'exchange_risk': self.exchange_risk(connection, now=time.time() if now is None else now) if self.mode == 'exchange' else {'state': 'not_applicable'}}
-            observed['performance']=self._performance(connection,observed,now=time.time() if now is None else now)
-            return observed
+            return self._snapshot(connection,now=time.time() if now is None else now)
+
+    def _snapshot(self, connection: sqlite3.Connection, *, now: float) -> dict[str,Any]:
+        version, config = self._config(connection)
+        observed = {'config_version': version, 'config': config, 'scan': self._scan(connection),
+                'automation':self._automation(connection),'positions': self._positions(connection), 'operations': self._operations(connection),
+                'migration': self._migration(connection), 'ownership': self._ownership(connection),
+                'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
+                'fills': self._fills(connection), 'protection': self._protection(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),
+                'exchange_account': self._exchange_account(connection), 'entry_control': self._entry_control(connection),
+                'exchange_risk': self.exchange_risk(connection, now=time.time() if now is None else now) if self.mode == 'exchange' else {'state': 'not_applicable'}}
+        observed['performance']=self._performance(connection,observed,now=time.time() if now is None else now)
+        return observed
 
     def _performance(self, connection: sqlite3.Connection, snapshot: dict[str,Any], *, now: float) -> dict[str,Any]:
         from account_performance import project
