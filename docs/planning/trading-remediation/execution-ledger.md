@@ -276,3 +276,6 @@ Source24115d1/58ecb4a initially342fullpass341.88s; initial machine evidence pres
 ## BT11 final local acceptance (2026-10-03)
 
 Allfive criteria pass at2d8b08cbf279f190b3b844ce02428c65966958e8:344fullpass/0failures/skips/xfails520.07s,type50/repolint/diff/32sourcecompile,Standards0hard/0heuristic,Spec0remaining. Source24115d1/58ecb4a/2d8b08c; fixedpoint3e47b2f3bcdecc5044c85b27950288a139de9654. [Criterion evidence](evidence/bt11-validation.md), [source hashes](evidence/bt11-account-performance.json). Initial342pass and intermediate342pass/2child-process-timeout snapshots preserved. Both unchanged original timeout checks passed8.66s; complete serial rerun passed retaining all original safety/time budgets. No new schema/migration, invented capital/history, realprovider/keys/funding/trade/activation/deployment/push. Publish/close/read-back#13 next; only then inspect/startBT12#14. Parent#2 remainsOPEN.
+
+
+BT11#13 CLOSED at2026-10-03T19:08:05Z; complete body/state read-back exactly matches local mirror. Acceptance commit6b2641a; source2d8b08c. Next permitted step:inspect liveBT12#14/comments/native blocker#13 and capture clean fixedpoint before BT12 alone. Parent#2 remainsOPEN; no actualprovider/trade/activation/deployment/push.

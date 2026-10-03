@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** complete locally; all five acceptance gates passed; GitHub closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** complete; all five acceptance gates passed; closure published to GitHub. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Let the operator trust metrics across refresh, history pagination and restart, with incomplete data clearly labelled.
 **Blocked by:** [BT10 #12](https://github.com/adeoyewole028/binance_topdown_full/issues/12).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -66,7 +66,7 @@ New risk limits, tax reporting or return promises.
 
 ## Execution record
 
-Implementation source24115d1/58ecb4a/2d8b08c, fixedpoint3e47b2f3bcdecc5044c85b27950288a139de9654. Full344pass/0failure/skips/xfails520.07s; type50/repository lint/diff/32source compilation pass. Standards0hard/0heuristic; Spec0remaining after both reproducedP2s corrected. Allfive criteria passed. [Criterion-by-criterion acceptance/review evidence](../evidence/bt11-validation.md), [machine result/source hashes](../evidence/bt11-account-performance.json), [contract](../../../account-performance.md). Confirmed accounting preserved; stale/unresolved account valuations and missing intermediate historical equity are unavailable. Initial342pass and intermediate342pass/2process-timeout snapshots retained; unchanged timeout checks passed8.66s and final fullsuite passed. No schema migration, realprovider/credentials/funding/trade/activation/deploy/push; browser/provider/rollout gates stay later tickets. Publish/close/read-back#13 then inspectBT12#14 before starting; parent#2 remainsOPEN.
+Implementation source24115d1/58ecb4a/2d8b08c, fixedpoint3e47b2f3bcdecc5044c85b27950288a139de9654. Full344pass/0failure/skips/xfails520.07s; type50/repository lint/diff/32source compilation pass. Standards0hard/0heuristic; Spec0remaining after both reproducedP2s corrected. Allfive criteria passed. [Criterion-by-criterion acceptance/review evidence](../evidence/bt11-validation.md), [machine result/source hashes](../evidence/bt11-account-performance.json), [contract](../../../account-performance.md). Confirmed accounting preserved; stale/unresolved account valuations and missing intermediate historical equity are unavailable. Initial342pass and intermediate342pass/2process-timeout snapshots retained; unchanged timeout checks passed8.66s and final fullsuite passed. No schema migration, realprovider/credentials/funding/trade/activation/deploy/push; browser/provider/rollout gates stay later tickets. Closure acceptance commit6b2641a; next inspectBT12#14 before starting; parent#2 remainsOPEN.
 
 ## D05 approved contract (2026-10-03)
 
