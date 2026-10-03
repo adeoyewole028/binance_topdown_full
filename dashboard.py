@@ -256,11 +256,13 @@ def refresh_durable_state():
     try:
         status.update(state_store.scan())
         status['config_version'], status['config'] = state_store.config()
-        status['open_positions'] = [{'symbol': p['symbol'], 'qty': float(p['qty']), 'entry': float(p['entry']), 'pnl': 0}
-                                    for p in state_store.positions()]
+        status['open_positions'] = display_positions(state_store.positions())
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; execution paused'), 503
     return None
+
+def display_positions(positions):
+    return [{'symbol': p['symbol'], 'qty': float(p['qty']), 'entry': float(p['entry']), 'pnl': 0} for p in positions]
 
 def require_exchange_execution():
     if runtime_environment is None:
@@ -281,8 +283,7 @@ def bot_loop(owner=None) -> None:
     while True:
         from datetime import datetime, timezone
         status['config_version'], status['config'] = state_store.config()
-        status['open_positions'] = [{'symbol': p['symbol'], 'qty': float(p['qty']), 'entry': float(p['entry']), 'pnl': 0}
-                                    for p in state_store.positions()]
+        status['open_positions'] = display_positions(state_store.positions())
         now = datetime.now(timezone.utc).isoformat()
         status['last_scan'] = now
         # Dynamic universe selection from top quote volume

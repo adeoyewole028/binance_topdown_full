@@ -18,9 +18,7 @@ class ExecutionWorker(ExecutionOwner):
         values = {key: value for key, value in snapshot.items() if key in allowed}
         now = datetime.now(timezone.utc).isoformat()
         with self.store.connection(write=True) as connection:
-            row = connection.execute('SELECT token,generation FROM execution_owners WHERE account=? AND venue=?',
-                                     (self.store.account, self.store.venue)).fetchone()
-            if row is None or row[0] != self.token or row[1] != self.generation:
+            if not self._matches_owner(connection):
                 raise OwnershipUnavailable('Execution ownership uncertain')
             version = snapshot.get('config_version')
             if version is None:
@@ -50,9 +48,7 @@ class ExecutionWorker(ExecutionOwner):
         self.store.positions()  # Corrupt required projections block all dispatch.
         processed = 0
         with self.store.connection(write=True) as connection:
-            owner = connection.execute('SELECT token,generation FROM execution_owners WHERE account=? AND venue=?',
-                                       (self.store.account, self.store.venue)).fetchone()
-            if owner is None or owner[0] != self.token or owner[1] != self.generation:
+            if not self._matches_owner(connection):
                 raise OwnershipUnavailable('Execution ownership uncertain')
             unresolved = connection.execute('''SELECT 1 FROM intents i JOIN namespaces n ON n.id=i.namespace
                                                WHERE n.account=? AND n.venue=? AND i.state IN ('dispatching','unknown','canceling','processing') LIMIT 1''',

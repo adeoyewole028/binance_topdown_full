@@ -48,6 +48,15 @@ def restore_state(current: StateStore, backup: Path, destination: Path) -> None:
         raw = (backup / 'trading.sqlite3').read_bytes()
         if manifest.get('complete') is not True or hashlib.sha256(raw).hexdigest() != manifest['sha256']:
             raise StateUnavailable('Backup checksum mismatch')
+        with closing(sqlite3.connect((backup / 'trading.sqlite3').as_uri() + '?mode=ro', uri=True)) as snapshot:
+            identity = snapshot.execute('SELECT id,schema_version FROM store_identity').fetchone()
+            sequence = snapshot.execute('SELECT coalesce(max(sequence),0) FROM journal').fetchone()[0]
+            if (snapshot.execute('PRAGMA integrity_check').fetchone()[0] != 'ok'
+                    or snapshot.execute('PRAGMA foreign_key_check').fetchone()
+                    or identity is None or identity[0] != manifest['id']
+                    or identity[1] != manifest['schema_version'] or identity[1] != 1
+                    or sequence != manifest['journal_sequence']):
+                raise StateUnavailable('Backup metadata does not match its verified database')
         if current.path.exists() or current.marker.exists():
             with ExecutionOwner(current):
                 with current.connection() as source:
@@ -139,6 +148,12 @@ def confirm_paper_snapshot(store: StateStore, checksum: str, *, actor: str,
                 raise StateUnavailable('A quarantined position snapshot is required')
             if row['state'] == 'reviewed-paper':
                 return
+            backup = store.path.parent / 'legacy-quarantine' / checksum / row['source_name']
+            try:
+                if hashlib.sha256(backup.read_bytes()).hexdigest() != checksum:
+                    raise StateUnavailable('Quarantined source checksum mismatch')
+            except OSError as error:
+                raise StateUnavailable('Quarantined source backup unavailable') from error
             records = json.loads(row['contents'])
             counts = Counter(record['symbol'] for record in records)
             imported = 0

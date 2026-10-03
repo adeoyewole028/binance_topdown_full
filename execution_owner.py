@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sqlite3
 from importlib import import_module
 from types import TracebackType
 from typing import BinaryIO, Self
@@ -56,9 +57,21 @@ class ExecutionOwner:
         if self.lock_file is None or self.lock_file.closed:
             return False
         with self.store.connection() as connection:
-            row = connection.execute('SELECT token,generation FROM execution_owners WHERE account=? AND venue=?',
-                                     (self.store.account, self.store.venue)).fetchone()
-            return row is not None and row[0] == self.token and row[1] == self.generation
+            return self._matches_owner(connection)
+
+    def _matches_owner(self, connection: sqlite3.Connection) -> bool:
+        if self.lock_file is None or self.lock_file.closed:
+            return False
+        try:
+            handle = os.fstat(self.lock_file.fileno())
+            current = self.lock_path.stat()
+            if (handle.st_dev, handle.st_ino) != (current.st_dev, current.st_ino):
+                return False
+        except OSError:
+            return False
+        row = connection.execute('SELECT token,generation FROM execution_owners WHERE account=? AND venue=?',
+                                 (self.store.account, self.store.venue)).fetchone()
+        return row is not None and row[0] == self.token and row[1] == self.generation
 
     def __exit__(self, error_type: type[BaseException] | None,
                  error: BaseException | None, traceback: TracebackType | None) -> None:

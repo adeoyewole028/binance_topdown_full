@@ -322,3 +322,63 @@ def test_corrupt_backup_is_rejected_and_legacy_writers_cannot_change_snapshots(t
         with pytest.raises(StateUnavailable, match='checksum'):
             restore_state(sandbox.module.state_store, backup, tmp_path / 'restored')
         assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == '1'
+
+
+def test_separate_http_process_reads_committed_positions_and_updates_shared_config(tmp_path: Path) -> None:
+    import json
+    import os
+    import subprocess
+    import sys
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(('BINANCE_', 'OPERATOR_', 'ALLOW_', 'TRADING_'))
+                   and key not in {'API_KEY', 'API_SECRET', 'FLASK_SECRET_KEY', 'DATA_DIR'}}
+    with LegacySandbox(tmp_path) as first:
+        environment['BT03_OFFLINE_HASH'] = first.module.app.config['OPERATOR_PASSWORD_HASH']
+        first.seed_price('BTC/USDT', 100)
+        first.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '0.125'})
+        output_path = tmp_path / 'http-output.json'
+        with output_path.open('w', encoding='utf-8') as output:
+            response = subprocess.run([sys.executable, '-m', 'tests.http_process', str(tmp_path), '0.025'],
+                                      stdout=output, stderr=subprocess.STDOUT, env=environment, timeout=15)
+        assert response.returncode == 0, output_path.read_text(encoding='utf-8')
+        state = json.loads(output_path.read_text(encoding='utf-8'))
+        assert state['positions'][0]['qty'] == '0.125'
+        assert first.client.get('/api/status').get_json()['config']['risk'] == 0.025
+
+
+def test_changed_owner_fence_prevents_effects_and_preserves_queue(tmp_path: Path) -> None:
+    import pytest
+    from execution_worker import ExecutionWorker
+    from execution_owner import OwnershipUnavailable
+    with LegacySandbox(tmp_path) as sandbox:
+        sandbox.seed_price('BTC/USDT', 100)
+        sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+        with ExecutionWorker(sandbox.module.state_store) as worker:
+            with sqlite3.connect(tmp_path / 'trading.sqlite3') as fault:
+                fault.execute("UPDATE execution_owners SET token='uncertain-owner',generation=generation+1")
+            with pytest.raises(OwnershipUnavailable):
+                worker.process_pending()
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['positions'] == []
+        assert state['operations'][0]['state'] == 'queued'
+
+
+def test_backup_metadata_cannot_conceal_missing_newer_journal_effects(tmp_path: Path) -> None:
+    import json
+    import pytest
+    from state_admin import backup_state, restore_state
+    from state_store import StateUnavailable
+    with LegacySandbox(tmp_path) as sandbox:
+        sandbox.seed_price('BTC/USDT', 100)
+        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '2'})
+        backup = tmp_path / 'backup'
+        backup_state(sandbox.module.state_store, backup)
+        sandbox.post('/close', data={'symbol': 'BTC/USDT', 'qty': '1'})
+        metadata = backup / 'backup-manifest.json'
+        manifest = json.loads(metadata.read_text(encoding='utf-8'))
+        manifest['journal_sequence'] = 1000000
+        metadata.write_text(json.dumps(manifest), encoding='utf-8')
+        with pytest.raises(StateUnavailable, match='metadata'):
+            restore_state(sandbox.module.state_store, backup, tmp_path / 'stale-candidate')
+        assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == '1'
+        assert not (tmp_path / 'stale-candidate').exists()
