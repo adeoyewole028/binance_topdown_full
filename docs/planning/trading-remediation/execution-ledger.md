@@ -292,3 +292,5 @@ Initial source8c3f2cc/browser3viewports0axe. Spec2P2: empty performance marker/l
 
 
 BT12 fc15894:90focusedpass186.41s/type52/lint/32compile/browser3viewports0axe/audit0; initial browser snapshot preserved. Standards0; Spec original2P2resolved but additional P2 setup/account summary outside polling reproduced RED. Read-only setup-status panel added without replacing form; browser now begins unconfigured and verifies explicit first setup removes blocked banner without navigation/draft loss. Exchange protection labels also name actual confirmation states. Final corrected commit/browser/review/full suite pending; BT12 remains soleactive/open.
+
+Final setup-origin browser scenario correctly encountered409 when strategy draft retained the pre-setup version. Fixture now explicitly reviews/adopts the new saved version before the separate RSI422 trace; the production version gate stays unchanged. No implementation regression or weakened expectation.

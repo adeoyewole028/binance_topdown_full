@@ -125,6 +125,8 @@ const crypto=require('node:crypto');
     await expect(page.locator('#connection-status')).toHaveAttribute('data-state','offline');
     await expect(page.locator('#qtyInput')).toHaveValue('0.2345');
     await context.setOffline(false); await refresh();
+    // First setup created a new version; explicitly review it before editing strategy.
+    await page.locator('#reviewSettings').click(); await page.locator('#acceptVersion').click();
     // Native valid values whose cross-field relationship must fail at server.
     await page.locator('#strategy-profile').selectOption('dashboard_intraday');
     await page.locator('#settings-rsi_exec_threshold').fill('80');
