@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** locally complete; all six acceptance gates passed; GitHub closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** complete; all six local acceptance gates passed. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give the operator stable forms, clear mode/health/metrics and usable recovery from stale, offline or invalid configuration.
 **Blocked by:** [BT11 #13](https://github.com/adeoyewole028/binance_topdown_full/issues/13).
 **Decision blockers:** None additional; D01 was approved by the user on 2026-10-02.
@@ -67,7 +67,7 @@ New design system/visual redesign, order review and risk-reduction interactions 
 
 ## Execution record
 
-Implementation: all six criteria complete locally. Final source6ae3b965b20ed2e039b56d480a1a908b07fa517c (applicationfc47de9); final350fullpass/0failures/skips/xfails436.09seconds, type52/lint/32app compilation/diff/node syntax/static CSS build/audit0, both review axes0remaining. Actual Chromium145 browser3widths0axe/keyboard/focus/reflow/targets/200percent CSS scaling and first setup/typed drafts/fresh-stale metrics/history/offline/auth/422/409/reset/sound/candle journeys pass. Source hashes match full and browser evidence. Initial/intermediate failed snapshots retained; original process safety/time limits unchanged. [Criterion evidence](../evidence/bt12-validation.md), [machine results](../evidence/bt12-operator-status.json), [browser journey](../evidence/bt12-browser/journey.json). Physical-device/native zoom preference/actual screen-reader-audio and provider/deployed acceptance remain bounded as documented, assigned to later gates. No real provider/credentials/funds/trades/activation/deployment/push. Closure/read-back next; BT13 still unstarted.
+Implementation: all six criteria complete locally. Final source6ae3b965b20ed2e039b56d480a1a908b07fa517c (applicationfc47de9); final350fullpass/0failures/skips/xfails436.09seconds, type52/lint/32app compilation/diff/node syntax/static CSS build/audit0, both review axes0remaining. Actual Chromium145 browser3widths0axe/keyboard/focus/reflow/targets/200percent CSS scaling and first setup/typed drafts/fresh-stale metrics/history/offline/auth/422/409/reset/sound/candle journeys pass. Source hashes match full and browser evidence. Initial/intermediate failed snapshots retained; original process safety/time limits unchanged. [Criterion evidence](../evidence/bt12-validation.md), [machine results](../evidence/bt12-operator-status.json), [browser journey](../evidence/bt12-browser/journey.json). Physical-device/native zoom preference/actual screen-reader-audio and provider/deployed acceptance remain bounded as documented, assigned to later gates. No real provider/credentials/funds/trades/activation/deployment/push. Acceptance commit8c62fdb; GitHub closure/read-back performed after all local gates. BT13 remains unstarted until verified closure.
 
 ## Approved decision D01
 
