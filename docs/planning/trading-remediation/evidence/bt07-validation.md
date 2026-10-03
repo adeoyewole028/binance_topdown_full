@@ -4,12 +4,12 @@ Only BT07 #9 is active. Fixed point `000913cbc8c6860fba9750cf62764a79cf87adac`; 
 
 | Criterion | Implementation and offline seam evidence | Gate |
 |---|---|---|
-| Confirmed supported Spot protection | Raw OCO TAKE_PROFIT/STOP_LOSS, stable identities, list/both-leg queries, precision/capability preflight; unsupported refuses entry, pinned CCXT substituted transports | Pending final checks/review |
-| Isolated simulation | Paired durable groups, partial close preserves original rules, adverse quote gap, completed-bar stop-first, terminal dedup; no private transport | Pending final checks/review |
-| Failed/unknown retains entry and blocks entries | Lost-list response/query recovery, pre-engine rejection retains successful fill, durable alert and next action in authenticated status | Pending final checks/review |
-| Serialized close/race/timeout | Full/partial cancel-fill race, distinct duplicate full closes, cancellation timeout across restart, changed client aliases use verified provider IDs | Pending final checks/review |
-| Remaining holding reprotected | Verified pair replacement after partial close; confirmed partial entry protected while unfilled quote stays reserved; base fees reduce pair quantity | Pending final checks/review |
-| Pause/stop preserves native protection | Stop records owner status without cancel; paused restart verifies existing group and allows reviewed reduction/reprotection | Pending final checks/review |
+| Confirmed supported Spot protection | Raw OCO TAKE_PROFIT/STOP_LOSS, stable identities, list/both-leg queries, precision/capability preflight; unsupported refuses entry, pinned CCXT substituted transports | Passed; final checks/reviews below |
+| Isolated simulation | Paired durable groups, partial close preserves original rules, adverse quote gap, completed-bar stop-first, terminal dedup; no private transport | Passed; final checks/reviews below |
+| Failed/unknown retains entry and blocks entries | Lost-list response/query recovery, pre-engine rejection retains successful fill, durable alert and next action in authenticated status | Passed; final checks/reviews below |
+| Serialized close/race/timeout | Full/partial cancel-fill race, distinct duplicate full closes, cancellation timeout across restart, changed client aliases use verified provider IDs | Passed; final checks/reviews below |
+| Remaining holding reprotected | Verified pair replacement after partial close; confirmed partial entry protected while unfilled quote stays reserved; base fees reduce pair quantity | Passed; final checks/reviews below |
+| Pause/stop preserves native protection | Stop records owner status without cancel; paused restart verifies existing group and allows reviewed reduction/reprotection | Passed; final checks/reviews below |
 
 Focused initial tracer: 2 red assertions before implementation, then both pass. Subsequent exchange partial-close tracer red before implementation and green after. Broad accounting/protection intermediate88 cases87 pass/1 base-fee availability expectation updated to actual provider locked protection with explicit coverage assertions. Paper drawdown and weighted-average fixtures now set supported stop/target ranges before entry so their intended accounting observations remain independent of newly implemented automatic protection. Final checks supersede these intermediate outputs.
 
@@ -32,3 +32,16 @@ Initial full suite245cases242passed/3failed at b90f30d (see initial machine arti
 Spec re-review at a72da9f:0remaining actionables; independently reran3 budget/prepare recovery checks. Standards re-review: original optional duplication resolved;1P3 private-method test interceptor violated the agreed TDD seam. Replaced it with approved SQLite prepare-write fault injection and retained HTTP/provider-effect assertions; focused proof passes. No private collaborator mock remains.
 
 A subsequent owned idle-callback integration check found that the15-second reconcile callback made process_pending return before reprotecting a terminal partial trigger remainder. Reproduced red (remaining0.7/groupclosed), corrected by servicing protection maintenance during idle without repeating ordinary reconciliation. Idle reprotection and the original approved15-second reconciliation check both pass. Final re-review/full suite required; no closure yet.
+
+
+## Final independent reviews
+
+Standards recheck at18b1b3f:0 actionable findings. The initial optional fresh-reader duplication and the later P3 private-method test interception are resolved. The prepare-write fault fixture uses the approved database injection boundary; HTTP/provider assertions are retained. No additional meaningful Fowler smell or documented-standard violation remains.
+
+Spec recheck at18b1b3f:0 actionable findings. The original P1 zero-call budget-deferral problem is resolved, while genuinely dispatched uncertainty still requires authoritative recovery. Idle maintenance now reprotects confirmed terminal partial-fill remainders without a queued intent. Independent targeted recheck:3 passed, covering idle reprotection, prepare-write failure recovery and the original15-second reconciliation schedule. Both reviews were read-only; no actual provider calls or full suite were run by reviewers.
+
+## Final acceptance
+
+All six BT07 criteria passed at18b1b3f198615448c0c90307b336b536d11d66e9. [Exact machine output and26 application source hashes](bt07-position-protection.json):249 passed,0 failures/skips/xfails,151.71s. Strict type checking38 sources, repository pyflakes, git diff check and26-source compilation pass. Focused protection suite20 passed29.51s. Original intermediate failed outputs remain explicitly historical and are superseded by this exact-revision full run.
+
+Source commits:b90f30d/a72da9f/18b1b3f; fixed review point000913cbc8c6860fba9750cf62764a79cf87adac. No schema migration required: existing namespaced groups/intents/reservations/journal carry this lifecycle. No real private provider call, trade, funding, migration, deployment or push occurred. Actual Spot sandbox acceptance staysBT15; full browser/accessibility journeys stayBT12/BT13; external alerts stayBT14. Publish/close/read-back#9 next; parent#2 stays open.

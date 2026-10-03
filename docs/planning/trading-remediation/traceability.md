@@ -103,3 +103,8 @@ R08/R09 paper admission/accounting criteria map to completed BT05 source12bfbdd,
 ## BT06 local completion trace
 
 R03/R08/R10 map to owned exchange admission/pause, reconciled capital sizing and actual fill/asset fee projections, stable identity/recovery and account-wide/order/overlapping history reconciliation at69716fb. Full229pass0xfail/skip/failure;35exchange tests include official FULL response shape, sparse delayed history, timeout/crash/write failures, cancellation/old observations, fees, reset/venue/account/namespace isolation and idle scheduling. Type35/lint/24source compile and both reviews0remaining findings. Evidence: `evidence/bt06-validation.md` and `evidence/bt06-exchange-execution.json`. Protection, provider/load certification, deployed acceptance and release closure remain assigned to their later tickets.
+
+
+## BT07 local completion trace
+
+R11/R03/R09 map to completed owned protection/serialized close lifecycle at18b1b3f. Confirmed native list+leg ownership, base-fee net quantity, isolated deterministic paper exits, budget/prepare failure recovery, cancel-fill/duplicate-close races, partial entry/remainder reprotection and pause/graceful-stop preservation are covered by20 focused protection cases within249fullpass. Standards0/Spec0 and type38/lint/26source compilation pass. Evidence:`evidence/bt07-validation.md` and`evidence/bt07-position-protection.json`. Provider certification, deployed journeys, external alert activation and initiative closure remain separate later gates.

@@ -116,9 +116,10 @@
       "native_dependencies": [
         "BT06"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified",
-      "implementation_status": "in_progress",
-      "review_fixed_point": "000913cbc8c6860fba9750cf62764a79cf87adac"
+      "verification": "All local criteria/checks/reviews/evidence passed; tracker closure/read-back pending",
+      "implementation_status": "complete",
+      "review_fixed_point": "000913cbc8c6860fba9750cf62764a79cf87adac",
+      "source_revision": "18b1b3f198615448c0c90307b336b536d11d66e9"
     },
     {
       "planning_id": "BT08",

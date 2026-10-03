@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; BT07 implementation in progress; all acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** implementation complete; all six local acceptance gates passed; tracker closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give filled positions confirmed protective orders and a safe manual close, with explicit partial-failure recovery.
 **Blocked by:** [BT06 #8](https://github.com/adeoyewole028/binance_topdown_full/issues/8).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -31,12 +31,12 @@ Protection groups/Spot order lists, executor reconciliation, close endpoint/oper
 
 ## Acceptance criteria
 
-- [ ] Position is labelled protected only after provider confirms selected supported Spot order/list; no STOP_MARKET Spot request.
-- [ ] Paper TP/SL/protection lifecycle and partial-close accounting are exercised under the same selected rules without private exchange calls; status clearly identifies simulation.
-- [ ] Failed/unknown protection leaves entry/fills recorded and halts new entries; operator sees next recovery action.
-- [ ] Protection-fill/manual-close race, duplicate close and cancellation timeout cannot submit beyond confirmed remaining quantity.
-- [ ] Partial close retains remaining holdings and selected protection policy; stop/take-profit counterpart lifecycle is verified.
-- [ ] Kill switch and graceful stop preserve exchange protection and allow authorized reconciliation/risk reduction.
+- [x] Position is labelled protected only after provider confirms selected supported Spot order/list; no STOP_MARKET Spot request.
+- [x] Paper TP/SL/protection lifecycle and partial-close accounting are exercised under the same selected rules without private exchange calls; status clearly identifies simulation.
+- [x] Failed/unknown protection leaves entry/fills recorded and halts new entries; operator sees next recovery action.
+- [x] Protection-fill/manual-close race, duplicate close and cancellation timeout cannot submit beyond confirmed remaining quantity.
+- [x] Partial close retains remaining holdings and selected protection policy; stop/take-profit counterpart lifecycle is verified.
+- [x] Kill switch and graceful stop preserve exchange protection and allow authorized reconciliation/risk reduction.
 
 ## Testing and validation
 
@@ -78,3 +78,8 @@ Implement only this ticket’s scope; this approval does not authorize future ti
 ## BT07 start (2026-10-03)
 
 Live #9/comments and native #8 CLOSED verified. Fixed review point `000913cbc8c6860fba9750cf62764a79cf87adac`. Only BT07 starts under carried-forward strict implementation authorization and approved D05. No actual provider/activation/funding/deployment/push. Next: offline protection/close lifecycle tracers, full validation and required two-axis review before closure.
+
+
+## Final acceptance (2026-10-03)
+
+All six criteria passed at18b1b3f. Full249passed,0failures/skips/xfails,151.71s; strict type38, repository lint/diff and26-source compilation pass. Standards0/Spec0 final actionables; budget-deferral P1 and test-boundary P3 resolved and independently rechecked. [Criterion/review evidence](../evidence/bt07-validation.md), [machine evidence](../evidence/bt07-position-protection.json), [operator runbook](../../../position-protection.md). Source commitsb90f30d/a72da9f/18b1b3f. Existing transactional schema used without migration; actual provider certification remainsBT15. No real private provider/trade/funding/migration/deployment/push. Parent#2 remains open. Next permitted step after closure/read-back:inspect BT08#10 and native prerequisite#6 before starting it alone.
