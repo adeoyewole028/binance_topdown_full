@@ -208,3 +208,52 @@ def test_invalid_or_reused_review_keeps_one_authorized_intent(invalid: str) -> N
             observed=sandbox.client.get('/api/status').get_json()
             assert len(observed['operations'])==(1 if invalid=='reused_token' else 0)
             assert observed['positions']==[] and observed['fills']==[]
+
+
+
+def test_review_accepts_exact_derived_balance_after_tiny_fee() -> None:
+    from tests.test_paper_execution import setup
+    clock=ControlledClock()
+    with LegacySandbox(paper_setup=False) as sandbox:
+        sandbox.module.initialize_runtime(clock=clock)
+        assert setup(sandbox,initial_cash='1000',fee_fraction='1e-28',slippage_fraction='0')==302
+        with ExecutionWorker(sandbox.module.state_store,clock=clock) as owner:
+            MarketRuntime(owner,MarketFixture(clock()),clock=clock).scan_once()
+            receipt=review(sandbox).get_json()
+            sandbox.client.post('/orders/confirm',data={'csrf_token':sandbox.csrf,'review_token':receipt['review_token']})
+            owner.process_pending()
+            observed=sandbox.client.get('/api/status').get_json()
+            assert observed['paper_account']['balances']['USDT']['available']=='899.99999999999999999999999999'
+            response=review(sandbox,idempotency_key='bt13-next-tiny-fee')
+            assert response.status_code==200,response.get_json()
+            assert response.get_json()['preview']['available_funds']==observed['paper_account']['balances']['USDT']['available']
+
+
+@pytest.mark.parametrize('filled',['0','0.4'])
+def test_expired_private_order_is_terminal_and_keeps_actual_fill_history(filled: str) -> None:
+    from tests.test_exchange_execution import SpotFixture,configure
+    from tests.test_position_protection import enable_protection
+    import time
+    class Expired(SpotFixture):
+        def submit(self,symbol: str,side: str,quantity: str,client_id: str) -> dict[str,Any]:
+            if filled!='0':
+                order=super().submit(symbol,side,filled,client_id)
+                order.update(origQty=quantity,status='EXPIRED');self.orders[client_id]=order
+                return order
+            self.submissions.append(client_id)
+            order={'symbol':symbol.replace('/',''),'orderId':1,'clientOrderId':client_id,'side':side.upper(),
+                'status':'EXPIRED','origQty':quantity,'executedQty':'0','cummulativeQuoteQty':'0','updateTime':int(time.time()*1000)}
+            self.orders[client_id]=order
+            return dict(order)
+    with LegacySandbox(paper_setup=False,environment={'PAPER_TRADING':'false','ALLOW_EXCHANGE_EXECUTION':'true'}) as sandbox:
+        configure(sandbox);enable_protection(sandbox);sandbox.seed_price('BTC/USDT',100)
+        with ExecutionWorker(sandbox.module.state_store,exchange_provider=Expired()) as owner:
+            owner.reconcile_exchange();receipt=review(sandbox).get_json()
+            accepted=sandbox.client.post('/orders/confirm',data={'csrf_token':sandbox.csrf,'review_token':receipt['review_token']}).get_json()
+            owner.process_pending()
+            operation=sandbox.client.get('/api/operations/'+accepted['operation_id']).get_json()['operation']
+            assert operation['state']=='expired'
+            assert [fill['qty'] for fill in operation['fills']]==([] if filled=='0' else ['0.4'])
+            assert operation['can_start_another'] is True
+            assert operation['state_label']=='Expired'
+            assert 'expired' in operation['next_action'].lower()

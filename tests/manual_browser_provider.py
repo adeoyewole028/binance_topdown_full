@@ -2,6 +2,7 @@
 from typing import Any
 from tests.test_exchange_execution import SpotFixture
 from exchange_adapter import SubmissionRejected
+import time
 
 
 class ManualBrowserProvider(SpotFixture):
@@ -10,6 +11,12 @@ class ManualBrowserProvider(SpotFixture):
 
     def submit(self,symbol: str,side: str,quantity: str,client_id: str) -> dict[str,Any]:
         if self.outcome=='reject':raise SubmissionRejected('invalid_market')
+        if self.outcome=='expired':
+            self.submissions.append(client_id)
+            order={'symbol':symbol.replace('/',''),'orderId':len(self.orders)+1,'clientOrderId':client_id,'side':side.upper(),
+                   'status':'EXPIRED','origQty':quantity,'executedQty':'0','cummulativeQuoteQty':'0','updateTime':int(time.time()*1000)}
+            self.orders[client_id]=order
+            return dict(order)
         order=super().submit(symbol,side,'0.4' if self.outcome=='partial' else quantity,client_id)
         if self.outcome=='partial':
             order.update(origQty=quantity,status='PARTIALLY_FILLED')

@@ -97,9 +97,15 @@
   form.addEventListener('submit',event=> {
     event.preventDefault();
     act(async()=> {
-      saved={draft:draft(),attempted:saved?.attempted}; persist();
+      const requestedDraft=draft();
+      saved={draft:requestedDraft,attempted:saved?.attempted}; persist();
       const data=new FormData(form);
       const result=await call('/orders/review',data);
+      if (JSON.stringify(draft())!==JSON.stringify(requestedDraft)) {
+        confirm.hidden=true;
+        say('Inputs changed while review was loading. Review the current draft again.');
+        return;
+      }
       saved={...saved,...result}; persist(); showReview();
       say('Review these server-calculated values. Estimates are not confirmed fills.',false,true);
     });
@@ -115,6 +121,7 @@
     const data=new FormData();
     data.set('csrf_token',form.elements.namedItem('csrf_token').value);
     data.set('review_token',saved.review_token);
+    for (const [name,value] of Object.entries(draft())) data.set(name,value);
     let result;
     try { result=await call('/orders/confirm',data); }
     catch (error) {
@@ -161,7 +168,11 @@
       return;
     }
     const button=event.target.closest('[data-close-symbol]');
-    if (!button || (saved?.submitted && !saved.can_close)) return;
+    if (!button) return;
+    if (saved?.submitted && !saved.can_close) {
+      say('Check this pending intent before a separate close. Its unresolved outcome must be reconciled first.',true,true);
+      return;
+    }
     if (saved?.submitted) {
       saved=null; persist(); freezeDraft(false);
       form.elements.namedItem('idempotency_key').value=crypto.randomUUID();

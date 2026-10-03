@@ -262,14 +262,12 @@ class StateStore:
                     raise ConfigurationConflict('Idempotency key already used for a different order')
                 return str(repeated['operation_id'])
             if review is not None and 'manual' in review:
-                from manual_orders import financial_fingerprint
+                from manual_orders import financial_fingerprint, fresh_price
                 guard = review['manual']
                 current_time = time.time() if now is None else now
                 current = self._snapshot(connection, now=current_time)
-                from operations_policy import OperationsPolicy
                 quoted = current['market_prices'].get(symbol)
-                stamp = datetime.fromisoformat(quoted['fetched_at']) if quoted else None
-                if stamp is None or stamp.tzinfo is None or not 0 <= current_time-stamp.timestamp() < OperationsPolicy().price_expiry:
+                if not fresh_price(quoted,current_time):
                     raise ConfigurationConflict('Price is stale; refresh the order review')
                 if guard.get('request') != canonical or guard.get('fingerprint') != financial_fingerprint(current):
                     raise ConfigurationConflict('Order inputs, account or protection changed; review again')
@@ -329,10 +327,10 @@ class StateStore:
 
     @financial_arithmetic
     def preview_manual(self, kind: str, symbol: str, side: str, quantity: str, sizing: str, *, now: float) -> dict[str,Any]:
-        from manual_orders import canonical_request, financial_fingerprint
+        from manual_orders import canonical_request, financial_fingerprint, fresh_price
+        from account_performance import ledger_value
         from paper_policy import fill_terms, number
         from paper_filters import validate_market_quantity
-        from operations_policy import OperationsPolicy
         canonical=canonical_request(kind,symbol,side,quantity,sizing)
         with self.connection() as connection:
             connection.execute('BEGIN')
@@ -342,9 +340,9 @@ class StateStore:
             if not policy:raise ConfigurationError('Supply explicit account setup before reviewing orders')
             quote=snapshot['market_prices'].get(symbol)
             if not quote:raise ConfigurationConflict('Wait for a fresh price before reviewing the order')
-            stamp=datetime.fromisoformat(quote['fetched_at'])
-            if stamp.tzinfo is None or not 0<=now-stamp.timestamp()<OperationsPolicy().price_expiry:
+            if not fresh_price(quote,now):
                 raise ConfigurationConflict('Price is stale; refresh the order review')
+            stamp=datetime.fromisoformat(quote['fetched_at'])
             account=snapshot['paper_account'] if self.mode=='paper' else snapshot['exchange_account']
             if self.mode=='exchange' and account['state']!='ready':
                 raise ConfigurationConflict('Wait for supervised exchange reconciliation before reviewing orders')
@@ -359,14 +357,14 @@ class StateStore:
             elif sizing=='full_close':
                 held=next((p for p in snapshot['positions'] if p['symbol']==symbol),None)
                 if held is None:raise ConfigurationError('No confirmed holding to close')
-                amount=number(held['qty'])
+                amount=ledger_value(held['qty'])
             else:amount=self._size_order(connection,symbol,sizing,exchange=self.mode=='exchange',now=now)
             try:validate_market_quantity(snapshot['scan'].get('market_metadata',{}),symbol,amount,Decimal(quote['price']),now,self.venue)
             except ValueError as error:raise ConfigurationError('The selected quantity does not meet verified market rules. Review the quantity and market data.') from error
             base,quote_asset=symbol.split('/')
             if quote_asset!=policy['quote']:raise ConfigurationError('Use the configured funding quote asset')
             held=next((p for p in snapshot['positions'] if p['symbol']==symbol),None)
-            if side=='sell' and (held is None or amount>number(held['qty'])):
+            if side=='sell' and (held is None or amount>ledger_value(held['qty'])):
                 raise ConfigurationError('Quantity exceeds the confirmed holding')
             terms=fill_terms(amount,Decimal(quote['price']),side,policy)
             if self.mode=='exchange' and side=='buy':
@@ -374,9 +372,8 @@ class StateStore:
                 try:protection_terms(snapshot['scan'].get('market_metadata',{}),symbol,amount,Decimal(quote['price']),config,now,self.venue)
                 except ValueError as error:raise ConfigurationError('Verified exchange protection is required before new entries') from error
             available=account['balances'].get(quote_asset if side=='buy' else base,{}).get('available','0')
-            if side=='buy' and terms['cost']+terms['fee']>number(available):
+            if side=='buy' and terms['cost']+terms['fee']>ledger_value(available):
                 raise ConfigurationError('Quantity exceeds the available funding balance')
-            from manual_orders import fresh_price
             valued=all(fresh_price(snapshot['market_prices'].get(p['symbol']),now) and p['symbol'].split('/')[1]==policy['quote']
                        for p in snapshot['positions'])
             exposure=sum((Decimal(p['qty'])*Decimal(snapshot['market_prices'][p['symbol']]['price'])

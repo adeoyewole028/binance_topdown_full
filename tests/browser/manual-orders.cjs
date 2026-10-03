@@ -8,7 +8,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
   fs.mkdirSync(evidence,{recursive:true});
   const browser=await chromium.launch(),results=[];
   try {
-    for (const scenario of (process.argv.length>2 ? process.argv.slice(2) : ['paper','partial','unknown','reject','protection_failed','fill'])) {
+    for (const scenario of (process.argv.length>2 ? process.argv.slice(2) : ['paper','partial','unknown','reject','expired','protection_failed','fill'])) {
       const state=fs.mkdtempSync(path.join(os.tmpdir(),'bt13-browser-'));
       const server=spawn('python',['-m','tests.operator_browser_server',state,'0',scenario],{windowsHide:true});
       let output='';server.stdout.on('data',data=>output+=data);server.stderr.on('data',data=>output+=data);
@@ -60,6 +60,24 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
           await expect(page.locator('[data-status-panel=setup-status]')).toContainText('Explicit operator policy recorded');
           await fixture('scan');await refresh();
         }
+        if(scenario==='paper') {
+          await page.locator('#qtyInput').fill('1');
+          let releaseReview,reviewArrived;
+          const held=new Promise(resolve=>releaseReview=resolve);
+          const arrived=new Promise(resolve=>reviewArrived=resolve);
+          await page.route('**/orders/review',async route=> {
+            const response=await route.fetch();reviewArrived();await held;await route.fulfill({response});
+          });
+          const delivered=page.waitForResponse(response=>response.url().endsWith('/orders/review'));
+          await page.locator('#manual-order button[type=submit]').click();await arrived;
+          await page.locator('#qtyInput').fill('2');releaseReview();
+          await delivered;
+          await expect(page.locator('#order-message')).toContainText('Inputs changed while review was loading');
+          await expect(page.locator('#confirm-order')).toBeHidden();
+          await expect(page.locator('#qtyInput')).toHaveValue('2');
+          expect((await status()).operations).toEqual([]);
+          await page.unroute('**/orders/review');
+        }
         await page.locator('#qtyInput').fill('1');await review();
         expect((await status()).operations).toEqual([]);
         const originalKey=await page.locator('#manual-order [name=idempotency_key]').inputValue();
@@ -83,10 +101,17 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
           expect((await status()).operations).toHaveLength(1);
         } else await confirm();
         await fixture('process');await page.locator('#check-order').click();
-        const wanted={paper:'Filled',partial:'Partly filled',unknown:'unknown',reject:'Rejected',protection_failed:'Protection failed',fill:'Filled'}[scenario];
+        const wanted={paper:'Filled',partial:'Partly filled',unknown:'unknown',reject:'Rejected',expired:'Expired',protection_failed:'Protection failed',fill:'Filled'}[scenario];
         await expect(page.locator('#order-details')).toContainText(wanted);
         if(['partial','unknown','protection_failed'].includes(scenario)) await expect(page.locator('#new-order')).toBeHidden();
         if(scenario==='partial') await expect(page.locator('#order-details')).toContainText('0.4 at 101; fee 0.0808 USDT');
+        if(scenario==='expired') {
+          await expect(page.locator('#order-details')).toContainText('No confirmed fills');
+          await expect(page.locator('#new-order')).toBeVisible();
+          await page.locator('#new-order').click();
+          await expect(page.locator('#qtyInput')).toBeEnabled();
+          await expect(page.locator('#manual-order button[type=submit]')).toBeEnabled();
+        }
         if(scenario==='unknown') {
           await expect(page.locator('#order-details')).toContainText('No confirmed fills');
           await page.reload();await page.locator('#check-order').click();
@@ -144,7 +169,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
         expect(errors).toEqual([]);
         const reflow=await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth);
         expect(reflow).toBe(true);
-        await page.locator('#order-review').scrollIntoViewIfNeeded();
+        if(scenario!=='expired') await page.locator('#order-review').scrollIntoViewIfNeeded();
         await page.screenshot({path:path.join(evidence,scenario+'.png')});
         results.push({scenario,passed:true,status:await status(),axeViolations:axe.violations.length,reflow});
         console.log('Passed browser recovery:',scenario);

@@ -414,6 +414,7 @@ def manual_operation(operation_id):
         'partially_filled':'Only the fills below are confirmed. Remaining quantity needs supervised reconciliation; do not submit a replacement.',
         'rejected':'The owner rejected this intent. Review the reported reason and current account before a new order.',
         'canceled':'Cancellation is recorded. Confirmed fills remain effective; review the remaining holding.',
+        'expired':'The provider confirmed this order expired. Any confirmed fills remain effective. Review the current account before a new order.',
         'unknown':'Provider outcome is unresolved. Keep this intent and wait for supervised reconciliation; do not submit a replacement.'}
     groups=[p for p in g.operator_status['protection'] if p['symbol']==operation['symbol']]
     unsafe=any(p['state'] not in {'active','closed','canceled'} for p in groups)
@@ -421,7 +422,7 @@ def manual_operation(operation_id):
     if unsafe:next_action+=' Protection needs recovery. New entries remain gated; the owner reconciles orders and protection.'
     return {**operation,'namespace':state_store.namespace,'mode':runtime_environment.mode,'venue':runtime_environment.venue,
         'state_label':operator_label(state),'error_message':operator_label(operation['error_class']),
-        'next_action':next_action,'can_start_another':state in {'filled','rejected','canceled'} and not unsafe,
+        'next_action':next_action,'can_start_another':state in {'filled','rejected','canceled','expired'} and not unsafe,
         'fills':[f for f in g.operator_status['fills'] if f['operation_id']==operation_id],
         'protection':[{**group,'state_label':operator_label(group['state'])} for group in groups]}
 
@@ -708,7 +709,7 @@ def operator_label(value):
         'waiting_for_setup': 'Waiting for explicit setup', 'waiting_for_market_data': 'Waiting for fresh market data',
         'dispatching': 'Being submitted', 'unknown': 'Outcome unknown; reconciliation required',
         'processing': 'Being processed', 'canceling': 'Cancellation pending', 'canceled': 'Canceled',
-        'partially_filled': 'Partly filled', 'active': 'Protection active', 'closed': 'Closed',
+        'partially_filled': 'Partly filled', 'expired': 'Expired', 'active': 'Protection active', 'closed': 'Closed',
         'installing': 'Protection being installed', 'failed': 'Protection failed; review the holding',
         'exchange_confirmed': 'Confirmed by the exchange', 'exchange_unverified': 'Awaiting exchange confirmation',
         'simulation': 'Local paper simulation', 'unverified': 'Awaiting verification',
