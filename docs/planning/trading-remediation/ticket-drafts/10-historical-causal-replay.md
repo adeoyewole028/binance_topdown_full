@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; BT10 implementation in progress; all five acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** local implementation complete; all five acceptance gates passed; tracker closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce reproducible historical trade/equity results that cannot see future bars or silently omit requested data.
 **Blocked by:** [BT07 #9](https://github.com/adeoyewole028/binance_topdown_full/issues/9), [BT08 #10](https://github.com/adeoyewole028/binance_topdown_full/issues/10).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -30,11 +30,11 @@ Historical data pagination/replay CLI, shared evaluator and paper fill/accountin
 
 ## Acceptance criteria
 
-- [ ] Range older than last 1000 bars paginates correctly with required warmup; missing/gapped history reports incomplete rather than valid zero result.
-- [ ] No decision uses final daily close before its availability, future bias bar, unfinished candle or overlapping iteration duplicate.
-- [ ] Future-data mutation cannot change earlier decisions; identical as-of runtime/replay inputs produce identical signals.
-- [ ] Fees/slippage/capital, gap exits, same-bar TP/SL ambiguity and partial-fill assumptions follow recorded D05 policy.
-- [ ] CLI range/profile inputs and reproducible result provenance include coverage, version and selected assumptions; output makes no profitability guarantee.
+- [x] Range older than last 1000 bars paginates correctly with required warmup; missing/gapped history reports incomplete rather than valid zero result.
+- [x] No decision uses final daily close before its availability, future bias bar, unfinished candle or overlapping iteration duplicate.
+- [x] Future-data mutation cannot change earlier decisions; identical as-of runtime/replay inputs produce identical signals.
+- [x] Fees/slippage/capital, gap exits, same-bar TP/SL ambiguity and partial-fill assumptions follow recorded D05 policy.
+- [x] CLI range/profile inputs and reproducible result provenance include coverage, version and selected assumptions; output makes no profitability guarantee.
 
 ## Testing and validation
 
@@ -66,7 +66,7 @@ Historical market-data purchase, profit optimization or live fill fidelity guara
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+Implementation: complete at ab5f9a9ea88d622e142a284cd65be7e691b5f0fe (source15d7fb3/ab5f9a9). All five criteria satisfy explicit capture-bound UTC pagination/warmup/gap coverage, both versioned profiles/shared causal evaluator, next-open financial replay/protection and reproducible public-only/offline CLI. Full327pass/0failures/skips/xfails261.03s; strict type48, repositorylint/diff/31sourcecompilation pass; Standards0hard/0heuristic, Spec0remaining after original twoP2 corrections. [Criterion/review evidence](../evidence/bt10-validation.md), [machine hashes](../evidence/bt10-historical-replay.json), [deterministic explicit fixture](../evidence/bt10-deterministic-example.json), [research contract](../../../historical-replay.md). No schema migration, fabricated capital, actual provider/credentials/trade/activation/deployment/push. Historical/livefilter and fillfidelity not certified; laterprovider/rollout gates remain. Currentblockers:none for localBT10. Next:publish/close/read-back#12, then inspectBT11 alone.
 
 ## D05 approved contract (2026-10-03)
 
@@ -77,3 +77,8 @@ Implement only this ticket’s scope; this approval does not authorize future ti
 ## BT10 start (2026-10-03)
 
 Live#12 OPEN/0comments/native#9/#10 bothCLOSED verified afterBT09 closure. Sole active ticket; fixedreviewpoint`9853710e3da1111a0f4ea0e3e0c96a04abe623c4`. D05 bothrules/explicitallcapitalinputs approved; D04 bothprofiles. Approved pure completedbar/asof/config/position evaluator/replay seam and fake paginated public adapter; no profit optimization or livefidelity claim. All fivecriteriaopen. Next:paginated warmup/range/coverage tracers, then causal next-event portfolio/exits/provenance and strict CLI/research budget gate. No later-ticket code or actual provider/credential/funding/trade/deployment/push.
+
+
+## Final local acceptance (2026-10-03)
+
+All five criteria passed atab5f9a9. 31historical focusedpass; full327pass261.03s/type48/lint/diff/31sourcecompile; two-axis finalreviews0remaining. Initial322pass snapshot preserved honestly; corrected finalresult supersedes it. No futureticket source. Parent#2 staysOPEN; actualprovider and rollout gates staylater.

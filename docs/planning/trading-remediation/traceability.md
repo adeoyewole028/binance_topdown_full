@@ -118,3 +118,6 @@ R12/R06 map to versioned pure causal profiles/runtime adapters at933c9f9. Origin
 ## BT09 local completion trace
 
 R13/R03/R08 map to explicit shared owned automation at4f83d79. Bothprofile/fixed-risk completed entry traces and measured provider-clock boundaries, original-rule/current-review automatic closes, restart signal identity/cooldown/slot reservations, unset/configstale/unresolved/default/import/reset gates, fake Spot unknown protection/paused reductions, actual child process exclusion and graceful/fault stop cover all five criteria.24newautomation cases plus one necessary existing recovery-fixture boundary case within296fullpass; type43/lint/28sourcecompile, Standards0/Spec0. Evidence:`evidence/bt09-validation.md`, `evidence/bt09-automation.json`. Actual provider/deployed acceptance and initiative closure remain separate later gates.
+
+
+BT10 local acceptance R14/R09/R12 completed atab5f9a9ea88d622e142a284cd65be7e691b5f0fe:327fullpass/0failures/skips/xfails261.03s,type48/lint/diff/31sourcecompile,Standards0/Spec0. [Criterion map](evidence/bt10-validation.md), [source hashes](evidence/bt10-historical-replay.json), [explicit fixture](evidence/bt10-deterministic-example.json), [public/offline replay contract](../../historical-replay.md). No actualprovider/activation or later metrics/UI/ops/acceptance/rollout implementation.

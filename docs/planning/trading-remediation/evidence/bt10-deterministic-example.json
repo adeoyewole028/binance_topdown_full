@@ -1,0 +1,407 @@
+{
+  "result": {
+    "as_of": 1791033300000,
+    "assumptions": {
+      "end": "retain_open_positions; no_forced_liquidation",
+      "entry": "next_open_after_completed_signal",
+      "fill": "deterministic_full",
+      "policy": {
+        "cooldown_seconds": 86400,
+        "drawdown_fraction": "0.2",
+        "fee_fraction": "0.01",
+        "fixed_quote": "102.01",
+        "initial_cash": "1000",
+        "max_allocation_fraction": "0.5",
+        "max_exposure_fraction": "0.8",
+        "max_positions": 2,
+        "model": "paper-full-fill-weighted-average-v1",
+        "quote": "USDT",
+        "risk_fraction": "0.1",
+        "slippage_fraction": "0.01"
+      },
+      "protection": "stop_first_same_bar; adverse_stop_gap; conservative_target",
+      "quantity_precision": "explicit_research_assumption; historical/live exchange filters are not certified",
+      "quantity_step": "0.001",
+      "sizing": "fixed",
+      "valuation": "closed_bar_and_simulated_fill_events"
+    },
+    "config": {
+      "base_quote": "USDT",
+      "cooldown": 0,
+      "equity_proxy": 1000.0,
+      "max_positions": 5,
+      "min_quote_vol": 10000000.0,
+      "near_ema_pct": 0.02,
+      "paper_policy": {
+        "cooldown_seconds": 86400,
+        "drawdown_fraction": "0.2",
+        "fee_fraction": "0.01",
+        "fixed_quote": "102.01",
+        "initial_cash": "1000",
+        "max_allocation_fraction": "0.5",
+        "max_exposure_fraction": "0.8",
+        "max_positions": 2,
+        "model": "paper-full-fill-weighted-average-v1",
+        "quote": "USDT",
+        "risk_fraction": "0.1",
+        "slippage_fraction": "0.01"
+      },
+      "paper_trading": true,
+      "risk": 0.01,
+      "rsi_exec_threshold": 45.0,
+      "rsi_overbought": 70.0,
+      "rsi_threshold": 30.0,
+      "stop_loss_pct": 0.03,
+      "strategy_profile": "dashboard_intraday",
+      "strategy_version": 1,
+      "take_profit_pct": 0.06,
+      "trailing_pct": 0.03,
+      "universe_size": 12,
+      "use_dynamic_universe": true
+    },
+    "config_sha256": "7da1ee4c2548b91e82a3fa01836f0fe6e3a580c34138ba5c5e89d7233596eb77",
+    "config_version": 1,
+    "coverage": {
+      "15m": {
+        "expected": 105,
+        "missing": 0,
+        "reason": null,
+        "received": 105,
+        "requested_end": 1791033300000,
+        "requested_start": 1790938800000
+      },
+      "1h": {
+        "expected": 201,
+        "missing": 0,
+        "reason": null,
+        "received": 201,
+        "requested_end": 1791032400000,
+        "requested_start": 1790308800000
+      },
+      "4h": {
+        "expected": 200,
+        "missing": 0,
+        "reason": null,
+        "received": 200,
+        "requested_end": 1791028800000,
+        "requested_start": 1788148800000
+      }
+    },
+    "data_sha256": "94b481de6078e979cd745b85a983c81222408bdd26bb7f1af9079bfd39f4ebd4",
+    "decisions": [
+      {
+        "bias": {
+          "momentum_ok": true,
+          "near_ma": true,
+          "rsi": 50.0
+        },
+        "bias_timeframe": "1h",
+        "config_version": 1,
+        "entry": true,
+        "execution": {
+          "signal": true,
+          "type": "ema21_rsi_cross"
+        },
+        "execution_close": 1791028800000,
+        "exit_reasons": [],
+        "profile": "dashboard_intraday",
+        "profile_version": 1,
+        "reason": null,
+        "signal_id": "4cddf37929663c0c23478631ce5d7816a9cd52c3d5aac559f736ed094cb1803c",
+        "state": "ready",
+        "symbol": "BTC/USDT",
+        "time": "2026-10-03T12:00:00+00:00",
+        "trend": {
+          "above21": true,
+          "bullish": true,
+          "hhll": true
+        },
+        "trend_timeframe": "4h"
+      },
+      {
+        "bias": {
+          "momentum_ok": true,
+          "near_ma": true,
+          "rsi": 50.0
+        },
+        "bias_timeframe": "1h",
+        "config_version": 1,
+        "entry": false,
+        "execution": {
+          "signal": false
+        },
+        "execution_close": 1791029700000,
+        "exit_reasons": [],
+        "profile": "dashboard_intraday",
+        "profile_version": 1,
+        "reason": null,
+        "signal_id": "518e4f817d79777eef4f2a5b1b4dcc666f7517f1124f70b4fa5c35a70aa3c5c9",
+        "state": "ready",
+        "symbol": "BTC/USDT",
+        "time": "2026-10-03T12:15:00+00:00",
+        "trend": {
+          "above21": true,
+          "bullish": true,
+          "hhll": true
+        },
+        "trend_timeframe": "4h"
+      },
+      {
+        "bias": {
+          "momentum_ok": true,
+          "near_ma": true,
+          "rsi": 50.0
+        },
+        "bias_timeframe": "1h",
+        "config_version": 1,
+        "entry": false,
+        "execution": {
+          "signal": false
+        },
+        "execution_close": 1791030600000,
+        "exit_reasons": [],
+        "profile": "dashboard_intraday",
+        "profile_version": 1,
+        "reason": null,
+        "signal_id": "ca918762f39bf465b346ace52be1f9cd9c304304791982257700193241aae724",
+        "state": "ready",
+        "symbol": "BTC/USDT",
+        "time": "2026-10-03T12:30:00+00:00",
+        "trend": {
+          "above21": true,
+          "bullish": true,
+          "hhll": true
+        },
+        "trend_timeframe": "4h"
+      },
+      {
+        "bias": {
+          "momentum_ok": true,
+          "near_ma": true,
+          "rsi": 50.0
+        },
+        "bias_timeframe": "1h",
+        "config_version": 1,
+        "entry": false,
+        "execution": {
+          "signal": false
+        },
+        "execution_close": 1791031500000,
+        "exit_reasons": [],
+        "profile": "dashboard_intraday",
+        "profile_version": 1,
+        "reason": null,
+        "signal_id": "7b6b827fd7c6cbafee47a6c7ddcb550727995a7584c3100bb536bec6c6a3a9c6",
+        "state": "ready",
+        "symbol": "BTC/USDT",
+        "time": "2026-10-03T12:45:00+00:00",
+        "trend": {
+          "above21": true,
+          "bullish": true,
+          "hhll": true
+        },
+        "trend_timeframe": "4h"
+      },
+      {
+        "bias": {
+          "momentum_ok": true,
+          "near_ma": true,
+          "rsi": 50.0
+        },
+        "bias_timeframe": "1h",
+        "config_version": 1,
+        "entry": false,
+        "execution": {
+          "signal": false
+        },
+        "execution_close": 1791032400000,
+        "exit_reasons": [],
+        "profile": "dashboard_intraday",
+        "profile_version": 1,
+        "reason": null,
+        "signal_id": "1096d3d0e5f92e6bdc7cd7555b42dbd837a0316327d96cc8f67c276037936323",
+        "state": "ready",
+        "symbol": "BTC/USDT",
+        "time": "2026-10-03T13:00:00+00:00",
+        "trend": {
+          "above21": true,
+          "bullish": true,
+          "hhll": true
+        },
+        "trend_timeframe": "4h"
+      },
+      {
+        "bias": {
+          "momentum_ok": true,
+          "near_ma": true,
+          "rsi": 50.0
+        },
+        "bias_timeframe": "1h",
+        "config_version": 1,
+        "entry": false,
+        "execution": {
+          "signal": false
+        },
+        "execution_close": 1791033300000,
+        "exit_reasons": [],
+        "profile": "dashboard_intraday",
+        "profile_version": 1,
+        "reason": null,
+        "signal_id": "785030884dffb0ee1ace8c11364ff82a2351537aeeed2bc364430fd5e6c12373",
+        "state": "ready",
+        "symbol": "BTC/USDT",
+        "time": "2026-10-03T13:15:00+00:00",
+        "trend": {
+          "above21": true,
+          "bullish": true,
+          "hhll": true
+        },
+        "trend_timeframe": "4h"
+      }
+    ],
+    "end": 1791033300000,
+    "equity_curve": [
+      {
+        "at": 1791028800000,
+        "cash": "1000",
+        "drawdown": "0",
+        "entry_halted": false,
+        "equity": "1000",
+        "exposure": "0"
+      },
+      {
+        "at": 1791028800000,
+        "cash": "897.99",
+        "drawdown": "0.00201",
+        "entry_halted": false,
+        "equity": "997.99",
+        "exposure": "100"
+      },
+      {
+        "at": 1791029700000,
+        "cash": "897.99",
+        "drawdown": "0.00201",
+        "entry_halted": false,
+        "equity": "997.99",
+        "exposure": "100"
+      },
+      {
+        "at": 1791029700000,
+        "cash": "897.99",
+        "drawdown": "0.00201",
+        "entry_halted": false,
+        "equity": "997.99",
+        "exposure": "100"
+      },
+      {
+        "at": 1791030600000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      },
+      {
+        "at": 1791030600000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      },
+      {
+        "at": 1791031500000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      },
+      {
+        "at": 1791031500000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      },
+      {
+        "at": 1791032400000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      },
+      {
+        "at": 1791032400000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      },
+      {
+        "at": 1791033300000,
+        "cash": "994.97060097",
+        "drawdown": "0.00502939903",
+        "entry_halted": false,
+        "equity": "994.97060097",
+        "exposure": "0"
+      }
+    ],
+    "fills": [
+      {
+        "at": 1791028800000,
+        "config_version": 1,
+        "fee": "1.01",
+        "fee_asset": "USDT",
+        "price": "101",
+        "profile": "dashboard_intraday",
+        "quantity": "1",
+        "quote_cost": "101",
+        "reason": "completed_signal",
+        "side": "buy",
+        "signal_id": "4cddf37929663c0c23478631ce5d7816a9cd52c3d5aac559f736ed094cb1803c"
+      },
+      {
+        "at": 1791030600000,
+        "config_version": 1,
+        "fee": "0.97960203",
+        "fee_asset": "USDT",
+        "price": "97.960203",
+        "profile": "dashboard_intraday",
+        "quantity": "1",
+        "quote_cost": "97.960203",
+        "reason": "stop_loss",
+        "side": "sell",
+        "signal_id": null
+      }
+    ],
+    "format_version": 1,
+    "limitations": "OHLC simulation; no profitability guarantee, historical filter certification or live fill fidelity",
+    "metrics": {
+      "cash": "994.97060097",
+      "completed_trades": 1,
+      "drawdown": "0.00502939903",
+      "entry_halted": false,
+      "equity": "994.97060097",
+      "exposure": "0",
+      "realized": "-5.02939903",
+      "return_fraction": "-0.00502939903",
+      "unrealized": "0",
+      "win_rate": "0",
+      "win_rate_denominator": "completed_full_position_exits"
+    },
+    "namespace": "research:testnet:offline",
+    "pending": null,
+    "positions": [],
+    "profile": "dashboard_intraday",
+    "profile_version": 1,
+    "start": 1791028800000,
+    "state": "complete",
+    "symbol": "BTC/USDT",
+    "venue": "testnet"
+  },
+  "scope": "Offline explicit test fixture; not operator capital, a trading recommendation or provider acceptance"
+}

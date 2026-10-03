@@ -240,3 +240,16 @@ BT09#11 CLOSED at2026-10-03T16:21:25Z; full body/state read-back matches approve
 ## BT10 start (2026-10-03)
 
 Live#12 OPEN/0comments/native#9/#10 CLOSED verified. BT09 closed; BT10 sole active ticket; fivecriteriaopen. Fixedpoint9853710e3da1111a0f4ea0e3e0c96a04abe623c4. D04/D05 approved, explicit capital/risk assumptions required. Next:fake public pagination/warmup/coverage TDD, then pure causal replay/portfolio and explicit research CLI, full review/checks/evidence. No futureticket or actualprovider/activation.
+
+
+## BT10 review snapshot (2026-10-03)
+
+Sole active BT10#12 source15d7fb3fc6ba30004822fb34826cb932c9e792b7, fixedpoint9853710e3da1111a0f4ea0e3e0c96a04abe623c4. 26 historical pure/public-boundary tests pass; strict type48, repository pyflakes and diff checks pass. Earlier74 paper/automation regressions passed after necessary shared financial arithmetic extraction. Both profiles, explicit capture-bound UTC pagination/warmup/coverage, causal next-open replay/fullfills/stopfirst/gaps/caps/drawdown/endcarry, offline CLI/provenance and shared research lane implemented. Parallel independent Standards/Spec review dispatched; full applicable suite running with600s aggregate budget. All five acceptance criteria remain open pending full checks/review/evidence. No future ticket or actual provider/keys/funding/trading/activation/deployment/push. Next: resolve any actionable review/test findings, rerun affected/final gates and record acceptance before closing#12.
+
+
+BT10 initial frozen322fullpass228.13s at15d7fb3 preserved as evidence/bt10-initial-review-snapshot.json. Standards P2 expectedrange memory allocation and Spec P2 opening protection bypass fixed atab5f9a9ea88d622e142a284cd65be7e691b5f0fe; red→green target/stop opening-gap and laterintrabar causality cases. Additional pure UTC date validation and sharedstate-output guard regressions. 31focusedpass18.90s/type48/repolint/diffpass; Standards0hard/0heuristic, Spec0remaining (five independent correction casespass4.73s). Deterministic explicitly labelled financialfixture saved in evidence/bt10-deterministic-example.json. Corrected327fullsuite running; all criteria remainopen until final completed checks/evidence. No futureticket or actual provider/trade/activation/deploy/push.
+
+
+## BT10 final local acceptance (2026-10-03)
+
+All five criteria passed atab5f9a9:327fullpass/0failures/skips/xfails261.03s,type48/lint/diff/31sourcecompile,Standards0hard/0heuristic,Spec0remaining. [Criterion/review evidence](evidence/bt10-validation.md), [exact31sourcehashes](evidence/bt10-historical-replay.json), [deterministicfixture](evidence/bt10-deterministic-example.json), [contract](../../historical-replay.md). Source15d7fb3/ab5f9a9; fixedpoint9853710. Initial322pass snapshot preserved; resourceallocation/openingprotection P2 corrected and negative regressions proved. No schema migration, implicitcapital, profile redesign, realprovider/keys/trade/funding/activation/deployment/push. Publish/close/read-back#12 next; only then inspect/start BT11#13. Parent#2 remainsOPEN.
