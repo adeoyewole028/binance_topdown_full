@@ -121,3 +121,7 @@ BT03 #5 CLOSED and read-back verified; specification #2 remains OPEN. Evidence c
 ## Goal blocker audit (2026-10-03)
 
 The same D07 start gate persisted across the BT03 completion turn and two automatic continuations. The preceding continuation was no progress, not a verified process wait. Current worktree is clean; live BT04 #6 remains OPEN with no new comments or selected targets, and the specification still marks D07 unapproved. No permitted ticket implementation can advance without this response under the strict sequential workflow. Goal status is blocked pending D07 input; the objective is unchanged and incomplete. BT01-BT03 remain closed; BT04 has not started. Resume by recording the user's D07 selection in the authoritative specification and affected tickets, verifying dependencies, and implementing BT04 alone. Do not infer a choice from an automatic continuation.
+
+## Resumed goal audit (2026-10-03)
+
+The goal was reactivated after the blocked audit; a fresh blocked audit begins. Live BT04 remains OPEN with no new comments, the worktree is clean, and D07 has not been selected. The existing unresolved choice was surfaced again with the same proposed targets; it is a request for missing policy, not renewed implementation authorization. The goal is active pending the answer. This first resumed turn cannot start BT04 or mark the goal blocked again yet. The objective and strict order are unchanged.
