@@ -61,4 +61,7 @@ def validated_config(values: dict[str, Any]) -> dict[str, Any]:
     quote = result['base_quote']
     if not isinstance(quote, str) or not re.fullmatch(r'[A-Z0-9]{2,12}', quote):
         raise ConfigurationError('Invalid quote asset')
+    if 'paper_policy' in result:
+        from paper_policy import validated_policy
+        result['paper_policy'] = validated_policy(result['paper_policy'])
     return result

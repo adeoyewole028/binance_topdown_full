@@ -1,4 +1,4 @@
-"""Owned, atomic legacy paper effects. Capital/protection policy belongs to BT05."""
+"""Owned atomic paper accounting; exchange/protection lifecycles remain later tickets."""
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -11,6 +11,7 @@ from collections.abc import Callable
 import time
 from state_store import StateStore
 from operations_policy import OperationsPolicy
+from configuration import ConfigurationError
 
 from execution_owner import ExecutionOwner, OwnershipUnavailable
 
@@ -23,7 +24,7 @@ class ExecutionWorker(ExecutionOwner):
     def publish_scan(self, snapshot: dict[str, Any]) -> None:
         if not self.ownership_confirmed():
             raise OwnershipUnavailable('Execution ownership uncertain')
-        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns', 'market_health', 'market_cache'}
+        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns', 'market_health', 'market_cache', 'market_metadata'}
         values = {key: value for key, value in snapshot.items() if key in allowed}
         now = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
         with self.store.connection(write=True) as connection:
@@ -57,6 +58,7 @@ class ExecutionWorker(ExecutionOwner):
                 connection.execute('''INSERT INTO market_prices VALUES (?,?,?,?) ON CONFLICT(namespace,symbol)
                                       DO UPDATE SET price=excluded.price,fetched_at=excluded.fetched_at''',
                                    (self.store.namespace, symbol, str(parsed), now))
+            self.store.record_paper_risk(connection)
 
     def process_pending(self) -> int:
         if not self.ownership_confirmed():
@@ -76,7 +78,7 @@ class ExecutionWorker(ExecutionOwner):
             if unresolved is not None:
                 return 0
             connection.execute("UPDATE execution_owners SET state='ready' WHERE token=?", (self.token,))
-            operations = connection.execute("SELECT * FROM intents WHERE namespace=? AND state IN ('queued','waiting_for_market_data') ORDER BY intake_sequence",
+            operations = connection.execute("SELECT * FROM intents WHERE namespace=? AND state IN ('queued','waiting_for_market_data','waiting_for_setup') ORDER BY intake_sequence",
                                             (self.store.namespace,)).fetchall()
             for operation in operations:
                 # Paper projection, simulated fill and journal commit together;
@@ -84,13 +86,14 @@ class ExecutionWorker(ExecutionOwner):
                 connection.execute('SAVEPOINT paper_operation')
                 try:
                     self._paper_effect(connection, operation)
-                except (ValueError, InvalidOperation) as error:
+                except (ValueError, InvalidOperation, ConfigurationError) as error:
                     connection.execute('ROLLBACK TO paper_operation')
                     connection.execute('RELEASE paper_operation')
                     connection.execute("UPDATE intents SET state='rejected',error_class=? WHERE namespace=? AND operation_id=?",
-                                       (type(error).__name__, self.store.namespace, operation['operation_id']))
+                                       (str(error)[:128], self.store.namespace, operation['operation_id']))
+                    connection.execute("UPDATE reservations SET state='released' WHERE namespace=? AND operation_id=?", (self.store.namespace, operation['operation_id']))
                     connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
-                                       (self.store.namespace, operation['operation_id'], 'paper_rejected', json.dumps({'error_class': type(error).__name__})))
+                                       (self.store.namespace, operation['operation_id'], 'paper_rejected', json.dumps({'error_class': str(error)[:128]})))
                 else:
                     connection.execute('RELEASE paper_operation')
                 processed += 1
@@ -98,9 +101,12 @@ class ExecutionWorker(ExecutionOwner):
 
     def _paper_effect(self, connection: sqlite3.Connection, operation: sqlite3.Row) -> None:
         namespace, symbol = self.store.namespace, operation['symbol']
+        policy = self.store._config(connection)[1].get('paper_policy')
+        if not policy:
+            connection.execute("UPDATE intents SET state='waiting_for_setup' WHERE namespace=? AND operation_id=?", (namespace, operation['operation_id']))
+            return
         requested = Decimal(operation['requested_qty'])
-        # Projection preconditions: invalid data cannot become a confirmed row.
-        # BT05 still owns request validation, capital/risk/fees and credible fills.
+        # Invalid requests cannot become financial projections.
         if not requested.is_finite() or requested <= 0 or operation['side'] not in {'buy', 'sell'}:
             raise ValueError('Invalid paper projection input')
         price_row = connection.execute('SELECT price,fetched_at FROM market_prices WHERE namespace=? AND symbol=?', (namespace, symbol)).fetchone()
@@ -122,32 +128,62 @@ class ExecutionWorker(ExecutionOwner):
                                (namespace, operation['operation_id']))
             return
         assert price_row is not None
+        review = connection.execute("SELECT payload FROM journal WHERE namespace=? AND operation_id=? AND event='intent_queued'", (namespace, operation['operation_id'])).fetchone()
+        if review is None or operation['config_version'] != self.store._config(connection)[0]:
+            raise ValueError('configuration_changed_review_required')
+        reviewed_context = json.loads(review[0])
+        reviewed_stamp = datetime.fromisoformat(reviewed_context['reviewed_at'])
+        if reviewed_stamp.tzinfo is None or not 0 <= self.clock() - reviewed_stamp.timestamp() < self.policy.price_expiry:
+            raise ValueError('reviewed_price_expired')
+        reviewed_price = reviewed_context.get('reviewed_price')
+        if reviewed_price is None or Decimal(reviewed_price) != Decimal(price_row[0]):
+            raise ValueError('price_changed_review_required')
         price = Decimal(price_row[0])
         if not price.is_finite() or price <= 0:
             raise ValueError('Invalid paper projection price')
+        from paper_filters import validate_market_quantity
+        validate_market_quantity(scan.get('market_metadata', {}), symbol, requested, price, self.clock(), self.store.venue)
+        self.store.reserve_paper(connection, operation['operation_id'], symbol, operation['side'], requested, price, now=self.clock())
+        price *= 1 + Decimal(policy['slippage_fraction']) * (1 if operation['side'] == 'buy' else -1)
+        cost = requested * price
+        fee = cost * Decimal(policy['fee_fraction'])
+        base, quote = symbol.split('/')
+        if quote != policy['quote']:
+            raise ValueError('Symbol quote differs from paper funding asset')
+        balances = self.store._paper_account(connection, exclude_operation=operation['operation_id'])['balances']
+        if operation['side'] == 'buy' and cost + fee > Decimal(balances[quote]['available']):
+            raise ValueError('Insufficient paper capital')
         position = connection.execute('SELECT qty,entry FROM positions WHERE namespace=? AND symbol=?', (namespace, symbol)).fetchone()
         held = Decimal(position['qty']) if position else Decimal(0)
         entry = Decimal(position['entry']) if position else price
         quantity = requested
         if operation['side'] == 'buy':
             resulting = held + quantity
-            entry = (held * entry + quantity * price) / resulting
+            entry = (held * entry + cost + fee) / resulting
             connection.execute('''INSERT INTO positions VALUES (?,?,?,?,?)
                                   ON CONFLICT(namespace,symbol) DO UPDATE SET qty=excluded.qty,entry=excluded.entry''',
-                               (namespace, symbol, str(resulting), str(entry), 'legacy-paper-profile; fees/capital incomplete'))
+                               (namespace, symbol, str(resulting), str(entry), policy['model']))
         else:
-            if held <= 0:
-                raise ValueError('No paper position')
-            quantity = min(requested, held)
+            if held < requested or requested > Decimal(balances.get(base, {}).get('available', '0')):
+                raise ValueError('Insufficient paper holdings')
+            quantity = requested
             remaining = held - quantity
             if remaining > 0:
                 connection.execute('UPDATE positions SET qty=? WHERE namespace=? AND symbol=?', (str(remaining), namespace, symbol))
             else:
                 connection.execute('DELETE FROM positions WHERE namespace=? AND symbol=?', (namespace, symbol))
-        connection.execute('''INSERT INTO fills(namespace,fill_id,operation_id,symbol,side,qty,price,quote_cost,profile)
-                              VALUES (?,?,?,?,?,?,?,?,?)''',
+        connection.execute('''INSERT INTO fills(namespace,fill_id,operation_id,symbol,side,qty,price,quote_cost,fee_amount,fee_asset,profile)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
                            (namespace, operation['operation_id'] + ':paper:1', operation['operation_id'], symbol,
-                            operation['side'], str(quantity), str(price), str(quantity * price), 'legacy-paper-v1'))
+                            operation['side'], str(quantity), str(price), str(cost), str(fee), quote, policy['model']))
+        if operation['side'] == 'buy':
+            connection.execute('INSERT INTO cooldowns VALUES (?,?,?,?) ON CONFLICT(namespace,symbol) DO UPDATE SET last_event_at=excluded.last_event_at,operation_id=excluded.operation_id',
+                               (namespace, symbol, datetime.fromtimestamp(self.clock(), timezone.utc).isoformat(), operation['operation_id']))
+        direction = Decimal(1) if operation['side'] == 'buy' else Decimal(-1)
+        for asset, movement in ((base, direction * quantity), (quote, -cost - fee if direction == 1 else cost - fee)):
+            connection.execute('INSERT INTO balance_movements(namespace,movement_id,asset,amount,event) VALUES (?,?,?,?,?)',
+                               (namespace, operation['operation_id'] + ':' + asset, asset, str(movement), 'paper_fill'))
+        connection.execute("UPDATE reservations SET state='released' WHERE namespace=? AND operation_id=?", (namespace, operation['operation_id']))
         connection.execute("UPDATE intents SET state='filled',error_class=NULL WHERE namespace=? AND operation_id=?", (namespace, operation['operation_id']))
         connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
-                           (namespace, operation['operation_id'], 'paper_fill', json.dumps({'qty': str(quantity), 'price': str(price), 'profile': 'legacy-paper-v1'})))
+                           (namespace, operation['operation_id'], 'paper_fill', json.dumps({'qty': str(quantity), 'price': str(price), 'profile': policy['model'], 'fee_amount': str(fee), 'fee_asset': quote})))

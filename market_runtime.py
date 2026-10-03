@@ -18,6 +18,8 @@ class MarketProvider(Protocol):
     def metadata(self) -> dict[str, Any]: ...
     def tickers(self, symbols: list[str] | None = None) -> dict[str, Any]: ...
     def candles(self, symbol: str, timeframe: str, limit: int) -> list[list[float]]: ...
+    def reference_price(self, symbol: str) -> dict[str, Any]: ...
+    def average_price(self, symbol: str) -> dict[str, Any]: ...
 
 
 class DataQualityError(RuntimeError):
@@ -76,8 +78,8 @@ class MarketRuntime:
         self.snapshot = owner.store.scan()
         self.cache: dict[str, Any] = self.snapshot.get('market_cache', {})
         urgent_symbols = max(1, len(owner.store.market_coverage()))
-        self.budget = RequestBudget(owner.store, clock=clock, reserve_weight=101 + 6 * urgent_symbols,
-                                    reserve_requests=3 + 3 * urgent_symbols)
+        self.budget = RequestBudget(owner.store, clock=clock, reserve_weight=101 + 10 * urgent_symbols,
+                                    reserve_requests=3 + 5 * urgent_symbols)
         self.whitelist, self.blacklist = whitelist or set(), blacklist or set()
         self.reconcile = reconcile
         self.evaluate = evaluate
@@ -125,7 +127,22 @@ class MarketRuntime:
         try:
             weight = 2 if len(coverage) <= 20 else 40 if len(coverage) <= 100 else 80
             tickers = self._request('reduction', weight, lambda: self.provider.tickers(coverage))
-            self.owner.publish_prices({s: tickers[s]['last'] for s in coverage})
+            ticker_received = self.clock()
+            metadata = self.snapshot.get('market_metadata', {})
+            by_symbol = {s['baseAsset'] + '/' + s['quoteAsset']: s for s in metadata.get('symbols', [])}
+            filter_prices = {}
+            for symbol in coverage:
+                notional = [f for f in by_symbol.get(symbol, {}).get('filters', []) if f['filterType'] in {'MIN_NOTIONAL', 'NOTIONAL'}]
+                if not notional:
+                    continue
+                reference = self._request('reduction', 2, lambda: self.provider.reference_price(symbol))
+                observation = {'reference': reference, 'fetched_at': iso(self.clock())}
+                if reference.get('referencePrice') is None and any(f.get('avgPriceMins', 0) for f in notional):
+                    observation['average'] = self._request('reduction', 2, lambda: self.provider.average_price(symbol))
+                    observation['fetched_at'] = iso(self.clock())
+                filter_prices[symbol] = observation
+            metadata['filter_prices'] = filter_prices
+            self.owner.publish_prices({s: tickers[s]['last'] for s in coverage}, fetched_at=ticker_received)
             self.snapshot['market_health'].pop('price_refresh_failure', None)
         except (TimeoutError, ConnectionError, ValueError, KeyError, ProviderFailure) as error:
             # Preserve both value and fetched-at on failure; no cached-price publication.
@@ -159,8 +176,8 @@ class MarketRuntime:
         health.update(heartbeat=iso(now), config_version=version, owner_generation=self.owner.generation,
                       state='degraded', reason='data_quality')
         financial_coverage = self.owner.store.market_coverage()
-        self.budget.reserve_weight = 101 + 6 * max(1, len(financial_coverage))
-        self.budget.reserve_requests = 3 + 3 * max(1, len(financial_coverage))
+        self.budget.reserve_weight = 101 + 10 * max(1, len(financial_coverage))
+        self.budget.reserve_requests = 3 + 5 * max(1, len(financial_coverage))
         try:
             before = self.clock()
             metadata = self._request('reconciliation', 21, self.provider.metadata, raw_requests=2, discovery=True)
@@ -175,6 +192,7 @@ class MarketRuntime:
             self.budget.observe(getattr(self.provider, 'headers', {}))
             tickers = self._request('reduction' if financial_coverage else 'market', 80, self.provider.tickers)
             ticker_received = self.clock()
+            self.snapshot['market_metadata'] = {'venue': self.owner.store.venue, 'fetched_at': iso(received), 'symbols': metadata['symbols']}
             valid = {f"{s['baseAsset']}/{s['quoteAsset']}" for s in metadata['symbols']
                      if s.get('status') == 'TRADING' and s.get('isSpotTradingAllowed') is True}
             eligible = {s for s in valid if s.endswith('/' + config['base_quote']) and s not in self.blacklist
@@ -190,6 +208,21 @@ class MarketRuntime:
             health['coverage'] = sorted(required)
             if not required or not required <= valid:
                 raise ProviderFailure('invalid_market')
+            filter_prices = {}
+            by_symbol = {s['baseAsset'] + '/' + s['quoteAsset']: s for s in metadata['symbols']}
+            for symbol in sorted(required):
+                notional = [f for f in by_symbol[symbol].get('filters', []) if f['filterType'] in {'MIN_NOTIONAL', 'NOTIONAL'}]
+                if not notional:
+                    continue
+                reference = self._request('reduction' if symbol in financial_coverage else 'market', 2,
+                                          lambda: self.provider.reference_price(symbol))
+                observation = {'reference': reference, 'fetched_at': iso(self.clock())}
+                if reference.get('referencePrice') is None and any(f.get('avgPriceMins', 0) for f in notional):
+                    observation['average'] = self._request('reduction' if symbol in financial_coverage else 'market', 2,
+                                                          lambda: self.provider.average_price(symbol))
+                    observation['fetched_at'] = iso(self.clock())
+                filter_prices[symbol] = observation
+            self.snapshot['market_metadata']['filter_prices'] = filter_prices
             for symbol in sorted(required, key=lambda s: (s not in financial_coverage, s)):
                 for timeframe in INTERVALS:
                     self._candles(symbol, timeframe, server_time)

@@ -1,3 +1,4 @@
+import secrets
 
 from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response, g
 import time
@@ -102,7 +103,7 @@ status = {
     'universe': [],
     'logs': [],
     'open_positions': [],
-    'balances': {'USDT': 1000, 'BTC': 0.1},
+    'balances': {},
     'recent_trades': [],
     'signals': [],
     'exit_signals': [],
@@ -332,6 +333,33 @@ def bot_loop(owner=None) -> None:
         scanner.step()
         time.sleep(1)
 
+@app.route('/paper/setup', methods=['POST'])
+def setup_paper():
+    try:
+        state_store.setup_paper(request.form.to_dict(), 'configured-operator',
+                                expected_version=int(request.form['expected_config_version']))
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except (ConfigurationError, ValueError, KeyError) as error:
+        return jsonify(error=str(error)), 400
+    except StateUnavailable:
+        return jsonify(error='Paper setup was not saved; durable state unavailable'), 503
+    flash('Paper assumptions and explicit initial capital recorded', 'success')
+    return redirect('/')
+
+@app.route('/paper/cancel', methods=['POST'])
+def cancel_paper():
+    try:
+        state_store.cancel_paper(request.form.get('operation_id', ''), 'configured-operator')
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except ConfigurationError as error:
+        return jsonify(error=str(error)), 400
+    except StateUnavailable:
+        return jsonify(error='Cancellation was not saved; durable state unavailable'), 503
+    flash('Pending paper order canceled; reservation released', 'info')
+    return redirect('/')
+
 @app.route('/trade', methods=['POST'])
 def trade():
     symbol = request.form.get('symbol')
@@ -343,10 +371,16 @@ def trade():
         except ValueError:
             return jsonify(error='Exchange execution is disabled by server policy'), 403
     try:
-        operation = state_store.enqueue('trade', symbol, side, qty)
+        operation = state_store.enqueue('trade', symbol, side, qty, sizing=request.form.get('sizing', 'quantity'), idempotency_key=request.form.get('idempotency_key') or request.headers.get('Idempotency-Key'), now=app.config['MARKET_CLOCK']())
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except ConfigurationError as error:
+        return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Order was not accepted; durable state unavailable'), 503
-    flash(f'Order queued for the execution owner: {operation}', 'success')
+    observed = next(o for o in state_store.operations() if o['operation_id'] == operation)
+    flash(f"Order rejected: {observed['error_class']}" if observed['state'] == 'rejected' else f'Order queued: {operation}',
+          'error' if observed['state'] == 'rejected' else 'info')
     return redirect('/')
 
 @app.route('/close', methods=['POST'])
@@ -359,14 +393,18 @@ def close_position():
         except ValueError:
             return jsonify(error='Exchange execution is disabled by server policy'), 403
     # Preserve the canonical decimal boundary; display floats are estimates.
-    q = qty
-    if not q:
-        q = next((p['qty'] for p in g.operator_status['positions'] if p['symbol'] == symbol), '0')
+    q = qty or ''
     try:
-        operation = state_store.enqueue('close', symbol, 'sell', str(q))
+        operation = state_store.enqueue('close', symbol, 'sell', str(q), sizing='quantity' if q else 'full_close', idempotency_key=request.form.get('idempotency_key') or request.headers.get('Idempotency-Key'), now=app.config['MARKET_CLOCK']())
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except ConfigurationError as error:
+        return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Close was not accepted; durable state unavailable'), 503
-    flash(f'Close queued for the execution owner: {operation}', 'success')
+    observed = next(o for o in state_store.operations() if o['operation_id'] == operation)
+    flash(f"Close rejected: {observed['error_class']}" if observed['state'] == 'rejected' else f'Close queued: {operation}',
+          'error' if observed['state'] == 'rejected' else 'info')
     return redirect('/')
 
 @app.route('/api/status', methods=['GET'])
@@ -395,6 +433,8 @@ def api_status():
         'positions': observed['positions'],
         'migration': observed['migration'],
         'ownership': observed['ownership'],
+        'paper_account': observed['paper_account'],
+        'fills': observed['fills'],
     }
     resp = make_response(jsonify(payload), 200)
     return resp
@@ -634,6 +674,7 @@ def dashboard():
                                         </td>
                                         <td class="py-2">
                                             <form method="post" action="/close" class="inline-flex">
+                                                <input type="hidden" name="idempotency_key" value="{{ order_key }}-close-{{ loop.index }}">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                 <input type="hidden" name="symbol" value="{{ es['symbol'] }}">
                                                 <input type="hidden" name="qty" value="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}">
@@ -653,9 +694,38 @@ def dashboard():
 
                 <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        {% if status['config']['paper_trading'] %}
+                        <h2 class="text-sm font-semibold text-slate-300">Paper account setup</h2>
+                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if status['paper_account']['state']=='setup_required' else 'Explicit paper simulation assumptions recorded.' }}</p>
+                        {% set policy = status['paper_account'].get('policy') or {} %}
+                        <form method="post" action="/paper/setup" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
+                            <label>Funding quote asset
+                                <select name="quote" required class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                    <option value="{{ policy.get('quote', status['config']['base_quote']) }}">{{ policy.get('quote', status['config']['base_quote']) }}</option>
+                                </select>
+                            </label>
+                            {% for field, label in [('initial_cash','Initial paper cash (one-time seed)'), ('fee_fraction','Fee fraction per fill'), ('slippage_fraction','Adverse slippage fraction'), ('risk_fraction','Maximum risk fraction per trade'), ('fixed_quote','Fixed allocation in funding quote'), ('max_allocation_fraction','Maximum allocation fraction per order'), ('max_exposure_fraction','Maximum total exposure fraction'), ('max_positions','Maximum open position slots'), ('cooldown_seconds','Entry cooldown in seconds'), ('drawdown_fraction','Drawdown stop fraction')] %}
+                            <label>{{ label }}
+                                <input name="{{ field }}" type="number" inputmode="decimal" step="any" min="0" required value="{{ policy.get(field, '') }}" {% if field=='initial_cash' and policy %}readonly{% endif %} class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                            </label>
+                            {% endfor %}
+                            <p>Fractions use decimals: 0.01 means 1%. Simulation uses full fills, quote fees and weighted-average cost basis. Seed and quote cannot be replaced after setup.</p>
+                            <button type="submit" class="px-3 py-2 rounded bg-indigo-600">Save explicit paper setup</button>
+                        </form>
+                        <p>Entry block: {{ status['paper_account'].get('entry_block_reason') or 'none' }}. Equity: {{ status['paper_account'].get('equity') or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
+                        <dl>{% for asset, balance in status['paper_account']['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl>
+                        {% endif %}
+                        <h2 class="text-sm font-semibold text-slate-300 mt-3">Order operations</h2>
+                        <ul>{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operation['state'] }}{% if operation['error_class'] %}: {{ operation['error_class'] }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
                         <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
                                     <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}">
+                                        <label class="text-sm">Sizing
+                                            <select name="sizing" class="mt-1 rounded bg-slate-800 border border-slate-700 px-2 py-1"><option value="quantity">Explicit quantity</option><option value="fixed">Configured fixed quote allocation</option><option value="risk">Configured risk allocation</option></select>
+                                        </label>
                                         <label class="text-sm">Symbol
                                             {% if status['universe'] %}
                                                 <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol">
@@ -678,7 +748,7 @@ def dashboard():
                                     <input class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="qty" id="qtyInput" type="number" step="any" value="0.01" />
                                     <button type="button" id="riskSizeBtn" class="mt-1 px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Size by risk</button>
                                 </div>
-                                <div class="text-xs text-slate-500 mt-1">Uses equity_proxy and stop_loss_pct to estimate qty.</div>
+                                <div class="text-xs text-slate-500 mt-1">Browser estimates do not authorize spending. The server uses funded capital and explicit paper limits.</div>
                             </label>
                             <button type="submit" class="w-full sm:w-auto px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Submit</button>
                         </form>
@@ -905,32 +975,16 @@ def dashboard():
                         try { localStorage.setItem('signalIds', JSON.stringify(ids)); } catch(e){}
                     </script>
                     <script>
-                        // Risk-based sizing: qty = (equity * risk) / (price * stop_loss_pct)
-                        function getSelectedSymbol(){
-                            const sel = document.querySelector('select[name="symbol"]');
-                            return sel ? sel.value : 'BTC/USDT';
-                        }
-                        function getLivePrice(sym){
-                            try { const lp = {{ status['live_prices'] | tojson }}; return lp[sym]; } catch(e){ return null; }
-                        }
+                        // A browser action selects the server's sizing contract.
                         const riskBtn = document.getElementById('riskSizeBtn');
-                        if (riskBtn) {
-                            riskBtn.addEventListener('click', ()=>{
-                                const sym = getSelectedSymbol();
-                                const price = parseFloat(getLivePrice(sym));
-                                const equity = parseFloat({{ status['config']['equity_proxy'] }});
-                                const risk = parseFloat({{ status['config']['risk'] }});
-                                const sl = parseFloat({{ status['config']['stop_loss_pct'] }});
-                                if (!isFinite(price) || price <= 0) return;
-                                const qty = (equity * risk) / Math.max(price * Math.max(sl, 1e-6), 1e-6);
-                                const inp = document.getElementById('qtyInput');
-                                if (inp) inp.value = (Math.max(qty, 0)).toFixed(6);
-                            });
-                        }
+                        if (riskBtn) riskBtn.addEventListener('click', () => {
+                            document.querySelector('select[name="sizing"]').value = 'risk';
+                            document.getElementById('qtyInput').value = '';
+                        });
                     </script>
         </body>
         </html>
-    ''', status=g.operator_status, venue=runtime_environment.venue if runtime_environment else 'unconfigured')
+    ''', status=g.operator_status, venue=runtime_environment.venue if runtime_environment else 'unconfigured', order_key=secrets.token_urlsafe(24))
 
 if __name__ == '__main__':
     import argparse

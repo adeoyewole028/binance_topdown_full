@@ -6,11 +6,14 @@ import json
 from pathlib import Path
 import sqlite3
 import math
+import re
+import time
 from typing import Any, Iterator
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from configuration import validated_config, ConfigurationError, ConfigurationConflict
+from paper_policy import decimal_text
 
 
 class StateUnavailable(RuntimeError):
@@ -46,7 +49,7 @@ class StateStore:
                     if write:
                         connection.rollback()
                     raise
-        except (OSError, sqlite3.Error, ValueError, KeyError) as error:
+        except (OSError, sqlite3.Error, ValueError, KeyError, InvalidOperation) as error:
             raise StateUnavailable('Required durable state unavailable') from error
 
     def provision(self, defaults: dict[str, Any]) -> None:
@@ -204,6 +207,8 @@ class StateStore:
         return int(row['version']), values
 
     def update_config(self, changes: dict[str, Any], actor: str, *, expected_version: int | None = None) -> tuple[int, dict[str, Any]]:
+        if 'paper_policy' in changes:
+            raise ConfigurationError('Use explicit paper setup for financial assumptions')
         with self.connection(write=True) as connection:
             current, values = self._config(connection)
             if expected_version is not None and expected_version != current:
@@ -224,27 +229,158 @@ class StateStore:
                 raise StateUnavailable('Durable state integrity failure')
             self._market_budget(connection)
             self._prices(connection)
+            self._paper_account(connection)
+            self._fills(connection)
         self.config()
         self.positions()
 
-    def enqueue(self, kind: str, symbol: str, side: str, quantity: str) -> str:
+    def enqueue(self, kind: str, symbol: str, side: str, quantity: str, *, idempotency_key: str | None = None, now: float | None = None, sizing: str = 'quantity') -> str:
         import hashlib
+        from paper_policy import number
+        if kind not in {'trade', 'close'} or side not in {'buy', 'sell'} or not isinstance(symbol, str) or not re.fullmatch(r'[A-Z0-9]{2,12}/[A-Z0-9]{2,12}', symbol):
+            raise ConfigurationError('Invalid order side or canonical symbol')
+        if sizing not in {'quantity', 'fixed', 'risk', 'full_close'} or (sizing in {'fixed', 'risk'} and side != 'buy') or (sizing == 'full_close' and (kind != 'close' or side != 'sell')):
+            raise ConfigurationError('Invalid sizing mode')
+        amount = number(quantity) if sizing == 'quantity' else Decimal(0)
+        if sizing == 'quantity' and amount <= 0:
+            raise ConfigurationError('Order quantity must be positive')
+        quantity = decimal_text(amount) if sizing == 'quantity' else ''
         operation = uuid.uuid4().hex
-        request = json.dumps({'kind': kind, 'symbol': symbol, 'side': side, 'qty': quantity}, sort_keys=True, allow_nan=False)
+        key = operation if idempotency_key is None else idempotency_key
+        if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', key):
+            raise ConfigurationError('Invalid idempotency key')
+        request = json.dumps({'kind': kind, 'symbol': symbol, 'side': side, 'qty': quantity, 'sizing': sizing}, sort_keys=True, allow_nan=False)
         with self.connection(write=True) as connection:
+            digest = hashlib.sha256(request.encode()).hexdigest()
+            repeated = connection.execute('SELECT operation_id,request_hash FROM intents WHERE namespace=? AND idempotency_key=?', (self.namespace, key)).fetchone()
+            if repeated is not None:
+                if repeated['request_hash'] != digest:
+                    raise ConfigurationConflict('Idempotency key already used for a different order')
+                return str(repeated['operation_id'])
             row = connection.execute('SELECT max(version) FROM config_versions WHERE namespace=?',
                                      (self.namespace,)).fetchone()
             if row is None or row[0] is None:
                 raise StateUnavailable('Namespace requires explicit initialization')
+            if sizing == 'full_close':
+                held = connection.execute('SELECT qty FROM positions WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
+                if held is None:
+                    raise ConfigurationError('No confirmed holding to close')
+                amount = number(held[0])
+                quantity = decimal_text(amount)
+            elif sizing != 'quantity':
+                if self.mode != 'paper':
+                    raise ConfigurationError('Exchange sizing awaits its reconciled capital implementation')
+                amount = self.size_paper(connection, symbol, sizing)
+                quantity = decimal_text(amount)
             connection.execute('''INSERT INTO intents(namespace,operation_id,idempotency_key,request_hash,kind,symbol,side,
                                    requested_qty,config_version,provider_client_id) VALUES (?,?,?,?,?,?,?,?,?,?)''',
-                               (self.namespace, operation, operation, hashlib.sha256(request.encode()).hexdigest(),
+                               (self.namespace, operation, key, digest,
                                 kind, symbol, side, quantity, row[0], operation))
+            reviewed = connection.execute('SELECT price,fetched_at FROM market_prices WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
+            context = {**json.loads(request), 'reviewed_price': reviewed['price'] if reviewed else None,
+                       'reviewed_at': reviewed['fetched_at'] if reviewed else None, 'config_version': row[0]}
             event = connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
-                                       (self.namespace, operation, 'intent_queued', request))
+                                       (self.namespace, operation, 'intent_queued', json.dumps(context)))
             connection.execute('UPDATE intents SET intake_sequence=? WHERE namespace=? AND operation_id=?',
                                (event.lastrowid, self.namespace, operation))
+            if self.mode == 'paper' and self._config(connection)[1].get('paper_policy'):
+                try:
+                    if reviewed is None:
+                        raise ValueError('reviewed_price_unavailable')
+                    stamp = datetime.fromisoformat(reviewed['fetched_at'])
+                    from operations_policy import OperationsPolicy
+                    current_time = time.time() if now is None else now
+                    if stamp.tzinfo is None or not 0 <= current_time - stamp.timestamp() < OperationsPolicy().price_expiry:
+                        raise ValueError('reviewed_price_expired')
+                    self.reserve_paper(connection, operation, symbol, side, amount, Decimal(reviewed['price']), now=current_time)
+                except ValueError as error:
+                    connection.execute("UPDATE intents SET state='rejected',error_class=? WHERE namespace=? AND operation_id=?",
+                                       (str(error), self.namespace, operation))
+                    connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
+                                       (self.namespace, operation, 'paper_rejected', json.dumps({'reason': str(error)})))
         return operation
+
+    def size_paper(self, connection: sqlite3.Connection, symbol: str, mode: str) -> Decimal:
+        from decimal import ROUND_FLOOR
+        config = self._config(connection)[1]
+        policy = config.get('paper_policy')
+        prices = self._prices(connection)
+        if not policy or symbol not in prices or symbol.split('/')[1] != policy['quote']:
+            raise ConfigurationError('Explicit setup and reviewed symbol price required for sizing')
+        account = self._paper_account(connection)
+        exposure = sum((Decimal(p['qty']) * Decimal(prices[p['symbol']]['price']) for p in self._positions(connection)), Decimal(0))
+        equity = Decimal(account['balances'][policy['quote']]['total']) + exposure
+        price = Decimal(prices[symbol]['price']) * (1 + Decimal(policy['slippage_fraction']))
+        unit_cost = price * (1 + Decimal(policy['fee_fraction']))
+        budget = min(Decimal(account['balances'][policy['quote']]['available']),
+                     equity * Decimal(policy['max_allocation_fraction']),
+                     equity * Decimal(policy['max_exposure_fraction']) - exposure)
+        if mode == 'fixed':
+            budget = min(budget, Decimal(policy['fixed_quote']))
+        quantity = budget / unit_cost
+        if mode == 'risk':
+            loss = price * (Decimal(str(config['stop_loss_pct'])) + 2 * Decimal(policy['fee_fraction']) + Decimal(policy['slippage_fraction']))
+            quantity = min(quantity, equity * min(Decimal(policy['risk_fraction']), Decimal(str(config['risk']))) / loss)
+        metadata = self._scan(connection).get('market_metadata', {})
+        try:
+            market = next(s for s in metadata['symbols'] if s['baseAsset'] + '/' + s['quoteAsset'] == symbol)
+            steps = [Decimal(f['stepSize']) for f in market['filters'] if f['filterType'] in {'LOT_SIZE', 'MARKET_LOT_SIZE'} and Decimal(f['stepSize']) > 0]
+            if not steps:
+                raise ValueError('No quantity precision')
+            step = max(steps)
+            quantity = (quantity / step).to_integral_value(rounding=ROUND_FLOOR) * step
+        except (KeyError, StopIteration, ValueError) as error:
+            raise ConfigurationError('Verified quantity rules required for sizing') from error
+        if quantity <= 0:
+            raise ConfigurationError('No available capital for a valid order')
+        return quantity
+
+    def reserve_paper(self, connection: sqlite3.Connection, operation: str, symbol: str, side: str,
+                      quantity: Decimal, observed_price: Decimal, *, now: float | None = None) -> None:
+        policy = self._config(connection)[1]['paper_policy']
+        base, quote = symbol.split('/')
+        if quote != policy['quote']:
+            raise ValueError('paper_quote_mismatch')
+        if not observed_price.is_finite() or observed_price <= 0:
+            raise ValueError('invalid_price')
+        price = observed_price * (1 + Decimal(policy['slippage_fraction']) * (1 if side == 'buy' else -1))
+        amount = quantity * price * (1 + Decimal(policy['fee_fraction'])) if side == 'buy' else quantity
+        asset = quote if side == 'buy' else base
+        account = self._paper_account(connection, exclude_operation=operation)
+        if amount > Decimal(account['balances'].get(asset, {}).get('available', '0')):
+            raise ValueError('insufficient_paper_assets')
+        if side == 'buy':
+            if account['entry_blocked']:
+                raise ValueError(account['entry_block_reason'])
+            now = time.time() if now is None else now
+            cooldown = connection.execute('SELECT last_event_at FROM cooldowns WHERE namespace=? AND symbol=?', (self.namespace, symbol)).fetchone()
+            if cooldown is not None and now - datetime.fromisoformat(cooldown[0]).timestamp() < max(policy['cooldown_seconds'], self._config(connection)[1]['cooldown']):
+                raise ValueError('entry_cooldown')
+            positions = self._positions(connection)
+            slots = {p['symbol'] for p in positions}
+            slots.update(row[0] for row in connection.execute("SELECT i.symbol FROM reservations r JOIN intents i ON i.namespace=r.namespace AND i.operation_id=r.operation_id WHERE r.namespace=? AND r.state='active' AND i.side='buy' AND i.operation_id!=?", (self.namespace, operation)))
+            if symbol not in slots and len(slots) >= min(policy['max_positions'], self._config(connection)[1]['max_positions']):
+                raise ValueError('position_capacity_exceeded')
+            prices = self._prices(connection)
+            exposure = Decimal(0)
+            for position in positions:
+                if position['basis_status'] != policy['model'] or position['symbol'].split('/')[1] != quote:
+                    raise ValueError('paper_history_review_required')
+                if position['symbol'] not in prices:
+                    raise ValueError('held_price_unavailable')
+                exposure += Decimal(position['qty']) * Decimal(prices[position['symbol']]['price'])
+            equity = Decimal(account['balances'][quote]['total']) + exposure
+            pending = sum((Decimal(row[0]) for row in connection.execute("SELECT r.amount FROM reservations r JOIN intents i ON i.namespace=r.namespace AND i.operation_id=r.operation_id WHERE r.namespace=? AND r.state='active' AND i.side='buy' AND r.operation_id!=?", (self.namespace, operation))), Decimal(0))
+            if amount > equity * Decimal(policy['max_allocation_fraction']):
+                raise ValueError('allocation_cap_exceeded')
+            if exposure + pending + quantity * price > equity * Decimal(policy['max_exposure_fraction']):
+                raise ValueError('exposure_cap_exceeded')
+            stop = Decimal(str(self._config(connection)[1]['stop_loss_pct']))
+            loss = quantity * price * (stop + 2 * Decimal(policy['fee_fraction']) + Decimal(policy['slippage_fraction']))
+            if loss > equity * Decimal(policy['risk_fraction']):
+                raise ValueError('trade_risk_cap_exceeded')
+        connection.execute('INSERT INTO reservations VALUES (?,?,?,?,?) ON CONFLICT(namespace,operation_id,asset) DO UPDATE SET amount=excluded.amount,state=excluded.state',
+                           (self.namespace, operation, asset, decimal_text(amount), 'active'))
 
     def operations(self) -> list[dict[str, Any]]:
         with self.connection() as connection:
@@ -316,6 +452,7 @@ class StateStore:
                     value = Decimal(row[field])
                     if not value.is_finite() or value <= 0:
                         raise StateUnavailable('Invalid durable position')
+                    row[field] = decimal_text(value)
         except InvalidOperation as error:
             raise StateUnavailable('Invalid durable position') from error
         return rows
@@ -394,6 +531,106 @@ class StateStore:
             raise StateUnavailable('Invalid durable scan')
         return values
 
+    def setup_paper(self, values: dict[str, Any], actor: str, *, expected_version: int) -> None:
+        from paper_policy import validated_policy
+        if self.mode != 'paper':
+            raise ConfigurationError('Paper setup cannot fund exchange state')
+        policy = validated_policy(values)
+        with self.connection(write=True) as connection:
+            version, config = self._config(connection)
+            if version != expected_version:
+                raise ConfigurationConflict('Configuration changed; review before paper setup')
+            previous = config.get('paper_policy')
+            if previous and any(previous[k] != policy[k] for k in ('quote', 'initial_cash')):
+                raise ConfigurationConflict('Paper seed and quote are immutable; use a new isolated account')
+            if not previous:
+                connection.execute('INSERT INTO balance_movements VALUES (?,?,?,?,?,?)',
+                                   (self.namespace, 'paper-seed', policy['quote'], policy['initial_cash'],
+                                    'paper_seed', datetime.now(timezone.utc).isoformat()))
+            config['paper_policy'] = policy
+            config['cooldown'] = policy['cooldown_seconds']
+            connection.execute('INSERT INTO config_versions(namespace,version,values_json,actor) VALUES (?,?,?,?)',
+                               (self.namespace, version + 1, json.dumps(config, sort_keys=True), actor))
+            connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                               (self.namespace, 'paper_setup', json.dumps({'version': version + 1, 'actor': actor, 'model': policy['model']})))
+
+    def cancel_paper(self, operation: str, actor: str) -> None:
+        if self.mode != 'paper':
+            raise ConfigurationError('Paper cancellation cannot affect exchange orders')
+        with self.connection(write=True) as connection:
+            row = connection.execute('SELECT state FROM intents WHERE namespace=? AND operation_id=?', (self.namespace, operation)).fetchone()
+            if row is None:
+                raise ConfigurationError('Unknown paper operation')
+            if row[0] == 'canceled':
+                return
+            if row[0] not in {'queued', 'waiting_for_setup', 'waiting_for_market_data'}:
+                raise ConfigurationConflict('Operation is terminal or executing; cancellation cannot undo a fill')
+            connection.execute("UPDATE intents SET state='canceled' WHERE namespace=? AND operation_id=?", (self.namespace, operation))
+            connection.execute("UPDATE reservations SET state='released' WHERE namespace=? AND operation_id=?", (self.namespace, operation))
+            connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
+                               (self.namespace, operation, 'paper_canceled', json.dumps({'actor': actor})))
+
+    def _fills(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
+        rows = [dict(row) for row in connection.execute('SELECT fill_id,operation_id,symbol,side,qty,price,quote_cost,fee_amount,fee_asset,profile,created_at FROM fills WHERE namespace=? ORDER BY rowid', (self.namespace,))]
+        for row in rows:
+            for field in ('qty', 'price', 'quote_cost', 'fee_amount'):
+                if row[field] is not None:
+                    value = Decimal(row[field])
+                    if not value.is_finite() or value < 0 or (field in {'qty', 'price'} and value == 0):
+                        raise StateUnavailable('Invalid confirmed fill')
+                    row[field] = decimal_text(value)
+        return rows
+
+    def _paper_account(self, connection: sqlite3.Connection, *, exclude_operation: str = "") -> dict[str, Any]:
+        if self.mode != 'paper':
+            return {'state': 'not_applicable', 'balances': {}}
+        policy = self._config(connection)[1].get('paper_policy')
+        totals: dict[str, Decimal] = {}
+        for row in connection.execute('SELECT asset,amount FROM balance_movements WHERE namespace=?', (self.namespace,)):
+            amount = Decimal(row['amount'])
+            if not amount.is_finite():
+                raise StateUnavailable('Invalid paper balance movement')
+            totals[row['asset']] = totals.get(row['asset'], Decimal(0)) + amount
+        reserved: dict[str, Decimal] = {}
+        for row in connection.execute("SELECT asset,amount FROM reservations WHERE namespace=? AND state='active' AND operation_id!=?", (self.namespace, exclude_operation)):
+            reserved[row['asset']] = reserved.get(row['asset'], Decimal(0)) + Decimal(row['amount'])
+        for asset, total in totals.items():
+            if not total.is_finite() or total < 0 or not reserved.get(asset, Decimal(0)).is_finite() or not 0 <= reserved.get(asset, Decimal(0)) <= total:
+                raise StateUnavailable('Invalid paper balances or reservations')
+        equity = Decimal(totals.get(policy['quote'], Decimal(0))) if policy else Decimal(0)
+        incomplete = False
+        for position in self._positions(connection):
+            price = connection.execute('SELECT price FROM market_prices WHERE namespace=? AND symbol=?', (self.namespace, position['symbol'])).fetchone()
+            if not policy or position['basis_status'] != policy['model'] or price is None or position['symbol'].split('/')[1] != policy['quote']:
+                incomplete = True
+            else:
+                equity += Decimal(position['qty']) * Decimal(price[0])
+        peak = Decimal(policy['initial_cash']) if policy else Decimal(0)
+        for row in connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='paper_risk_checkpoint'", (self.namespace,)):
+            peak = max(peak, Decimal(json.loads(row[0])['equity']))
+        peak = max(peak, equity)
+        drawdown = (peak - equity) / peak if peak else Decimal(0)
+        halted = connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='paper_entry_stop' LIMIT 1", (self.namespace,)).fetchone() is not None
+        reason = 'paper_history_review_required' if incomplete else 'drawdown_limit' if policy and drawdown >= Decimal(policy['drawdown_fraction']) else 'entry_halted' if halted else None
+        return {'state': 'configured' if policy else 'setup_required', 'policy': policy,
+                'entry_blocked': bool(reason) or not policy, 'entry_block_reason': reason or ('setup_required' if not policy else None),
+                'equity': None if incomplete or not policy else decimal_text(equity),
+                'peak_equity': None if incomplete or not policy else decimal_text(peak),
+                'drawdown': None if incomplete or not policy else decimal_text(drawdown),
+                'balances': {asset: {'total': decimal_text(total), 'reserved': decimal_text(reserved.get(asset, Decimal(0))),
+                                     'available': decimal_text(total - reserved.get(asset, Decimal(0)))} for asset, total in totals.items()}}
+
+    def record_paper_risk(self, connection: sqlite3.Connection) -> None:
+        account = self._paper_account(connection)
+        if account.get('equity') is None:
+            return
+        connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                           (self.namespace, 'paper_risk_checkpoint', json.dumps({'equity': account['equity']})))
+        if account.get('entry_block_reason') == 'drawdown_limit':
+            connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                               (self.namespace, 'paper_entry_stop', json.dumps({'reason': 'drawdown_limit'})))
+
+
     def snapshot(self) -> dict[str, Any]:
         """One committed observation for an entire HTTP request, including joins."""
         with self.connection() as connection:
@@ -403,4 +640,4 @@ class StateStore:
                     'positions': self._positions(connection), 'operations': self._operations(connection),
                     'migration': self._migration(connection), 'ownership': self._ownership(connection),
                     'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
-                    'position_rules': self._position_rules(connection)}
+                    'fills': self._fills(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection)}

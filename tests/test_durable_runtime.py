@@ -87,6 +87,7 @@ def test_explicit_owner_commits_paper_fill_visible_to_both_http_workers(tmp_path
 def test_exact_decimal_close_does_not_leave_a_float_rounding_remainder() -> None:
     with LegacySandbox() as sandbox:
         sandbox.seed_price('BTC/USDT', 100.0)
+        sandbox.exchange.market_filters['BTC/USDT'] = [{'filterType': 'LOT_SIZE', 'minQty': '0.000000000000000001', 'maxQty': '100000', 'stepSize': '0.000000000000000001'}]
         quantity = '0.123456789123456789'
         sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': quantity})
         assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == quantity
@@ -107,8 +108,10 @@ def test_queued_paper_orders_follow_intake_order_instead_of_random_identity() ->
         with ExecutionWorker(sandbox.module.state_store) as worker:
             worker.process_pending()
         state = sandbox.client.get('/api/status').get_json()
-        assert state['positions'] == []
-        assert all(operation['state'] == 'filled' for operation in state['operations'])
+        assert state['positions'][0]['qty'] == '4'
+        assert [o['side'] for o in state['operations']] == ['buy', 'sell'] * 4
+        assert [o['state'] for o in state['operations']] == ['filled', 'rejected'] * 4
+        # A pending buy is not an available holding for another queued sell.
 
 
 def test_mainnet_and_testnet_namespaces_do_not_share_positions_or_config(tmp_path: Path) -> None:
@@ -194,6 +197,8 @@ def test_failed_fill_commit_survives_restart_as_one_recoverable_intent(tmp_path:
         state = sandbox.client.get('/api/status').get_json()
         assert state['positions'] == []
         assert state['operations'][0]['state'] == 'queued'
+        assert state['fills'] == []
+        assert state['paper_account']['balances']['USDT'] == {'total': '10000', 'reserved': '200', 'available': '9800'}
     with LegacySandbox(tmp_path) as restarted:
         restarted.run_owner()
         restarted.run_owner()

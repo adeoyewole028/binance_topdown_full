@@ -79,3 +79,7 @@ APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippag
 Implement only this ticket’s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.
 
 BT05 started after live issue/comments/native dependency inspection; pre-ticket review point `2b77b6dbb786fbd6e7162b84d4c4e0c1d7b8d6bf`. All five criteria remain open pending implementation, checks, review, evidence and scoped commit. Approved HTTP/owned-executor/fixture-provider seam carries forward.
+
+## Pre-review implementation status
+
+Current BT05 implementation and criterion mapping are in `docs/planning/trading-remediation/evidence/bt05-validation.md`; runbook `docs/paper-execution.md`. Initial full173passes/2strictBT06xfails; subsequent paper40+one seed canonicalization check pass; type32/lint/22-source compile pass. Independent review and final full evidence remain required; no criterion is marked complete yet. Account setup and all numerical values exist only in temporary offline tests; no actual account funding or provider/deployment change.

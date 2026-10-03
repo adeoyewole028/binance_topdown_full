@@ -1,0 +1,51 @@
+{
+  "ticket": "BT05",
+  "scope": "offline behavior and safety checks; not deployed/provider acceptance",
+  "source_revision": "2259fc0b1064c3f7380d426e66021a4d08e2c4f7",
+  "python": "3.11.3",
+  "dependencies": {
+    "ccxt": "4.5.3",
+    "pandas": "2.3.2",
+    "Flask": "3.1.2",
+    "gunicorn": "23.0.0",
+    "python-dotenv": "1.1.1",
+    "pytest": "8.4.2",
+    "pyflakes": "3.4.0",
+    "mypy": "1.18.2"
+  },
+  "source_sha256": {
+    "dashboard.py": "1fe817d826ba44900101a12a2f3fd0ced01fb42cf5783a85f145bf010f7db44c",
+    "topdown_daemon.py": "7f2e0f4d9b773cea3998864b989a5273e76d983af08128d3dbeb1aa9f729c147",
+    "backtester.py": "5871f8cefdb9ccbb6d07c98fe43fb417ba7350fa2580116b73d2e31e5167f5d2",
+    "utils.py": "25f983276908426bd065e3c2f2ff515c121e071f8328f119b67183a12880ddb6",
+    "operator_security.py": "4c53cdfafb86e9767149235e6aabe689cec4429f5bf9d7f9ab823a98c8f23554",
+    "runtime_environment.py": "e6abb4a2264f2cf9c913cc2f33947e291ab3fa51b4bc0f5f0f8f176c319f36ee",
+    "wsgi.py": "fc95f37fa77935b551363780ea58be4aaec25b0041c20a1f6a5db0f19b3d507f",
+    "run_scanner.py": "1a15a2c1deb73b308962063352ba80c16bf760c2c311e2dd7047d1df00432c3c",
+    "gunicorn.conf.py": "b20b3fde0d21d1426470da38b508920031afd510243d7840db17ba5f6ca36dd6",
+    "state_store.py": "7972b1134b142f8700e33d3e3e073aa98a3c5ca50a00c3c7a72772cb69b4d27f",
+    "execution_owner.py": "e75c568b84c7e63f2fb108c48fe209cb6e4eeb7aa9579ec53b2bb2720a40ecd3",
+    "execution_worker.py": "bd81a1858e2469637d929fd8287ca34cd1bd74e4fe581a29167e6fd86e3a6799",
+    "state_admin.py": "1a6bcdcdfc249a1bfbdbfc6985a353737bab5ab7842496bc990e9ffda493e25e",
+    "manage_state.py": "174bac416dd8c2a3f66c5f9c34f1ed9324258c4f4d19eaa7d84e91d5fc3afd82",
+    "run_worker.py": "d1bff4c87583fc109918a24bd589f5b18970a261dfae372c34bde074f5c85b85",
+    "configuration.py": "8a03eda1ecd2ae7819aa8babe53d7e6081a14c2eba745ba2b6046abc79f54b57",
+    "operations_policy.py": "016b06583917483f197f47b1aac45c47d1aa0a3e2546bebe1ab09af62f8ef7d2",
+    "market_runtime.py": "75eed132a3b74b924ca6076259a73c3ad305bcce9a55a664433141bc42bda7c9",
+    "market_adapter.py": "1e2057fdc7f75c5ae2402c9019c847d6f3ed64ad70e3b0d278b5d0092c4a40aa",
+    "request_budget.py": "bc6bea4e3609cf262af9717d5321bc8da5b6a2ae18cec90b07f9e5c4a836fc5a",
+    "paper_policy.py": "4d9457cbbece856e7ab6bc183b78db4097f04110dc1c65d4dc401d8c3f2e03be",
+    "paper_filters.py": "1c131cf4a19122c89fb230aeb732f441ae12cc2191c59e0580264d0fc92fd759"
+  },
+  "fixture_sha256": "efb98e3182c57acc67c6a5f60cb02fc7af87610754da8ef094e5afc308d8b93b",
+  "tests": 175,
+  "passed": 173,
+  "known_defects_expected_failure": [
+    "test_duplicate_operation_has_one_exchange_effect",
+    "test_confirmed_exchange_fill_is_visible_to_operator"
+  ],
+  "failures": 0,
+  "other_skips": 0,
+  "pytest_exit_code": 0,
+  "boundaries": "Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; unmodified normal imports; explicit guarded launch checks."
+}

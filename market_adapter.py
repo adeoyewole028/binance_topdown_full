@@ -20,8 +20,12 @@ class BinancePublicMarket:
     def _get(self, method: str, params: dict[str, Any] | None = None) -> Any:
         try:
             self.exchange.last_response_headers = None
+            if method == 'public_get_referenceprice' and not hasattr(self.exchange, method):
+                return self.exchange.request('referencePrice', 'public', 'GET', params or {})
             return getattr(self.exchange, method)(params or {})
         except Exception as error:
+            if method == 'public_get_referenceprice' and '-2043' in str(error):
+                return {'referencePrice': None}
             name = type(error).__name__
             kind = 'data_quality'
             if name in {'AuthenticationError', 'PermissionDenied', 'AccountSuspended'}:
@@ -51,6 +55,12 @@ class BinancePublicMarket:
         names = {raw: normalized for normalized, raw in self.symbols.items()}
         return {names[row['symbol']]: {'last': float(row['lastPrice']), 'quoteVolume': float(row['quoteVolume'])}
                 for row in rows if row['symbol'] in names}
+
+    def reference_price(self, symbol: str) -> dict[str, Any]:
+        return dict(self._get('public_get_referenceprice', {'symbol': self.symbols[symbol]}))
+
+    def average_price(self, symbol: str) -> dict[str, Any]:
+        return dict(self._get('public_get_avgprice', {'symbol': self.symbols[symbol]}))
 
     def candles(self, symbol: str, timeframe: str, limit: int) -> list[list[float]]:
         rows = self._get('public_get_klines', {'symbol': self.symbols[symbol], 'interval': timeframe, 'limit': limit})

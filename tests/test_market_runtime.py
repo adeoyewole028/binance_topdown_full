@@ -12,7 +12,9 @@ class MarketFixture:
         self.calls: list[tuple[str, str]] = []
         self.bad_candles = False
         self.fail_prices = False
-        self.symbols = [{'symbol': 'BTCUSDT', 'baseAsset': 'BTC', 'quoteAsset': 'USDT', 'status': 'TRADING', 'isSpotTradingAllowed': True}]
+        self.symbols = [{'symbol': 'BTCUSDT', 'baseAsset': 'BTC', 'quoteAsset': 'USDT', 'status': 'TRADING', 'isSpotTradingAllowed': True, 'orderTypes': ['MARKET'],
+                         'filters': [{'filterType': 'LOT_SIZE', 'minQty': '0.001', 'maxQty': '100000', 'stepSize': '0.001'},
+                                     {'filterType': 'MIN_NOTIONAL', 'minNotional': '5', 'applyToMarket': True, 'avgPriceMins': 0}]}]
         self.prices = {'BTC/USDT': {'last': 100.0, 'quoteVolume': 20000000.0}}
         self.ticker_calls = 0
         self.metadata_calls = 0
@@ -22,6 +24,12 @@ class MarketFixture:
         return {'serverTime': int(self.now * 1000), 'rateLimits': [
             {'rateLimitType': 'REQUEST_WEIGHT', 'interval': 'MINUTE', 'intervalNum': 1, 'limit': 1000}],
             'symbols': self.symbols}
+
+    def reference_price(self, symbol: str) -> dict[str, Any]:
+        return {'referencePrice': None}
+
+    def average_price(self, symbol: str) -> dict[str, Any]:
+        return {'mins': 5, 'price': str(self.prices[symbol]['last'])}
 
     def tickers(self, symbols: list[str] | None = None) -> dict[str, Any]:
         self.ticker_calls += 1
@@ -262,7 +270,7 @@ def test_research_cannot_consume_the_reserved_reconciliation_capacity() -> None:
                     count += 1
                 except BudgetDeferred:
                     break
-            assert count == 4
+            assert count == 1
             replacement = MarketRuntime(owner, provider, clock=clock)
             result = replacement.budget.request('reconciliation', 80, provider.tickers)
             assert result['BTC/USDT']['last'] == 100
@@ -288,11 +296,14 @@ def test_quote_and_universe_filters_preserve_held_and_pending_coverage() -> None
                                          'status': 'TRADING', 'isSpotTradingAllowed': True})
                 provider.prices[base + '/USDC'] = {'last': 100.0, 'quoteVolume': 20000000.0}
             sandbox.post('/update-config', data={'base_quote': 'USDC', 'min_quote_vol': '999999999'})
-            sandbox.client.post('/trade', data={'symbol': 'DOGE/USDC', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+            provider.symbols.append({'symbol': 'DOGEUSDT', 'baseAsset': 'DOGE', 'quoteAsset': 'USDT', 'status': 'TRADING', 'isSpotTradingAllowed': True})
+            provider.prices['DOGE/USDT'] = {'last': 100.0, 'quoteVolume': 20000000.0}
+            owner.publish_prices({'DOGE/USDT': 100})
+            sandbox.client.post('/trade', data={'symbol': 'DOGE/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
             scanner.scan_once()
             state = sandbox.client.get('/api/status').get_json()
             assert state['universe'] == ['ETH/USDC']
-            assert state['market_health']['coverage'] == ['BTC/USDT', 'DOGE/USDC', 'ETH/USDC']
+            assert state['market_health']['coverage'] == ['BTC/USDT', 'DOGE/USDT', 'ETH/USDC']
             assert state['market_health']['execution_ready'] is True
 
 
@@ -340,6 +351,9 @@ def test_public_spot_adapter_and_existing_evaluator_use_only_owned_completed_dat
         def public_get_ticker_24hr(self, params: dict[str, Any]) -> list[dict[str, Any]]:
             self.calls.append('ticker24hr')
             return [{'symbol': 'BTCUSDT', 'lastPrice': str(provider.prices['BTC/USDT']['last']), 'quoteVolume': '20000000'}]
+        def public_get_referenceprice(self, params: dict[str, Any]) -> dict[str, Any]:
+            self.calls.append('referencePrice')
+            return {'referencePrice': None}
         def public_get_klines(self, params: dict[str, Any]) -> list[list[float]]:
             self.calls.append('klines')
             return provider.candles('BTC/USDT', params['interval'], params['limit'])
@@ -360,7 +374,7 @@ def test_public_spot_adapter_and_existing_evaluator_use_only_owned_completed_dat
             state = sandbox.client.get('/api/status').get_json()
             assert state['positions'][0]['qty'] == '1'
             assert 'take_profit' in state['exit_signals'][0]['reasons']
-            assert state['position_rules']['BTC/USDT']['config_version'] == 1
+            assert state['position_rules']['BTC/USDT']['config_version'] == 2
             assert state['market_health']['execution_ready'] is True
             assert transport.calls[:2] == ['exchangeInfo', 'time']
             assert sandbox.network_attempts == 0
@@ -549,6 +563,7 @@ def test_slow_history_fetch_never_freshens_the_earlier_ticker_observation() -> N
             assert state['market_health']['execution_ready'] is False
             assert state['positions'] == []
             scanner.refresh_prices()
+            sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
             owner.process_pending()
             assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == '1'
 

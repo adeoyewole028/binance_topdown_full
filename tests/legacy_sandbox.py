@@ -36,6 +36,7 @@ class FakeExchange:
     def __init__(self) -> None:
         self.holdings: dict[str, float] = {}
         self.prices: dict[str, float] = {}
+        self.market_filters: dict[str, list[dict[str, Any]]] = {}
         self.orders: list[dict[str, Any]] = []
         self.sandbox = False
 
@@ -63,11 +64,19 @@ class FakeExchange:
         return {'serverTime': int(time.time() * 1000), 'rateLimits': [
             {'rateLimitType': 'REQUEST_WEIGHT', 'interval': 'MINUTE', 'intervalNum': 1, 'limit': 100000}],
             'symbols': [{'symbol': s.replace('/', ''), 'baseAsset': s.split('/')[0], 'quoteAsset': s.split('/')[1],
-                         'status': 'TRADING', 'isSpotTradingAllowed': True} for s in self.prices]}
+                         'status': 'TRADING', 'isSpotTradingAllowed': True, 'orderTypes': ['MARKET'],
+                         'filters': self.market_filters.get(s, [{'filterType': 'LOT_SIZE', 'minQty': '0.001', 'maxQty': '100000', 'stepSize': '0.001'},
+                                     {'filterType': 'MIN_NOTIONAL', 'minNotional': '5', 'applyToMarket': True, 'avgPriceMins': 0}])} for s in self.prices]}
 
     def tickers(self, symbols: list[str] | None = None) -> dict[str, Any]:
         return {s: {'last': p, 'quoteVolume': 20000000.0} for s, p in self.prices.items()
                 if symbols is None or s in symbols}
+
+    def reference_price(self, symbol: str) -> dict[str, Any]:
+        return {'referencePrice': None}
+
+    def average_price(self, symbol: str) -> dict[str, Any]:
+        return {'mins': 5, 'price': str(self.prices[symbol])}
 
     def candles(self, symbol: str, timeframe: str, limit: int) -> list[list[float]]:
         duration = {'4h': 14400, '1h': 3600, '15m': 900}[timeframe]
@@ -79,7 +88,7 @@ class FakeExchange:
 
 class LegacySandbox:
     def __init__(self, data_directory: Path | None = None, *, authenticated: bool = True,
-                 environment: dict[str, str] | None = None) -> None:
+                 environment: dict[str, str] | None = None, paper_setup: bool = True) -> None:
         self.stack = ExitStack()
         self.provided_directory = data_directory
         self.exchange = FakeExchange()
@@ -96,6 +105,7 @@ class LegacySandbox:
         self.authenticated = authenticated
         self.environment = environment or {}
         self.csrf = ''
+        self.paper_setup = paper_setup
 
     def __enter__(self) -> Self:
         try:
@@ -134,6 +144,11 @@ class LegacySandbox:
             runtime = RuntimeEnvironment.from_mapping(os.environ)
             store = StateStore(runtime.data_directory, os.getenv('LOCAL_ACCOUNT_ID', 'operator-account'), runtime.venue, runtime.mode)
             store.provision(self.module.environment_defaults(os.environ))
+            if self.paper_setup and store.mode == 'paper' and not store.config()[1].get('paper_policy'):
+                store.setup_paper({'quote': 'USDT', 'initial_cash': '10000', 'fee_fraction': '0', 'slippage_fraction': '0',
+                                   'risk_fraction': '1', 'fixed_quote': '100', 'max_allocation_fraction': '1',
+                                   'max_exposure_fraction': '1', 'max_positions': '100', 'cooldown_seconds': '0',
+                                   'drawdown_fraction': '1'}, 'explicit-offline-fixture', expected_version=store.config()[0])
             # Validated public-provider fixtures now accompany ordinary paper
             # orders. This keeps prior acceptance exercising fills, not safety bypasses.
             from execution_worker import ExecutionWorker
