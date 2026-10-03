@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** open; BT10 implementation in progress; all five acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce reproducible historical trade/equity results that cannot see future bars or silently omit requested data.
 **Blocked by:** [BT07 #9](https://github.com/adeoyewole028/binance_topdown_full/issues/9), [BT08 #10](https://github.com/adeoyewole028/binance_topdown_full/issues/10).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -72,3 +72,8 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 
 APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippage/cooldown/drawdown inputs before paper trading; deterministic full paper fills, quote-currency fees, weighted-average cost basis, adverse slippage and gap prices, stop first when both stop/profit targets touch one candle. Exchange-supported stop-market protection; refuse unsupported symbols; re-protect confirmed remaining holdings after partial closes; failed/uncertain protection blocks entries; automatic emergency liquidation and trailing remain disabled.
 Implement only this ticket’s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.
+
+
+## BT10 start (2026-10-03)
+
+Live#12 OPEN/0comments/native#9/#10 bothCLOSED verified afterBT09 closure. Sole active ticket; fixedreviewpoint`9853710e3da1111a0f4ea0e3e0c96a04abe623c4`. D05 bothrules/explicitallcapitalinputs approved; D04 bothprofiles. Approved pure completedbar/asof/config/position evaluator/replay seam and fake paginated public adapter; no profit optimization or livefidelity claim. All fivecriteriaopen. Next:paginated warmup/range/coverage tracers, then causal next-event portfolio/exits/provenance and strict CLI/research budget gate. No later-ticket code or actual provider/credential/funding/trade/deployment/push.

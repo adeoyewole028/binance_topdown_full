@@ -4,7 +4,7 @@ Date: 2026-10-02. Source revision: a71999a136b2532e4c84ce53564a98efcf9a77fb.
 
 ## Current stage
 
-Research/discovery, approved specification and all 16 dependency-ordered GitHub tickets exist. D01-D07 choices, including both D05 rules and explicit operator setup, are approved and recorded. BT01-BT09 are CLOSED with local acceptance/review/commit evidence and verified tracker read-back. BT09 #11 closed/read-back verified2026-10-03T16:21:25Z; BT10 #12 is next permitted ticket after live inspection; no later ticket has started. Actual provider acceptance, deployment and trading remain separate future gates. No real provider/funding/trade/migration/deployment/push has occurred.
+Research/discovery, approved specification and all 16 dependency-ordered GitHub tickets exist. D01-D07 choices, including both D05 rules and explicit operator setup, are approved and recorded. BT01-BT09 are CLOSED with local acceptance/review/commit evidence and verified tracker read-back. BT09 #11 closed/read-back verified2026-10-03T16:21:25Z; BT10 #12 is the sole active ticket after verified live inspection; no later ticket has started. Actual provider acceptance, deployment and trading remain separate future gates. No real provider/funding/trade/migration/deployment/push has occurred.
 
 Approval evidence: the user replied "approve" to the explicit request to approve the two test boundaries and ticket granularity/dependency breakdown. It supplies that approval once; do not ask for it again. The subsequent user instruction "go on" authorized continuation; the agent announced and used the existing repository GitHub Issues destination. It also does not supply D05 and D07 policy selections or rollout authorization.
 
@@ -235,3 +235,8 @@ All five criteria pass at4f83d79:296fullpass/0failures/skips/xfails217.77s,type4
 
 
 BT09#11 CLOSED at2026-10-03T16:21:25Z; full body/state read-back matches approved local mirror. Evidence commit47fec15, source4f83d79. Parent#2 remainsOPEN. Next permitted step:inspectBT10#12 livebody/comments/native#9/#10 blockers, capture clean fixedpoint, then implementBT10 alone. No actual provider/trading/activation/deployment/push.
+
+
+## BT10 start (2026-10-03)
+
+Live#12 OPEN/0comments/native#9/#10 CLOSED verified. BT09 closed; BT10 sole active ticket; fivecriteriaopen. Fixedpoint9853710e3da1111a0f4ea0e3e0c96a04abe623c4. D04/D05 approved, explicit capital/risk assumptions required. Next:fake public pagination/warmup/coverage TDD, then pure causal replay/portfolio and explicit research CLI, full review/checks/evidence. No futureticket or actualprovider/activation.
