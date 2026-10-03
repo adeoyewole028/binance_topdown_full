@@ -3,7 +3,7 @@ from pathlib import Path
 
 from tests.legacy_sandbox import LegacySandbox
 import sqlite3
-from typing import Literal
+from typing import Any, Literal
 import uuid
 from unittest.mock import patch
 
@@ -382,3 +382,39 @@ def test_backup_metadata_cannot_conceal_missing_newer_journal_effects(tmp_path: 
             restore_state(sandbox.module.state_store, backup, tmp_path / 'stale-candidate')
         assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == '1'
         assert not (tmp_path / 'stale-candidate').exists()
+
+
+def test_status_uses_one_snapshot_when_fill_commits_between_database_reads(tmp_path: Path) -> None:
+    from execution_worker import ExecutionWorker
+    with LegacySandbox(tmp_path) as sandbox:
+        sandbox.seed_price('BTC/USDT', 100)
+        sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+        # Public DB-API fault boundary: release the first read, commit an owner
+        # effect, then continue HTTP observation. Assertions stay at HTTP.
+        injected = False
+        with ExecutionWorker(sandbox.module.state_store) as owner:
+            class InterleavingRead(sqlite3.Connection):
+                read_positions = False
+                def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
+                    if 'SELECT symbol,qty,entry,basis_status FROM positions' in sql:
+                        self.read_positions = True
+                    return super().execute(sql, parameters)
+                def close(self) -> None:
+                    nonlocal injected
+                    super().close()
+                    if self.read_positions and not injected:
+                        injected = True
+                        with patch('sqlite3.connect', connect):
+                            owner.process_pending()
+            connect = sqlite3.connect
+            def interleaving_connect(database: str, *, timeout: float = 5,
+                                     isolation_level: Literal['DEFERRED', 'EXCLUSIVE', 'IMMEDIATE'] | None = None,
+                                     uri: bool = False) -> sqlite3.Connection:
+                return connect(database, timeout=timeout, isolation_level=isolation_level, uri=uri, factory=InterleavingRead)
+            with patch('sqlite3.connect', interleaving_connect):
+                state = sandbox.client.get('/api/status').get_json()
+            assert injected
+            assert state['open_positions'] == []
+            assert state['positions'] == []
+            assert state['operations'][0]['state'] == 'queued'
+        assert sandbox.client.get('/api/status').get_json()['positions'][0]['qty'] == '1'

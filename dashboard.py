@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response
+from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response, g
 import time
 import os
 import pandas as pd
@@ -254,9 +254,9 @@ def refresh_durable_state():
     if request.endpoint in {'operator_login', 'logout'} or state_store is None:
         return None
     try:
-        status.update(state_store.scan())
-        status['config_version'], status['config'] = state_store.config()
-        status['open_positions'] = display_positions(state_store.positions())
+        snapshot = state_store.snapshot()
+        g.operator_status = {**status, **snapshot.pop('scan'), **snapshot}
+        g.operator_status['open_positions'] = display_positions(snapshot['positions'])
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; execution paused'), 503
     return None
@@ -424,7 +424,7 @@ def trade():
     symbol = request.form.get('symbol')
     side = request.form.get('side')
     qty = request.form.get('qty')
-    if not status['config']['paper_trading']:
+    if not g.operator_status['config']['paper_trading']:
         try:
             require_exchange_execution()
         except ValueError:
@@ -440,7 +440,7 @@ def trade():
 def close_position():
     symbol = request.form.get('symbol')
     qty = request.form.get('qty')
-    if not status['config']['paper_trading']:
+    if not g.operator_status['config']['paper_trading']:
         try:
             require_exchange_execution()
         except ValueError:
@@ -448,7 +448,7 @@ def close_position():
     # Preserve the canonical decimal boundary; display floats are estimates.
     q = qty
     if not q:
-        q = next((p['qty'] for p in state_store.positions() if p['symbol'] == symbol), '0')
+        q = next((p['qty'] for p in g.operator_status['positions'] if p['symbol'] == symbol), '0')
     try:
         operation = state_store.enqueue('close', symbol, 'sell', str(q))
     except StateUnavailable:
@@ -459,22 +459,23 @@ def close_position():
 @app.route('/api/status', methods=['GET'])
 def api_status():
     # Minimal JSON for static frontends; includes signals, positions, performance, config (non-secret)
+    observed = g.operator_status
     payload = {
-        'last_scan': status['last_scan'],
-        'universe': status['universe'],
-        'signals': status['signals'],
-        'exit_signals': status['exit_signals'],
-        'open_positions': status['open_positions'],
-        'performance': status['performance'],
-        'config': status['config'],
-        'live_prices': status['live_prices'],
-        'execution_mode': 'paper' if status['config']['paper_trading'] else 'exchange',
+        'last_scan': observed['last_scan'],
+        'universe': observed['universe'],
+        'signals': observed['signals'],
+        'exit_signals': observed['exit_signals'],
+        'open_positions': observed['open_positions'],
+        'performance': observed['performance'],
+        'config': observed['config'],
+        'live_prices': observed['live_prices'],
+        'execution_mode': 'paper' if observed['config']['paper_trading'] else 'exchange',
         'venue': runtime_environment.venue if runtime_environment else 'unconfigured',
         'exchange_allowed': runtime_environment.allow_exchange if runtime_environment else False,
-        'operations': state_store.operations(),
-        'positions': state_store.positions(),
-        'migration': state_store.migration(),
-        'ownership': state_store.ownership(),
+        'operations': observed['operations'],
+        'positions': observed['positions'],
+        'migration': observed['migration'],
+        'ownership': observed['ownership'],
     }
     resp = make_response(jsonify(payload), 200)
     return resp
@@ -484,17 +485,17 @@ def update_config():
     # Build dict from form fields, then coerce types
     form = request.form.to_dict(flat=True)
     # Absence always means preserve; safety mode is a separate reviewed action.
-    updates = {k: v for k, v in form.items() if k in status['config']}
+    updates = {k: v for k, v in form.items() if k in g.operator_status['config']}
     if 'paper_trading' in updates:
         try:
-            if parse_boolean(updates['paper_trading']) != status['config']['paper_trading']:
+            if parse_boolean(updates['paper_trading']) != g.operator_status['config']['paper_trading']:
                 return jsonify(error='Use a reviewed execution mode transition'), 409
         except ValueError:
             return jsonify(error='Invalid execution mode'), 400
     coerced = coerce_config_types(updates)
     # Merge into status
     try:
-        status['config_version'], status['config'] = state_store.update_config(coerced, 'operator')
+        state_store.update_config(coerced, 'operator')
         ok = True
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; configuration unchanged'), 503
@@ -507,9 +508,9 @@ def update_config():
 @app.route('/reset-config', methods=['POST'])
 def reset_config():
     # Reset to DEFAULT_CONFIG and persist
-    paper = status['config']['paper_trading']
+    paper = g.operator_status['config']['paper_trading']
     try:
-        status['config_version'], status['config'] = state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset')
+        state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset')
         ok = True
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; configuration unchanged'), 503
@@ -524,7 +525,7 @@ def change_mode():
     mode = request.form.get('mode')
     if mode not in {'paper', 'exchange'}:
         return jsonify(error='Invalid execution mode'), 400
-    current = 'paper' if status['config']['paper_trading'] else 'exchange'
+    current = 'paper' if g.operator_status['config']['paper_trading'] else 'exchange'
     if request.form.get('expected_mode') != current or request.form.get('confirmation') != mode:
         return jsonify(error='Review and confirm the current execution mode'), 409
     if mode != current:
@@ -997,7 +998,7 @@ def dashboard():
                     </script>
         </body>
         </html>
-    ''', status=status, venue=runtime_environment.venue if runtime_environment else 'unconfigured')
+    ''', status=g.operator_status, venue=runtime_environment.venue if runtime_environment else 'unconfigured')
 
 if __name__ == '__main__':
     import argparse

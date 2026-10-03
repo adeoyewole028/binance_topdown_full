@@ -174,14 +174,17 @@ class StateStore:
 
     def config(self) -> tuple[int, dict[str, Any]]:
         with self.connection() as connection:
-            row = connection.execute('SELECT version,values_json FROM config_versions WHERE namespace=? ORDER BY version DESC LIMIT 1',
-                                     (self.namespace,)).fetchone()
-            if row is None:
-                raise StateUnavailable('Namespace requires explicit initialization')
-            values = json.loads(row['values_json'])
-            if not isinstance(values, dict):
-                raise StateUnavailable('Invalid durable configuration')
-            return int(row['version']), values
+            return self._config(connection)
+
+    def _config(self, connection: sqlite3.Connection) -> tuple[int, dict[str, Any]]:
+        row = connection.execute('SELECT version,values_json FROM config_versions WHERE namespace=? ORDER BY version DESC LIMIT 1',
+                                 (self.namespace,)).fetchone()
+        if row is None:
+            raise StateUnavailable('Namespace requires explicit initialization')
+        values = json.loads(row['values_json'])
+        if not isinstance(values, dict) or values.get('paper_trading') is not (self.mode == 'paper'):
+            raise StateUnavailable('Invalid durable configuration')
+        return int(row['version']), values
 
     def update_config(self, changes: dict[str, Any], actor: str) -> tuple[int, dict[str, Any]]:
         with self.connection(write=True) as connection:
@@ -227,9 +230,12 @@ class StateStore:
 
     def operations(self) -> list[dict[str, Any]]:
         with self.connection() as connection:
-            return [dict(row) for row in connection.execute('''SELECT operation_id,kind,symbol,side,requested_qty,
-                           config_version,state,error_class FROM intents WHERE namespace=? ORDER BY intake_sequence''',
-                                                           (self.namespace,))]
+            return self._operations(connection)
+
+    def _operations(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
+        return [dict(row) for row in connection.execute('''SELECT operation_id,kind,symbol,side,requested_qty,
+                       config_version,state,error_class FROM intents WHERE namespace=? ORDER BY intake_sequence''',
+                                                       (self.namespace,))]
 
     def set_price(self, symbol: str, price: str) -> None:
         with self.connection(write=True) as connection:
@@ -239,36 +245,57 @@ class StateStore:
 
     def positions(self) -> list[dict[str, Any]]:
         with self.connection() as connection:
-            rows = [dict(row) for row in connection.execute('SELECT symbol,qty,entry,basis_status FROM positions WHERE namespace=? ORDER BY symbol',
-                                                          (self.namespace,))]
-            try:
-                for row in rows:
-                    for field in ('qty', 'entry'):
-                        value = Decimal(row[field])
-                        if not value.is_finite() or value <= 0:
-                            raise StateUnavailable('Invalid durable position')
-            except InvalidOperation as error:
-                raise StateUnavailable('Invalid durable position') from error
-            return rows
+            return self._positions(connection)
+
+    def _positions(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
+        rows = [dict(row) for row in connection.execute('SELECT symbol,qty,entry,basis_status FROM positions WHERE namespace=? ORDER BY symbol',
+                                                      (self.namespace,))]
+        try:
+            for row in rows:
+                for field in ('qty', 'entry'):
+                    value = Decimal(row[field])
+                    if not value.is_finite() or value <= 0:
+                        raise StateUnavailable('Invalid durable position')
+        except InvalidOperation as error:
+            raise StateUnavailable('Invalid durable position') from error
+        return rows
 
     def migration(self) -> list[dict[str, Any]]:
         with self.connection() as connection:
-            return [dict(row) for row in connection.execute('''SELECT checksum,source_name,kind,state,
-                    record_count,imported_count,quarantine_count FROM migration_sources
-                    WHERE namespace=? ORDER BY source_name,checksum''', (self.namespace,))]
+            return self._migration(connection)
+
+    def _migration(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
+        return [dict(row) for row in connection.execute('''SELECT checksum,source_name,kind,state,
+                record_count,imported_count,quarantine_count FROM migration_sources
+                WHERE namespace=? ORDER BY source_name,checksum''', (self.namespace,))]
 
     def ownership(self) -> dict[str, Any]:
         with self.connection() as connection:
-            row = connection.execute('SELECT generation,state,updated_at FROM execution_owners WHERE account=? AND venue=?',
-                                     (self.account, self.venue)).fetchone()
-            return dict(row) if row is not None else {'generation': 0, 'state': 'unowned'}
+            return self._ownership(connection)
+
+    def _ownership(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        row = connection.execute('SELECT generation,state,updated_at FROM execution_owners WHERE account=? AND venue=?',
+                                 (self.account, self.venue)).fetchone()
+        return dict(row) if row is not None else {'generation': 0, 'state': 'unowned'}
 
     def scan(self) -> dict[str, Any]:
         with self.connection() as connection:
-            row = connection.execute('SELECT values_json FROM scan_snapshots WHERE namespace=?', (self.namespace,)).fetchone()
-            if row is None:
-                return {}
-            values = json.loads(row[0])
-            if not isinstance(values, dict):
-                raise StateUnavailable('Invalid durable scan')
-            return values
+            return self._scan(connection)
+
+    def _scan(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        row = connection.execute('SELECT values_json FROM scan_snapshots WHERE namespace=?', (self.namespace,)).fetchone()
+        if row is None:
+            return {}
+        values = json.loads(row[0])
+        if not isinstance(values, dict):
+            raise StateUnavailable('Invalid durable scan')
+        return values
+
+    def snapshot(self) -> dict[str, Any]:
+        """One committed observation for an entire HTTP request, including joins."""
+        with self.connection() as connection:
+            connection.execute('BEGIN')
+            version, config = self._config(connection)
+            return {'config_version': version, 'config': config, 'scan': self._scan(connection),
+                    'positions': self._positions(connection), 'operations': self._operations(connection),
+                    'migration': self._migration(connection), 'ownership': self._ownership(connection)}
