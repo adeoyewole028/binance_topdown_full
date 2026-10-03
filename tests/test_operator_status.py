@@ -64,3 +64,28 @@ def test_setup_validation_identifies_fields_and_preserves_html_draft(paper: bool
         assert 'value="123"' in html.get_data(as_text=True)
         assert 'aria-describedby="setup-error-fee_fraction"' in html.get_data(as_text=True)
         assert sandbox.client.get('/api/status').get_json()['config']==before['config']
+
+
+def test_position_and_account_displays_use_qualified_current_performance() -> None:
+    from tests.test_market_runtime import ControlledClock, MarketFixture
+    from execution_worker import ExecutionWorker
+    from market_runtime import MarketRuntime
+    clock=ControlledClock()
+    with LegacySandbox() as sandbox:
+        sandbox.module.initialize_runtime(clock=clock)
+        with ExecutionWorker(sandbox.module.state_store,clock=clock) as owner:
+            MarketRuntime(owner,MarketFixture(clock()),clock=clock).scan_once()
+            owner.publish_prices({'BTC/USDT':100})
+            sandbox.client.post('/trade',data={'csrf_token':sandbox.csrf,'symbol':'BTC/USDT','side':'buy','qty':'1'})
+            owner.process_pending()
+            owner.publish_prices({'BTC/USDT':101})
+            fresh=sandbox.client.get('/api/status').get_json()
+            assert fresh['open_positions'][0]['pnl']==1
+            assert fresh['open_positions'][0]['currency']=='USDT'
+            clock.value+=61
+            stale=sandbox.client.get('/api/status').get_json()
+            assert stale['performance']['equity'] is None
+            assert stale['open_positions'][0]['pnl'] is None
+            html=sandbox.client.get('/').get_data(as_text=True)
+            assert 'Estimated unrealized' in html
+            assert 'Estimated equity: Unavailable USDT' in html

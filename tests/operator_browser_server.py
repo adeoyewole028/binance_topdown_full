@@ -29,6 +29,7 @@ def main() -> None:
                     MarketRuntime(owner,provider,clock=clock,evaluate=sandbox.module.evaluate_market_snapshot).scan_once()
                 elif action=='stale':clock.value+=61
                 elif action=='process':owner.process_pending()
+                elif action=='mark':owner.publish_prices({'BTC/USDT':101})
                 else: return jsonify(error='Unknown fixture action'),422
                 return jsonify(ok=True)
             sandbox.module.app.add_url_rule('/__browser_fixture','browser_fixture',fixture,methods=['POST'])

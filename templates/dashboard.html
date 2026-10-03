@@ -97,7 +97,7 @@
                                         <th scope="col" class="text-left py-2">Symbol</th>
                                         <th scope="col" class="text-left py-2">Entry</th>
                                         <th scope="col" class="text-left py-2">Qty</th>
-                                        <th scope="col" class="text-left py-2">P&L</th>
+                                        <th scope="col" class="text-left py-2">Estimated unrealized</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -107,7 +107,7 @@
                                         <td class="py-2">{{ pos['symbol'] }}</td>
                                         <td class="py-2">{{ pos['entry'] if pos['entry'] is not none else 'Basis unavailable' }}</td>
                                         <td class="py-2">{{ pos['qty'] }}</td>
-                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) if pos['pnl'] is number else 'Unavailable' }}</td>
+                                        <td class="py-2 {{ pnlpos }}">{{ pos['unrealized'] if pos['unrealized'] is not none else 'Unavailable' }} {{ pos['currency'] or 'currency unavailable' }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -173,12 +173,12 @@
                     </div>
 
                     <div data-status-panel="exits" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Exit Signals</h2>
+                        <h2 class="text-sm font-semibold text-slate-300">Exit Signals</h2><p class="text-xs text-slate-400">Prices and profit estimates are from the last successful scan and may be stale when market data is degraded.</p>
                         {% if status['exit_signals'] %}
                         <div class="overflow-x-auto mt-2">
                             <table class="min-w-full text-sm">
                                 <thead class="text-slate-400">
-                                    <tr class="border-b border-slate-800"><th scope="col" class="text-left py-2">Symbol</th><th scope="col" class="text-left py-2">Price</th><th scope="col" class="text-left py-2">P&L</th><th scope="col" class="text-left py-2">Reasons</th><th scope="col" class="py-2">Action</th></tr>
+                                    <tr class="border-b border-slate-800"><th scope="col" class="text-left py-2">Symbol</th><th scope="col" class="text-left py-2">Last-scan price</th><th scope="col" class="text-left py-2">Estimated P&L (quote asset)</th><th scope="col" class="text-left py-2">Reasons</th><th scope="col" class="py-2">Action</th></tr>
                                 </thead>
                                 <tbody>
                                     {% for es in status['exit_signals'] %}
@@ -238,7 +238,7 @@
                             <button type="submit" class="px-3 py-2 rounded bg-indigo-600">{{ 'Save explicit paper setup' if is_paper else 'Save explicit exchange risk setup' }}</button>
                         </form>
                         {% set account = status['paper_account'] if is_paper else status['exchange_account'] %}
-                        <div data-status-panel="account"><p>Entry block: {{ operator_label(status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) }}. Estimated equity: {{ (status['paper_account'].get('equity') if is_paper else status['exchange_risk'].get('equity')) or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
+                        <div data-status-panel="account"><p>Account risk block: {{ operator_label(status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) }}. Estimated equity: {{ status['performance']['equity'] if status['performance']['equity'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or 'currency unavailable' }}.</p><p class="text-xs text-slate-400">Every entry also requires fresh market data and verified protection.</p>
                         <dl>{% for asset, balance in account['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl></div>
                         {% if not is_paper %}
                         <form method="post" action="/exchange/entries">

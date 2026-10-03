@@ -97,11 +97,16 @@ const crypto=require('node:crypto');
     expect(filled.fills.length).toBe(2);
     await expect(page.locator('[data-status-panel=history] tbody tr')).toHaveCount(2);
     await expect(page.locator('[data-status-panel=performance]')).toContainText('Complete');
+    await fixture('mark'); await refresh();
+    await expect(page.locator('[data-status-panel=positions] tbody')).toContainText('0.6 USDT');
+    await expect(page.locator('[data-status-panel=account]')).toContainText('Estimated equity: 10000.6 USDT');
     await page.locator('#settings-risk').focus();
     await fixture('stale');
     await page.waitForTimeout(16000);
     await expect(page.locator('[data-status-panel=performance]')).toContainText('Partial');
     await expect(page.locator('[data-status-panel=performance]')).toContainText('Estimated unrealized: Unavailable');
+    await expect(page.locator('[data-status-panel=positions] tbody')).toContainText('Unavailable USDT');
+    await expect(page.locator('[data-status-panel=account]')).toContainText('Estimated equity: Unavailable USDT');
     await expect(page.locator('#settings-risk')).toBeFocused();
     await expect(page.locator('#settings-risk')).toHaveValue('0.023');
     await expect(page.locator('#qtyInput')).toHaveValue('0.2345');
@@ -216,7 +221,7 @@ const crypto=require('node:crypto');
       source_revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
       source_sha256:Object.fromEntries(sourceFiles.map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')])),
       polling_preserves_input_focus:true,offline_recovery:true,stale_data:true,auth_recovery:true,
-      invalid_field_preservation:true,setup_field_recovery:true,initial_setup_banner_recovery:true,visible_performance_history_updates:true,version_conflict_review:true,candle_dedup:true,opt_in_sound:true,
+      invalid_field_preservation:true,setup_field_recovery:true,initial_setup_banner_recovery:true,visible_performance_history_updates:true,qualified_position_equity_updates:true,version_conflict_review:true,candle_dedup:true,opt_in_sound:true,
       keyboard_focus:focus,css_scale_200_reflow:true,minimum_24_pixel_targets:true,page_errors:failures,
       boundary:'Actual Chromium, guarded loopback Flask/temp SQLite/owned fake public provider; no provider/deployed/device acceptance'},null,2));
     console.log('BT12 browser journeys passed:',JSON.stringify(checks));

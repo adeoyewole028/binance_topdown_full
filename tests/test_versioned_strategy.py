@@ -136,7 +136,7 @@ def test_dashboard_and_daemon_adapters_use_the_same_explicit_daily_profile() -> 
 def test_explicit_profile_config_and_new_intent_retain_original_version_on_later_change() -> None:
     with LegacySandbox() as sandbox:
         before = sandbox.client.get('/api/status').get_json()
-        assert sandbox.post('/update-config',data={'strategy_profile':'invented'}).status_code == 400
+        assert sandbox.post('/update-config',data={'strategy_profile':'invented'}).status_code == 422
         assert sandbox.client.get('/api/status').get_json()['config_version'] == before['config_version']
         assert sandbox.post('/update-config',data={'strategy_profile':'daemon_daily'}).status_code == 302
         sandbox.seed_price('BTC/USDT',100)

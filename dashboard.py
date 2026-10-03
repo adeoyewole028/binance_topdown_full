@@ -278,7 +278,7 @@ def refresh_durable_state():
     try:
         snapshot = state_store.snapshot(now=app.config['MARKET_CLOCK']())
         g.operator_status = {**status, **snapshot.pop('scan'), **snapshot}
-        g.operator_status['open_positions'] = display_positions(snapshot['positions'])
+        g.operator_status['open_positions'] = display_positions(snapshot['positions'],snapshot['performance'])
         from market_runtime import observed_health
         g.operator_status['market_health'] = observed_health(g.operator_status, app.config['MARKET_CLOCK']())
         health = g.operator_status['market_health']
@@ -307,10 +307,22 @@ def dashboard_asset_type(response):
         response.headers['Content-Type']='text/javascript; charset=utf-8'
     return response
 
-def display_positions(positions):
-    return [{'symbol': p['symbol'], 'qty': float(p['qty']),
-             'entry': None if p['basis_status'] == 'provider_basis_unknown' else float(p['entry']),
-             'pnl': None if p['basis_status'] == 'provider_basis_unknown' else 0} for p in positions]
+def display_positions(positions, performance):
+    import math
+    qualified={p['symbol']:p for p in performance['positions']}
+    displayed=[]
+    for position in positions:
+        projection=qualified.get(position['symbol'],{})
+        value=projection.get('unrealized')
+        estimate=float(value) if value is not None else None
+        # Keep the legacy numeric estimate finite; the visible decimal retains
+        # the qualified projection without display rounding or invented zeros.
+        displayed.append({'symbol':position['symbol'],'qty':float(position['qty']),
+            'entry':float(projection['entry']) if projection.get('entry') is not None else None,
+            'pnl':estimate if estimate is not None and math.isfinite(estimate) else None,
+            'unrealized':value,'currency':projection.get('currency',performance['currency'])})
+    return displayed
+
 
 def require_exchange_execution():
     if runtime_environment is None:
