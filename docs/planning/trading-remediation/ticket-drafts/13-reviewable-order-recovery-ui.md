@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; BT13 sole active implementation ticket; five local acceptance gates open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** complete; all five local acceptance gates passed. Real provider/deployment/activation milestones remain separate later gates.
 **What to build:** Let an authenticated operator submit a reviewed intent and understand confirmed, rejected, unknown and unprotected outcomes.
 **Blocked by:** [BT12 #14](https://github.com/adeoyewole028/binance_topdown_full/issues/14).
 **Decision blockers:** None additional; strict sequential implementation authorized on2026-10-02 and carried forward.
@@ -30,11 +30,11 @@ Manual order/close/review UI, operation lookup/status, protection/reconciliation
 
 ## Acceptance criteria
 
-- [ ] Changed/stale reviewed inputs require refreshed review; server-side sizing never trusts a browser estimate.
-- [ ] Repeated clicks/refresh/retry reference the same intent; accepted/pending/unknown are never described as confirmed fill.
-- [ ] Actual fills, partial closure, protection failure and unresolved provider outcomes have distinct recoverable views.
-- [ ] Operator can initiate a reviewed position close without waiting for an exit signal; unknown cancellation cannot authorize an oversell.
-- [ ] Paper/live mismatch and permission interruptions preserve form context without executing action; keyboard/error focus is usable.
+- [x] Changed/stale reviewed inputs require refreshed review; server-side sizing never trusts a browser estimate.
+- [x] Repeated clicks/refresh/retry reference the same intent; accepted/pending/unknown are never described as confirmed fill.
+- [x] Actual fills, partial closure, protection failure and unresolved provider outcomes have distinct recoverable views.
+- [x] Operator can initiate a reviewed position close without waiting for an exit signal; unknown cancellation cannot authorize an oversell.
+- [x] Paper/live mismatch and permission interruptions preserve form context without executing action; keyboard/error focus is usable.
 
 ## Testing and validation
 
@@ -66,9 +66,14 @@ Mainnet execution, bypassing safety gates for UI convenience.
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+Implementation complete at e0447a2 (application73060ff). Full371/371 pass471.20s,0failures/skips/xfails; focused21pass24.59s; strict55type/lint/33appcompile/staticbuild/node/diff pass. Standards0/Spec0. Seven real Chromium fake-provider recovery journeys0axe/reflow and original dashboard3width regression0axe pass. Both browser7file hash sets match full40source hashes/current files. Criterion evidence: docs/planning/trading-remediation/evidence/bt13-validation.md; full: evidence/bt13-manual-orders.json; browser: evidence/bt13-browser/journey.json and bt12-regression/journey.json. Scoped local commits0ee08c6/1ac07cc/73060ff/e0447a2; no real provider/credentials/funding/trade/activation/migration/deployment/push. All original timeout and financial gates preserved. Next permitted step: close/read back #15, then inspect BT14 prerequisites.
 
 
 ## BT13 start (2026-10-03)
 
 Live#15OPEN/0comments/native#14CLOSED verified. BT01-BT12 complete; BT13 soleactive/fivecriteriaopen. Fixedpointdf35364e87345ff4f9d462e9a7c4a630121c7c6f. Preserve approved HTTP->transactional StateStore->kernel-owned execution->fake public/private provider and actual browser seams. Add side-effect-free reviewed order preview, signed semantic request/config/quote/holding context, stable namespace idempotency through retries/refresh, authenticated namespace operation lookup with actual fills/protection/recovery, and reviewed partial/full close for every applicable current holding independently of exit signals. Server canonical sizing/admission/protection cancellation/reconciliation remain authoritative; no numeric capital/risk policies invented. Forms and auth interruption preserve drafts; unresolved outcomes never imply fills or authorize another sell. Quarantined legacy data read-only. Existing safe /trade and /close adapters remain shared-intake compatibility routes; actual first-class UI review replaces their raw one-click forms. No real provider/keys/trades/mainnet/activation/deployment/push or futureticket.
+
+
+## Final local acceptance (2026-10-03)
+
+All five criteria verified through approved authenticated HTTP->transactional StateStore->kernel-owned execution->fake public/private provider and actual Chromium seams. Initial review findings and first-attempt lost-response replacement regression were corrected and independently re-reviewed. User decisions D01-D07 preserved; typed input limits remain, derived ledger values stay exact, no new business values. Historical BT12 evidence restored after copying regression proof into BT13. Publish/read-back closure only; parent#2 remains open.

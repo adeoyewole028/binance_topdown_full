@@ -1,0 +1,621 @@
+{
+  "revision": "0ee08c6d678343f3f427a77da2ac1def67078acf",
+  "scope": "Offline real Chromium and owned fake-provider lifecycle; no deployed or real-provider execution",
+  "browser": "145.0.7632.6",
+  "results": [
+    {
+      "scenario": "paper",
+      "passed": true,
+      "status": {
+        "automation": {
+          "enabled": false,
+          "reason": "not_started",
+          "state": "disabled"
+        },
+        "config": {
+          "base_quote": "USDT",
+          "cooldown": 0,
+          "equity_proxy": 1000,
+          "max_positions": 5,
+          "min_quote_vol": 10000000,
+          "near_ema_pct": 0.02,
+          "paper_policy": {
+            "cooldown_seconds": 0,
+            "drawdown_fraction": "1",
+            "fee_fraction": "0",
+            "fixed_quote": "100",
+            "initial_cash": "10000",
+            "max_allocation_fraction": "1",
+            "max_exposure_fraction": "1",
+            "max_positions": 100,
+            "model": "paper-full-fill-weighted-average-v1",
+            "quote": "USDT",
+            "risk_fraction": "1",
+            "slippage_fraction": "0"
+          },
+          "paper_trading": true,
+          "risk": 0.01,
+          "rsi_exec_threshold": 45,
+          "rsi_overbought": 70,
+          "rsi_threshold": 30,
+          "stop_loss_pct": 0.03,
+          "strategy_profile": "dashboard_intraday",
+          "strategy_version": 1,
+          "take_profit_pct": 0.06,
+          "trailing_pct": 0.03,
+          "universe_size": 12,
+          "use_dynamic_universe": true
+        },
+        "config_version": 2,
+        "entry_control": {
+          "paused": false
+        },
+        "exchange_account": {
+          "balances": {},
+          "state": "not_applicable"
+        },
+        "exchange_allowed": false,
+        "exchange_risk": {
+          "state": "not_applicable"
+        },
+        "execution_mode": "paper",
+        "exit_signals": [],
+        "fills": [
+          {
+            "created_at": "2026-10-03 21:51:28",
+            "fee_amount": "0",
+            "fee_asset": "USDT",
+            "fill_id": "41c5eb6636614439afa6e6bf1b2abd7a:paper:1",
+            "operation_id": "41c5eb6636614439afa6e6bf1b2abd7a",
+            "price": "101",
+            "profile": "paper-full-fill-weighted-average-v1",
+            "qty": "1",
+            "quote_cost": "101",
+            "side": "buy",
+            "symbol": "BTC/USDT"
+          },
+          {
+            "created_at": "2026-10-03 21:51:29",
+            "fee_amount": "0",
+            "fee_asset": "USDT",
+            "fill_id": "58d388116ca64789ae87c86433cc61c9:paper:1",
+            "operation_id": "58d388116ca64789ae87c86433cc61c9",
+            "price": "101",
+            "profile": "paper-full-fill-weighted-average-v1",
+            "qty": "0.4",
+            "quote_cost": "40.4",
+            "side": "sell",
+            "symbol": "BTC/USDT"
+          },
+          {
+            "created_at": "2026-10-03 21:51:30",
+            "fee_amount": "0",
+            "fee_asset": "USDT",
+            "fill_id": "4dbf4918700247ea8fa0b5bb904b3e94:paper:1",
+            "operation_id": "4dbf4918700247ea8fa0b5bb904b3e94",
+            "price": "101",
+            "profile": "paper-full-fill-weighted-average-v1",
+            "qty": "0.6",
+            "quote_cost": "60.6",
+            "side": "sell",
+            "symbol": "BTC/USDT"
+          }
+        ],
+        "last_scan": "2026-10-03T12:00:00+00:00",
+        "live_prices": {
+          "BTC/USDT": 101
+        },
+        "market_budget": {
+          "blocked_until": 0,
+          "limits": [
+            {
+              "duration": 60,
+              "kind": "REQUEST_WEIGHT",
+              "limit": 1000,
+              "start": 1791028800,
+              "used": 109
+            }
+          ],
+          "reason": null,
+          "state": "configured"
+        },
+        "market_health": {
+          "clock_rtt_seconds": 0,
+          "clock_skew_seconds": 0,
+          "config_version": 2,
+          "coverage": [
+            "BTC/USDT"
+          ],
+          "execution_ready": true,
+          "failures": 0,
+          "heartbeat": "2026-10-03T12:00:00+00:00",
+          "last_completed_scan": "2026-10-03T12:00:00+00:00",
+          "owner_generation": 1,
+          "reason": null,
+          "retry_at": 0,
+          "scan_age_seconds": 0,
+          "state": "ready",
+          "timeframes": [
+            "15m",
+            "1h",
+            "4h"
+          ]
+        },
+        "market_prices": {
+          "BTC/USDT": {
+            "age_seconds": 0,
+            "fetched_at": "2026-10-03T12:00:00+00:00",
+            "fresh": true,
+            "price": "101",
+            "symbol": "BTC/USDT",
+            "venue": "testnet"
+          }
+        },
+        "migration": [],
+        "namespace": "6dbe9338-345b-5f82-ac48-48b5a6027f79",
+        "open_positions": [],
+        "operations": [
+          {
+            "config_version": 2,
+            "error_class": null,
+            "kind": "trade",
+            "operation_id": "41c5eb6636614439afa6e6bf1b2abd7a",
+            "requested_qty": "1",
+            "side": "buy",
+            "source": "manual",
+            "state": "filled",
+            "strategy_profile": "dashboard_intraday",
+            "strategy_version": 1,
+            "symbol": "BTC/USDT"
+          },
+          {
+            "config_version": 2,
+            "error_class": null,
+            "kind": "close",
+            "operation_id": "58d388116ca64789ae87c86433cc61c9",
+            "requested_qty": "0.4",
+            "side": "sell",
+            "source": "manual",
+            "state": "filled",
+            "strategy_profile": "dashboard_intraday",
+            "strategy_version": 1,
+            "symbol": "BTC/USDT"
+          },
+          {
+            "config_version": 2,
+            "error_class": null,
+            "kind": "close",
+            "operation_id": "4dbf4918700247ea8fa0b5bb904b3e94",
+            "requested_qty": "0.6",
+            "side": "sell",
+            "source": "manual",
+            "state": "filled",
+            "strategy_profile": "dashboard_intraday",
+            "strategy_version": 1,
+            "symbol": "BTC/USDT"
+          }
+        ],
+        "order_review": ".eJwdjMsKgzAURP_lbmvoTeIjZtn2D2rXEuONBmwUlW4k_94oDMNwYM4BwXxpW4wl0FD2HdVSKibzomOFU4IZmyuWq64wJYrKVTVkYOfg_ND-aN38HECLDJbVW9pAH_BonvfP-9Wc-6LJy5Gnm6PdjtS3Zk9IoCgZR4ay4UIjptyuhhgzGOep92E4hTH-AWziL3s.RroHxRQhqbDtjZ-qkHcAGTkKIbk",
+        "ownership": {
+          "generation": 1,
+          "state": "ready",
+          "updated_at": "2026-10-03T12:00:00+00:00"
+        },
+        "paper_account": {
+          "balances": {
+            "BTC": {
+              "available": "0",
+              "reserved": "0",
+              "total": "0"
+            },
+            "USDT": {
+              "available": "10000",
+              "reserved": "0",
+              "total": "10000"
+            }
+          },
+          "drawdown": "0",
+          "entry_block_reason": null,
+          "entry_blocked": false,
+          "equity": "10000",
+          "peak_equity": "10000",
+          "policy": {
+            "cooldown_seconds": 0,
+            "drawdown_fraction": "1",
+            "fee_fraction": "0",
+            "fixed_quote": "100",
+            "initial_cash": "10000",
+            "max_allocation_fraction": "1",
+            "max_exposure_fraction": "1",
+            "max_positions": 100,
+            "model": "paper-full-fill-weighted-average-v1",
+            "quote": "USDT",
+            "risk_fraction": "1",
+            "slippage_fraction": "0"
+          },
+          "state": "configured"
+        },
+        "performance": {
+          "completed_trades": 1,
+          "cost_basis": "fee_inclusive_weighted_average",
+          "currency": "USDT",
+          "drawdown": "0",
+          "equity": "10000",
+          "fee_conversion": "native_fill_asset; no historical conversion invented",
+          "fees_by_asset": {
+            "USDT": "0"
+          },
+          "historical_price_coverage": "recorded_fresh_equity_checkpoints",
+          "history_fills": 3,
+          "initial_equity": "10000",
+          "peak_equity": "10000",
+          "positions": [],
+          "realized": "0",
+          "realized_by_currency": {
+            "USDT": "0"
+          },
+          "realized_by_currency_status": "confirmed_net_native_currency",
+          "reason_messages": [],
+          "reasons": [],
+          "return_fraction": "0",
+          "state": "complete",
+          "total_profit": "0",
+          "unrealized": "0",
+          "valuation": "estimated_from_fresh_observed_prices",
+          "valuation_sources": {},
+          "win_rate": "0",
+          "win_rate_denominator": "completed_full_position_exits"
+        },
+        "position_rules": {},
+        "positions": [],
+        "presentation": {
+          "detail": "",
+          "label": "Market data ready",
+          "last_completed_scan": "2026-10-03T12:00:00+00:00",
+          "permission": "Paper only; exchange execution is not permitted",
+          "scan_age_seconds": 0,
+          "state": "ready"
+        },
+        "protection": [
+          {
+            "config_version": 2,
+            "exit_reason": "holding_changed",
+            "group_id": "cd4ff85bbe564c10873b12cc3273d8ec",
+            "installed_at": 1791028800,
+            "legs": [],
+            "namespace": "6dbe9338-345b-5f82-ac48-48b5a6027f79",
+            "next_action": null,
+            "operation_id": "41c5eb6636614439afa6e6bf1b2abd7a",
+            "provider_list_id": null,
+            "quantity": "1",
+            "semantics": "simulation",
+            "state": "closed",
+            "stop_price": "97.97",
+            "symbol": "BTC/USDT",
+            "take_profit_price": "107.06",
+            "verified_at": "2026-10-03T12:00:00+00:00"
+          },
+          {
+            "config_version": 2,
+            "exit_reason": "holding_changed",
+            "group_id": "b0f18eb61290403f83b2fcde584349a2",
+            "installed_at": 1791028800,
+            "legs": [],
+            "namespace": "6dbe9338-345b-5f82-ac48-48b5a6027f79",
+            "next_action": null,
+            "operation_id": "41c5eb6636614439afa6e6bf1b2abd7a",
+            "provider_list_id": null,
+            "quantity": "0.6",
+            "semantics": "simulation",
+            "state": "closed",
+            "stop_price": "97.97",
+            "symbol": "BTC/USDT",
+            "take_profit_price": "107.06",
+            "verified_at": "2026-10-03T12:00:00+00:00"
+          }
+        ],
+        "signals": [
+          {
+            "bias": {
+              "momentum_ok": true,
+              "near_ma": true,
+              "rsi": 50
+            },
+            "bias1h": {
+              "momentum_ok": true,
+              "near_ma": true,
+              "rsi": 50
+            },
+            "bias_timeframe": "1h",
+            "config_version": 2,
+            "entry": true,
+            "execution": {
+              "signal": true,
+              "type": "ema21_rsi_cross"
+            },
+            "execution_close": 1791028800000,
+            "exit_reasons": [],
+            "profile": "dashboard_intraday",
+            "profile_version": 1,
+            "reason": null,
+            "signal_id": "856796ef0a3b5a2a03dbf9a0cbf4bed10b4bafe6f0b21dfe5e25d5562dfea410",
+            "state": "ready",
+            "symbol": "BTC/USDT",
+            "time": "2026-10-03T12:00:00+00:00",
+            "trend": {
+              "above21": true,
+              "bullish": true,
+              "hhll": true
+            },
+            "trend4h": {
+              "above21": true,
+              "bullish": true,
+              "hhll": true
+            },
+            "trend_timeframe": "4h",
+            "type": "ema21_rsi_cross"
+          }
+        ],
+        "strategy_decisions": [
+          {
+            "bias": {
+              "momentum_ok": true,
+              "near_ma": true,
+              "rsi": 50
+            },
+            "bias_timeframe": "1h",
+            "config_version": 2,
+            "entry": true,
+            "execution": {
+              "signal": true,
+              "type": "ema21_rsi_cross"
+            },
+            "execution_close": 1791028800000,
+            "exit_reasons": [],
+            "profile": "dashboard_intraday",
+            "profile_version": 1,
+            "reason": null,
+            "signal_id": "856796ef0a3b5a2a03dbf9a0cbf4bed10b4bafe6f0b21dfe5e25d5562dfea410",
+            "state": "ready",
+            "symbol": "BTC/USDT",
+            "time": "2026-10-03T12:00:00+00:00",
+            "trend": {
+              "above21": true,
+              "bullish": true,
+              "hhll": true
+            },
+            "trend_timeframe": "4h"
+          }
+        ],
+        "strategy_profile": "dashboard_intraday",
+        "strategy_version": 1,
+        "trailing_supported": false,
+        "universe": [
+          "BTC/USDT"
+        ],
+        "venue": "testnet"
+      },
+      "axeViolations": 0,
+      "reflow": true
+    },
+    {
+      "scenario": "expired",
+      "passed": true,
+      "status": {
+        "automation": {
+          "enabled": false,
+          "reason": "not_started",
+          "state": "disabled"
+        },
+        "config": {
+          "base_quote": "USDT",
+          "cooldown": 120,
+          "equity_proxy": 1000,
+          "execution_policy": {
+            "cooldown_seconds": 120,
+            "drawdown_fraction": "0.2",
+            "fee_fraction": "0.01",
+            "fixed_quote": "100",
+            "max_allocation_fraction": "0.5",
+            "max_exposure_fraction": "0.8",
+            "max_positions": 2,
+            "model": "spot-observed-weighted-average-v1",
+            "quote": "USDT",
+            "risk_fraction": "0.1",
+            "slippage_fraction": "0.01"
+          },
+          "max_positions": 5,
+          "min_quote_vol": 10000000,
+          "near_ema_pct": 0.02,
+          "paper_trading": false,
+          "risk": 0.01,
+          "rsi_exec_threshold": 45,
+          "rsi_overbought": 70,
+          "rsi_threshold": 30,
+          "stop_loss_pct": 0.03,
+          "strategy_profile": "dashboard_intraday",
+          "strategy_version": 1,
+          "take_profit_pct": 0.06,
+          "trailing_pct": 0.03,
+          "universe_size": 12,
+          "use_dynamic_universe": true
+        },
+        "config_version": 2,
+        "entry_control": {
+          "paused": false
+        },
+        "exchange_account": {
+          "as_of": 1791064301,
+          "balances": {
+            "BTC": {
+              "available": "0",
+              "locked": "0",
+              "reserved": "0",
+              "total": "0"
+            },
+            "USDT": {
+              "available": "1000",
+              "locked": "0",
+              "reserved": "0",
+              "total": "1000"
+            }
+          },
+          "identity": "489915f5d8513579102aae4821c8b9ea6ea548d18f13fa7f07461abbdf6ab26f",
+          "movement_sequence": 0,
+          "observed_at": 1791064301,
+          "owner_generation": 1,
+          "reason": null,
+          "state": "ready",
+          "venue": "testnet"
+        },
+        "exchange_allowed": true,
+        "exchange_risk": {
+          "drawdown": "0",
+          "entry_blocked": false,
+          "equity": "1000",
+          "peak_equity": "1000",
+          "reason": null
+        },
+        "execution_mode": "exchange",
+        "exit_signals": [],
+        "fills": [],
+        "last_scan": "2026-10-03T21:51:41+00:00",
+        "live_prices": {
+          "BTC/USDT": 100
+        },
+        "market_budget": {
+          "blocked_until": 0,
+          "limits": [
+            {
+              "duration": 60,
+              "kind": "REQUEST_WEIGHT",
+              "limit": 1000,
+              "start": 1791064260,
+              "used": 675
+            }
+          ],
+          "reason": null,
+          "state": "configured"
+        },
+        "market_health": {
+          "clock_rtt_seconds": 0,
+          "clock_skew_seconds": 0,
+          "config_version": 2,
+          "coverage": [
+            "BTC/USDT"
+          ],
+          "execution_ready": true,
+          "failures": 0,
+          "heartbeat": "2026-10-03T21:51:41+00:00",
+          "last_completed_scan": "2026-10-03T21:51:41+00:00",
+          "owner_generation": 1,
+          "reason": null,
+          "retry_at": 0,
+          "scan_age_seconds": 0,
+          "state": "ready",
+          "timeframes": [
+            "15m",
+            "1h",
+            "4h"
+          ]
+        },
+        "market_prices": {
+          "BTC/USDT": {
+            "age_seconds": 0,
+            "fetched_at": "2026-10-03T21:51:41+00:00",
+            "fresh": true,
+            "price": "100.0",
+            "symbol": "BTC/USDT",
+            "venue": "testnet"
+          }
+        },
+        "migration": [],
+        "namespace": "fac96ab3-66f4-5aa4-a1fc-7b6002e65a8e",
+        "open_positions": [],
+        "operations": [
+          {
+            "config_version": 2,
+            "error_class": null,
+            "kind": "trade",
+            "operation_id": "3de4d44c80d74099bfb603d1292415cb",
+            "requested_qty": "1",
+            "side": "buy",
+            "source": "manual",
+            "state": "expired",
+            "strategy_profile": "dashboard_intraday",
+            "strategy_version": 1,
+            "symbol": "BTC/USDT"
+          }
+        ],
+        "order_review": ".eJwdjEEOgjAQAP-yV6luC1TtUf2B9UyWsoUm2hIgXkj_LnibTDKzQqQPzyM5BgOe3FVTWwqtfSVqokqQ9E6cW42oWNd0YSjApehD33x5mkOKYFQB4xQcz2BWuNn76fV82J3_dvtKxCNuoefFDdw1tGxSodJCosDSKmlqaSp5QDSIkHMBQ3p3Ifb7MucfM98wuQ._dHAXMXDFsASRurZh2XQvETohnU",
+        "ownership": {
+          "generation": 1,
+          "state": "ready",
+          "updated_at": "2026-10-03 21:51:42"
+        },
+        "paper_account": {
+          "balances": {},
+          "state": "not_applicable"
+        },
+        "performance": {
+          "completed_trades": 0,
+          "cost_basis": "fee_inclusive_weighted_average",
+          "currency": "USDT",
+          "drawdown": "0",
+          "equity": "1000",
+          "fee_conversion": "native_fill_asset; no historical conversion invented",
+          "fees_by_asset": {},
+          "historical_price_coverage": "recorded_fresh_equity_checkpoints",
+          "history_fills": 0,
+          "initial_equity": "1000",
+          "peak_equity": "1000",
+          "positions": [],
+          "realized": "0",
+          "realized_by_currency": {},
+          "realized_by_currency_status": "confirmed_net_native_currency",
+          "reason_messages": [],
+          "reasons": [],
+          "return_fraction": "0",
+          "state": "complete",
+          "total_profit": "0",
+          "unrealized": "0",
+          "valuation": "estimated_from_fresh_observed_prices",
+          "valuation_sources": {},
+          "win_rate": null,
+          "win_rate_denominator": "completed_full_position_exits"
+        },
+        "position_rules": {},
+        "positions": [],
+        "presentation": {
+          "detail": "",
+          "label": "Market data ready; no entry signal",
+          "last_completed_scan": "2026-10-03T21:51:41+00:00",
+          "permission": "Exchange execution permitted by server",
+          "scan_age_seconds": 0,
+          "state": "no_signal"
+        },
+        "protection": [],
+        "signals": [],
+        "strategy_decisions": [],
+        "strategy_profile": "dashboard_intraday",
+        "strategy_version": 1,
+        "trailing_supported": false,
+        "universe": [
+          "BTC/USDT"
+        ],
+        "venue": "testnet"
+      },
+      "axeViolations": 0,
+      "reflow": true
+    }
+  ],
+  "source_sha256": {
+    "dashboard.py": "5eecc0ddfa23663af234e876bbfde131edfb4cffecd8e0912e0934a29638f0c5",
+    "state_store.py": "5fe0124d7889b3f07308947fd6eee998597f6e58e6c741bce17ccc1c85467798",
+    "manual_orders.py": "5155395bca54edeca640a7a7576df69186765a9aff3a94d96286bd0486bf7d00",
+    "templates/dashboard.html": "222d068733efb5a4dbc9ce2be7de30661751b19a8721c5142f271b3d289791ac",
+    "static/dashboard.js": "190a5d2234a69f36bdf51902a3f547cdf969178a67123fdacaed49b8dca58e82",
+    "static/manual-orders.js": "f476ce5d13ddb5c9583a3ffe09d6d2c112708c6ac7d61ee0d7c878e0acce3b69",
+    "static/dashboard.css": "7d3435ae858c0db8d4fb086ab34fa9386b166ebfb554dada1937d306ad1b7553"
+  }
+}
