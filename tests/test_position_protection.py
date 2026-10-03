@@ -466,31 +466,29 @@ def test_budget_deferred_cancel_retains_active_pair_and_retries_after_recovery()
         assert len(provider.submissions) == 2
 
 
-def test_crash_before_protection_budget_admission_recovers_proven_no_dispatch() -> None:
+def test_failed_protection_preparation_recovers_proven_no_dispatch() -> None:
     from execution_worker import ExecutionWorker
-    class ProcessCrash(BaseException):
-        pass
+    from state_store import StateUnavailable
     with LegacySandbox(paper_setup=False, environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
         configure(sandbox)
         sandbox.seed_price('BTC/USDT', 100)
         provider = SpotFixture()
-        with pytest.raises(ProcessCrash):
+        store = sandbox.module.state_store
+        with store.connection(write=True) as connection:
+            connection.execute('''CREATE TRIGGER offline_prepare_failure BEFORE INSERT ON journal
+                WHEN NEW.event='protection_observed' AND json_extract(NEW.payload,'$.dispatch_attempted')=1
+                BEGIN SELECT RAISE(ABORT,'offline preparation failure'); END''')
+        with pytest.raises(StateUnavailable):
             with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as owner:
                 owner.reconcile_exchange()
-                execution = owner.exchange_execution
-                assert execution is not None
-                request = execution._request
-                def interrupted(lane: str, *args: Any, **kwargs: Any) -> Any:
-                    if lane == 'reduction':
-                        raise ProcessCrash()
-                    return request(lane, *args, **kwargs)
-                execution._request = interrupted  # type: ignore[method-assign]
                 sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
                 owner.process_pending()
         assert provider.protect_submissions == []
         state = sandbox.client.get('/api/status').get_json()
         assert state['protection'][-1]['state'] == 'installing'
         assert state['protection'][-1]['dispatch_attempted'] is False
+        with store.connection(write=True) as connection:
+            connection.execute('DROP TRIGGER offline_prepare_failure')
         with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as recovered:
             recovered.reconcile_exchange()
             state = sandbox.client.get('/api/status').get_json()
@@ -500,3 +498,29 @@ def test_crash_before_protection_budget_admission_recovers_proven_no_dispatch() 
             recovered.process_pending()
         assert sandbox.client.get('/api/status').get_json()['positions'] == []
         assert len(provider.submissions) == 2
+
+
+def test_idle_reconciliation_reprotects_terminal_partial_protection_remainder() -> None:
+    from execution_worker import ExecutionWorker
+    with LegacySandbox(paper_setup=False, environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100)
+        provider = SpotFixture()
+        tick = [float(int(time.time()))]
+        with ExecutionWorker(sandbox.module.state_store, clock=lambda: tick[0], exchange_provider=provider) as owner:
+            owner.reconcile_exchange()
+            sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
+            owner.process_pending()
+            group = next(iter(provider.lists.values()))
+            fill_stop(provider, group, '0.3')
+            # Provider-side terminal cancellation after a partial trigger; no
+            # new dashboard intent accompanies these observed remote facts.
+            provider.cancel_list('BTC/USDT', group['listClientOrderId'], 'offline-terminal')
+            tick[0] += 15
+            owner.poll_exchange()
+            owner.process_pending()
+        state = sandbox.client.get('/api/status').get_json()
+        assert state['positions'][0]['qty'] == '0.7'
+        assert state['protection'][-1]['state'] == 'active'
+        assert state['protection'][-1]['quantity'] == '0.7'
+        assert len(provider.protect_submissions) == 2

@@ -371,6 +371,10 @@ class ExchangeExecution:
         has_queued = any(operation['state'] == 'queued' for operation in snapshot['operations'])
         recent = self.last_reconcile_attempt is not None and 0 <= self.owner.clock()-self.last_reconcile_attempt < self.owner.policy.reconciliation_interval
         if recent and (not has_queued or snapshot['exchange_account']['state'] != 'ready'):
+            try:
+                self.protection.maintain()
+            except (ProviderFailure, TimeoutError, ConnectionError) as error:
+                self._health('reconciliation_required', getattr(error, 'kind', 'transient'))
             return 0
         try:
             self.reconcile()
