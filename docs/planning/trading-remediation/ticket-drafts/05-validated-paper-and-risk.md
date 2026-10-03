@@ -7,10 +7,10 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** in progress; BT04 closed and native dependency verified; D05 policy approved. Sole active ticket.
 **What to build:** Make a valid paper buy or sell change durable cash and holdings exactly once, and reject unsafe inputs without effects.
 **Blocked by:** [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6).
-**Decision blockers:** D05.
+**Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R08, R09.
 
@@ -72,3 +72,10 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 ## Current handoff (2026-10-03)
 
 BT04#6 CLOSED/read-back and native prerequisite verified. BT05 remains unstarted. D05 capital input contract selected: explicit operator setup required, execution blocked while seed/fee/slippage/allocation/exposure/cooldown/drawdown inputs are unset; no invented numerical values. Accounting/replay and protection selections remain pending. This supersedes the preliminary execution record only for prerequisite/decision status; no BT05 effects or acceptance claimed.
+
+## D05 approved contract (2026-10-03)
+
+APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippage/cooldown/drawdown inputs before paper trading; deterministic full paper fills, quote-currency fees, weighted-average cost basis, adverse slippage and gap prices, stop first when both stop/profit targets touch one candle. Exchange-supported stop-market protection; refuse unsupported symbols; re-protect confirmed remaining holdings after partial closes; failed/uncertain protection blocks entries; automatic emergency liquidation and trailing remain disabled.
+Implement only this ticket’s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.
+
+BT05 started after live issue/comments/native dependency inspection; pre-ticket review point `2b77b6dbb786fbd6e7162b84d4c4e0c1d7b8d6bf`. All five criteria remain open pending implementation, checks, review, evidence and scoped commit. Approved HTTP/owned-executor/fixture-provider seam carries forward.

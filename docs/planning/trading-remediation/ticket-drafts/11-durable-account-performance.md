@@ -10,7 +10,7 @@
 **Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Let the operator trust metrics across refresh, history pagination and restart, with incomplete data clearly labelled.
 **Blocked by:** [BT10 #12](https://github.com/adeoyewole028/binance_topdown_full/issues/12).
-**Decision blockers:** D05.
+**Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
 **Specification:** [#2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 **Requirement coverage:** R15, R05.
 
@@ -67,3 +67,8 @@ New risk limits, tax reporting or return promises.
 ## Execution record
 
 Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+
+## D05 approved contract (2026-10-03)
+
+APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippage/cooldown/drawdown inputs before paper trading; deterministic full paper fills, quote-currency fees, weighted-average cost basis, adverse slippage and gap prices, stop first when both stop/profit targets touch one candle. Exchange-supported stop-market protection; refuse unsupported symbols; re-protect confirmed remaining holdings after partial closes; failed/uncertain protection blocks entries; automatic emergency liquidation and trailing remain disabled.
+Implement only this ticket’s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.

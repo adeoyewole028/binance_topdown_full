@@ -2,10 +2,8 @@
   "tracker": "GitHub Issues",
   "repository": "adeoyewole028/binance_topdown_full",
   "date": "2026-10-02",
-  "implementation": "BT01-BT04 complete/closed; BT05 unstarted pending remaining D05 selections",
-  "decision_blockers": [
-    "D05"
-  ],
+  "implementation": "BT01-BT04 closed; BT05 sole in-progress ticket",
+  "decision_blockers": [],
   "tickets": [
     {
       "planning_id": "BT01",
@@ -76,13 +74,12 @@
       "blocked_by": [
         "BT04"
       ],
-      "decision_blockers": [
-        "D05"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT04"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "Prerequisite6 closed/native verified and D05 policy approved; in progress",
+      "review_fixed_point": "2b77b6dbb786fbd6e7162b84d4c4e0c1d7b8d6bf"
     },
     {
       "planning_id": "BT06",
@@ -93,9 +90,7 @@
       "blocked_by": [
         "BT05"
       ],
-      "decision_blockers": [
-        "D05"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT05"
       ],
@@ -110,9 +105,7 @@
       "blocked_by": [
         "BT06"
       ],
-      "decision_blockers": [
-        "D05"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT06"
       ],
@@ -160,9 +153,7 @@
         "BT07",
         "BT08"
       ],
-      "decision_blockers": [
-        "D05"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT07",
         "BT08"
@@ -178,9 +169,7 @@
       "blocked_by": [
         "BT10"
       ],
-      "decision_blockers": [
-        "D05"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT10"
       ],
@@ -298,9 +287,10 @@
     "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection",
     "D06": "APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation",
     "D07": "APPROVED on 2026-10-03: scans300s/health600s, prices30s/expiry60s, reconciliation15s, backup7days/RPO15min/RTO1hour; configured operator owns private webhook alerts configured before activation. External activation gates remain separate.",
-    "D05_capital_inputs": "Explicit operator setup required before paper execution; no inferred numeric defaults/funding; accounting and protection choices pending"
+    "D05_capital_inputs": "Explicit operator setup required before execution; no numerical defaults or implicit funding",
+    "D05": "APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippage/cooldown/drawdown inputs before paper trading; deterministic full paper fills, quote-currency fees, weighted-average cost basis, adverse slippage and gap prices, stop first when both stop/profit targets touch one candle. Exchange-supported stop-market protection; refuse unsupported symbols; re-protect confirmed remaining holdings after partial closes; failed/uncertain protection blocks entries; automatic emergency liquidation and trailing remain disabled."
   },
-  "remaining_decisions": "D05; external activation gates listed separately; D07 operating targets approved",
+  "remaining_decisions": "External activation/access/live-canary gates only; D01-D08 policy choices approved",
   "external_activation_gates": [
     "hosting spend/access",
     "actual private alert destination",

@@ -91,3 +91,5 @@ No known source requirement is omitted. No implementation ticket is marked compl
 ## BT04 acceptance update (2026-10-03)
 
 R06/R07/R19 map to completed BT04 local checks atd34b004:144cases142pass2strictBT06xfails; type29/lint/20sourcecompile pass; both reviews0 remaining findings. Original source completeness entries above are historical planning gates, superseded by approved D01-D04/D06-D08 records and current execution ledger. D07 operating thresholds approved; actual activation/canary/destination/access remain separate. D05 runtime explicit setup selected, remaining accounting/protection answers pending. Later provider/rollout acceptance is not satisfied by these offline results.
+
+D05 policy resolved2026-10-03 by explicit setup selection and “use both proposed rules”. R08/R09 proceed in BT05; R11/R12 protection stays BT07; R14/R15 replay/accounting stays BT10/BT11. Numeric setup remains mandatory at runtime; provider and rollout acceptance remain distinct.
