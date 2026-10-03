@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** open; BT03 prerequisite closed/read-back verified on 2026-10-03; implementation not started pending D07 operating targets. The ready-for-agent label does not resolve this decision.
 **What to build:** Let the operator trust scan age and held-position data, with stale or failed inputs preventing execution.
 **Blocked by:** [BT03 #5](https://github.com/adeoyewole028/binance_topdown_full/issues/5).
 **Decision blockers:** D07.
@@ -66,5 +66,5 @@ Choosing a new strategy, automatic orders or a fabricated universal rate-limit v
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. BT03 #5 CLOSED/read-back verified with all acceptance/review/check/evidence gates. Strict sequential implementation is already authorized; the sole remaining start blocker is D07. The existing user question proposes scan300s/scan-health600s, price-refresh30s/expiry60s, reconciliation15s, backup7d/RPO15m/RTO1h and configured operator/private webhook alerts before activation; those values remain unapproved. Await response, update spec/affected tickets, then start only this ticket. No implementation, source push, service change or deployment has occurred for BT04.
 
