@@ -68,5 +68,7 @@ def validated_policy(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def decimal_text(value: Decimal) -> str:
+    if value == 0:
+        return '0'
     text = format(value, "f")
     return text.rstrip('0').rstrip('.') if '.' in text else text

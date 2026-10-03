@@ -84,6 +84,13 @@ def test_provider_max_position_counts_confirmed_and_reserved_buys() -> None:
         assert state['operations'][-1]['state'] == 'filled'
 
 
+def test_zero_fee_exponent_does_not_expand_setup_payload() -> None:
+    with LegacySandbox(paper_setup=False) as sandbox:
+        assert setup(sandbox, fee_fraction='0e-1000000000') == 302
+        policy = sandbox.client.get('/api/status').get_json()['paper_account']['policy']
+        assert policy['fee_fraction'] == '0'
+
+
 def setup(sandbox: LegacySandbox, **changes: str) -> int:
     version = sandbox.client.get('/api/status').get_json()['config_version']
     return int(sandbox.post('/paper/setup', data={**PAPER_INPUTS, **changes, 'expected_config_version': str(version)}).status_code)
