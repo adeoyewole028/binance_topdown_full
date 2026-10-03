@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** in progress; live issue/comments inspected and native blockerBT05#7 verified CLOSED. Sole active ticket.
+**Status:** local implementation and all six acceptance criteria complete; final verification and independent reviews passed. Closure publication/read-back pending.
 **What to build:** Make each approved exchange intent traceable from submission through partial/confirmed fill and recovery from unknown outcomes.
 **Blocked by:** [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -30,12 +30,12 @@ Shared intent executor, CCXT Spot adapter, provider observations/fills/reservati
 
 ## Acceptance criteria
 
-- [ ] Ordinary CCXT market metadata without amount.step is supported; tick/lot/market-notional and available-fund fixtures reject invalid orders.
-- [ ] Repeated same operation and recovery after timeout-after-provider-success creates no second economic order in controlled fault tests.
-- [ ] Partially filled then canceled orders retain fills and release only confirmed unfilled reservations; out-of-order observations cannot erase fills.
-- [ ] Live-confirmed fills update durable positions/history/balances and API status using actual quantities/average/cost/fees.
-- [ ] Unknown dispatch/status or failed reconciliation blocks conflicting/new exposure until resolved; startup recovers pending intent before new execution.
-- [ ] Testnet reset/mainnet identity mismatch creates a review state without crossing namespaces.
+- [x] Ordinary CCXT market metadata without amount.step is supported; tick/lot/market-notional and available-fund fixtures reject invalid orders.
+- [x] Repeated same operation and recovery after timeout-after-provider-success creates no second economic order in controlled fault tests.
+- [x] Partially filled then canceled orders retain fills and release only confirmed unfilled reservations; out-of-order observations cannot erase fills.
+- [x] Live-confirmed fills update durable positions/history/balances and API status using actual quantities/average/cost/fees.
+- [x] Unknown dispatch/status or failed reconciliation blocks conflicting/new exposure until resolved; startup recovers pending intent before new execution.
+- [x] Testnet reset/mainnet identity mismatch creates a review state without crossing namespaces.
 
 ## Testing and validation
 
@@ -84,3 +84,13 @@ Live#8 OPEN, no superseding comments; native prerequisite#7 CLOSED verified. Pre
 ## BT06 current validation (2026-10-03)
 
 Sole active ticket; all six criteria remain open. Owned private adapter, reviewed capital sizing/risk, explicit operator setup and entry pause, durable dispatch/actual fill projections, account identity-first reconciliation, account-wide open orders, overlapping paginated trade history, third-asset fees, crash/write recovery and 15-second idle scheduling implemented. Two BT06 expected failures promoted to passing owned-provider HTTP tests. Latest focused broad run88passed/1paper-message regression, corrected and its focused check passed; later fault cases passed individually. Type35 and repository pyflakes pass. Initial full suite is running; independent Standards/Spec review and final corrected evidence remain required. [Acceptance record](../evidence/bt06-validation.md); source is uncommitted BT06 work against5c3ea91. No future ticket, real provider/funding/migration/trade/deploy/push. Next permitted step: complete current full suite, remaining venue/response fault checks, scoped pre-review commit, two-axis review/corrections and refreshed full evidence before closure.
+
+
+## BT06 review snapshot (2026-10-03)
+
+Source review commit998698be36430cabec2b5783d967c4228808bdbd. Full228cases228passed,0failures/skips/xfails,112.29seconds; strict type35, repository lint and24source compilation pass. Two BT06 expected failures retired with owned-provider HTTP proofs. Standards review:0actionable findings at998698b. Independent Spec review pending; source frozen during review. All criteria remain open. Review commands: git diff5c3ea9186400e1c8f5b8c19a9a0d63f6efa9a444...HEAD; commitsb229ee9/998698b. No real provider/funding/migration/trade/deployment/push or future-ticket implementation. Next permitted step: receive Spec findings, correct actionables and repeat affected/final gates before closure.
+
+
+## Final acceptance (supersedes historical planning/progress records)
+
+All six criteria complete at69716fb6bf89e014b2dbf402ca21d6dc86059285. Full229cases229passed,0failures/skips/xfails,124.02seconds; type35/lint/diff/24source compilation pass. Standards0/Spec0 after real FULL timestamp and sparse/delayed history corrections. Scoped source commits998698b/69716fb. [Criterion/review evidence](../evidence/bt06-validation.md), [machine evidence](../evidence/bt06-exchange-execution.json), [operator runbook](../../../exchange-execution.md). No real provider/funding/migration/trade/deploy/push. Actual provider/load acceptance remains BT15; protection stays BT07. Parent#2 remains open. Publish/close/read-back next before starting dependent work.

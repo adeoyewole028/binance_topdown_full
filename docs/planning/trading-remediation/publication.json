@@ -97,8 +97,10 @@
       "native_dependencies": [
         "BT05"
       ],
-      "verification": "Live issue/comments and native prerequisite#7 CLOSED verified; in progress",
-      "review_fixed_point": "5c3ea9186400e1c8f5b8c19a9a0d63f6efa9a444"
+      "verification": "All six local criteria/full checks/independent reviews passed; closure publication/read-back pending",
+      "review_fixed_point": "5c3ea9186400e1c8f5b8c19a9a0d63f6efa9a444",
+      "source_revision": "69716fb6bf89e014b2dbf402ca21d6dc86059285",
+      "state": "OPEN"
     },
     {
       "planning_id": "BT07",

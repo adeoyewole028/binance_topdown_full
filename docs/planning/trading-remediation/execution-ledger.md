@@ -176,3 +176,13 @@ BT06#8 live body/comments inspected, OPEN/no comments; native blocked-by#7 CLOSE
 ## BT06 current validation (2026-10-03)
 
 Sole active ticket; all six criteria remain open. Owned private adapter, reviewed capital sizing/risk, explicit operator setup and entry pause, durable dispatch/actual fill projections, account identity-first reconciliation, account-wide open orders, overlapping paginated trade history, third-asset fees, crash/write recovery and 15-second idle scheduling implemented. Two BT06 expected failures promoted to passing owned-provider HTTP tests. Latest focused broad run88passed/1paper-message regression, corrected and its focused check passed; later fault cases passed individually. Type35 and repository pyflakes pass. Initial full suite is running; independent Standards/Spec review and final corrected evidence remain required. [Acceptance record](evidence/bt06-validation.md); source is uncommitted BT06 work against5c3ea91. No future ticket, real provider/funding/migration/trade/deploy/push. Next permitted step: complete current full suite, remaining venue/response fault checks, scoped pre-review commit, two-axis review/corrections and refreshed full evidence before closure.
+
+
+## BT06 review snapshot (2026-10-03)
+
+Source review commit998698be36430cabec2b5783d967c4228808bdbd. Full228cases228passed,0failures/skips/xfails,112.29seconds; strict type35, repository lint and24source compilation pass. Two BT06 expected failures retired with owned-provider HTTP proofs. Standards review:0actionable findings at998698b. Independent Spec review pending; source frozen during review. All criteria remain open. Review commands: git diff5c3ea9186400e1c8f5b8c19a9a0d63f6efa9a444...HEAD; commitsb229ee9/998698b. No real provider/funding/migration/trade/deployment/push or future-ticket implementation. Next permitted step: receive Spec findings, correct actionables and repeat affected/final gates before closure.
+
+
+## BT06 final acceptance (2026-10-03)
+
+All six local criteria complete at69716fb6bf89e014b2dbf402ca21d6dc86059285. Full229passed,0failures/skips/xfails,124.02s; type35/lint/diff/24source compilation pass; Standards0/Spec0 after endpoint-timestamp and sparse/delayed history corrections. [Criterion/review evidence](evidence/bt06-validation.md), [machine hashes](evidence/bt06-exchange-execution.json), [runbook](../../exchange-execution.md). Scoped source998698b/69716fb. No real provider/funding/migration/trade/deploy/push. Closure publication/read-back#8 is next, then inspect#9/native prerequisite before BT07 alone. No future source started; parent#2 remains open.

@@ -98,3 +98,8 @@ D05 policy resolved2026-10-03 by explicit setup selection and “use both propos
 ## BT05 acceptance update (2026-10-03)
 
 R08/R09 paper admission/accounting criteria map to completed BT05 source12bfbdd,50paperbehaviorcases within194fullcases192pass2BT06strictxfails. Signed review/context freshness, invalid inputs/caps/capital, idempotency/reservations/concurrency, modeledfees/basis/fill atomicity/diskfailure, seed/security/sizing, cooldown/drawdown restart and manual reduction have evidence in `evidence/bt05-validation.md`. Standards0/Spec0 final review. Protection/replay/exchangeprovider/activation acceptance stays with later tickets, not silently satisfied here.
+
+
+## BT06 local completion trace
+
+R03/R08/R10 map to owned exchange admission/pause, reconciled capital sizing and actual fill/asset fee projections, stable identity/recovery and account-wide/order/overlapping history reconciliation at69716fb. Full229pass0xfail/skip/failure;35exchange tests include official FULL response shape, sparse delayed history, timeout/crash/write failures, cancellation/old observations, fees, reset/venue/account/namespace isolation and idle scheduling. Type35/lint/24source compile and both reviews0remaining findings. Evidence: `evidence/bt06-validation.md` and `evidence/bt06-exchange-execution.json`. Protection, provider/load certification, deployed acceptance and release closure remain assigned to their later tickets.
