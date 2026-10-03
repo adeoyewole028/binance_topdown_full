@@ -288,7 +288,8 @@ class StateStore:
                                (self.namespace, operation, key, digest,
                                 kind, symbol, side, quantity, row[0], operation))
             context = {**json.loads(request), 'reviewed_price': reviewed['price'] if reviewed else None,
-                       'reviewed_at': reviewed['fetched_at'] if reviewed else None, 'config_version': row[0]}
+                       'reviewed_at': reviewed['fetched_at'] if reviewed else None, 'config_version': row[0],
+                       'strategy_profile':self._config(connection)[1]['strategy_profile'], 'strategy_version':1}
             event = connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
                                        (self.namespace, operation, 'intent_queued', json.dumps(context)))
             connection.execute('UPDATE intents SET intake_sequence=? WHERE namespace=? AND operation_id=?',
@@ -416,9 +417,14 @@ class StateStore:
             return self._operations(connection)
 
     def _operations(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
-        return [dict(row) for row in connection.execute('''SELECT operation_id,kind,symbol,side,requested_qty,
-                       config_version,state,error_class FROM intents WHERE namespace=? AND kind!='protection' ORDER BY intake_sequence''',
-                                                       (self.namespace,))]
+        rows = [dict(row) for row in connection.execute('''SELECT i.operation_id,i.kind,i.symbol,i.side,i.requested_qty,
+                       i.config_version,i.state,i.error_class,c.values_json FROM intents i
+                       JOIN config_versions c ON c.namespace=i.namespace AND c.version=i.config_version
+                       WHERE i.namespace=? AND i.kind!='protection' ORDER BY i.intake_sequence''', (self.namespace,))]
+        for row in rows:
+            values = validated_config(json.loads(row.pop('values_json')))
+            row.update(strategy_profile=values['strategy_profile'],strategy_version=values['strategy_version'])
+        return rows
 
     def set_price(self, symbol: str, price: str) -> None:
         with self.connection(write=True) as connection:

@@ -42,7 +42,7 @@ class ExecutionWorker(ExecutionOwner):
     def publish_scan(self, snapshot: dict[str, Any]) -> None:
         if not self.ownership_confirmed():
             raise OwnershipUnavailable('Execution ownership uncertain')
-        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns', 'market_health', 'market_cache', 'market_metadata'}
+        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns', 'market_health', 'market_cache', 'market_metadata', 'strategy_decisions', 'strategy_profile', 'strategy_version'}
         values = {key: value for key, value in snapshot.items() if key in allowed}
         now = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
         with self.store.connection(write=True) as connection:
@@ -54,7 +54,7 @@ class ExecutionWorker(ExecutionOwner):
             connection.execute('''INSERT INTO scan_snapshots VALUES (?,?,?,?,?) ON CONFLICT(namespace)
                                   DO UPDATE SET config_version=excluded.config_version,profile=excluded.profile,
                                   values_json=excluded.values_json,published_at=excluded.published_at''',
-                               (self.store.namespace, version, 'legacy-dashboard-v1', json.dumps(values, allow_nan=False), now))
+                               (self.store.namespace, version, snapshot.get('strategy_profile','legacy-dashboard-v1'), json.dumps(values, allow_nan=False), now))
             unresolved = connection.execute('''SELECT 1 FROM intents i JOIN namespaces n ON n.id=i.namespace
                 WHERE n.account=? AND n.venue=? AND i.state IN ('dispatching','unknown','canceling','processing') LIMIT 1''',
                                             (self.store.account, self.store.venue)).fetchone()

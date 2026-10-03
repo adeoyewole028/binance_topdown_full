@@ -4,6 +4,9 @@ from datetime import datetime
 import pandas as pd
 from runtime_environment import RuntimeEnvironment, construct_exchange, load_launcher_environment, parse_boolean
 from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer
+from strategy_profiles import evaluate_observation as evaluate_market_snapshot
+
+__all__ = ['evaluate_market_snapshot']
 
 running = True
 def signal_handler(sig, frame):

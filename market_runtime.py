@@ -26,7 +26,7 @@ class DataQualityError(RuntimeError):
     pass
 
 
-INTERVALS = {'4h': (14400, 200), '1h': (3600, 200), '15m': (900, 100)}
+INTERVALS = {'1d': (86400, 300), '4h': (14400, 200), '1h': (3600, 200), '15m': (900, 100)}
 
 
 def iso(timestamp: float) -> str:
@@ -35,8 +35,9 @@ def iso(timestamp: float) -> str:
 
 class CachedMarketView:
     """Legacy evaluator-facing public shape; deliberately has no transport."""
-    def __init__(self, venue: str, cache: dict[str, Any], prices: dict[str, Any]) -> None:
+    def __init__(self, venue: str, cache: dict[str, Any], prices: dict[str, Any], *, context: dict[str, Any] | None = None) -> None:
         self.venue, self.cache, self.prices = venue, cache, prices
+        self.context = context or {}
 
     def fetch_ohlcv(self, symbol: str, *, timeframe: str, limit: int) -> list[list[float]]:
         rows: list[list[float]] = self.cache[f'{self.venue}:{symbol}:{timeframe}']['rows']
@@ -48,8 +49,9 @@ class CachedMarketView:
         return {'last': float(self.prices[symbol]['last'])}
 
 
-def validated_bars(incoming: Any, timeframe: str, server_time: float) -> list[list[float]]:
-    duration, required = INTERVALS[timeframe]
+def validated_bars(incoming: Any, timeframe: str, server_time: float, *, required: int | None = None) -> list[list[float]]:
+    duration, default_required = INTERVALS[timeframe]
+    required = default_required if required is None else required
     boundary = int(server_time // duration) * duration
     rows: list[list[float]] = []
     previous: float | None = None
@@ -152,19 +154,20 @@ class MarketRuntime:
             observation['fetched_at'] = iso(self.clock())
         return observation
 
-    def _candles(self, symbol: str, timeframe: str, server_time: float) -> list[list[float]]:
-        duration, required = INTERVALS[timeframe]
+    def _candles(self, symbol: str, timeframe: str, server_time: float, *, required: int | None = None) -> list[list[float]]:
+        duration, default_required = INTERVALS[timeframe]
+        required = default_required if required is None else required
         boundary = int(server_time // duration) * duration
         key = f'{self.owner.store.venue}:{symbol}:{timeframe}'
         cached = self.cache.get(key, {})
         if not isinstance(cached, dict):
             raise DataQualityError('Invalid cached candles')
-        reused = cached.get('closed_at') == boundary
+        reused = cached.get('closed_at') == boundary and len(cached.get('rows',[])) >= required
         lane = 'reduction' if symbol in self.owner.store.market_coverage() else 'market'
         incoming = cached['rows'] if reused else self._request(lane, 2, lambda: self.provider.candles(symbol, timeframe, required + 1))
-        rows = validated_bars(incoming, timeframe, server_time)
+        rows = validated_bars(incoming, timeframe, server_time,required=required)
         self.cache[key] = {'venue': self.owner.store.venue, 'symbol': symbol, 'timeframe': timeframe,
-                           'closed_at': boundary, 'fetched_at': cached['fetched_at'] if reused else iso(self.clock()), 'rows': rows}
+                           'closed_at': boundary, 'required':required, 'fetched_at': cached['fetched_at'] if reused else iso(self.clock()), 'rows': rows}
         return rows
 
     def scan_once(self) -> None:
@@ -219,12 +222,25 @@ class MarketRuntime:
                     continue
                 filter_prices[symbol] = self._filter_price(symbol, notional, 'reduction' if symbol in financial_coverage else 'market')
             self.snapshot['market_metadata']['filter_prices'] = filter_prices
+            from strategy_profiles import PROFILES
+            observation = self.owner.store.snapshot(now=self.clock())
+            profiles = {config['strategy_profile']} | {r['config']['strategy_profile'] for r in observation['position_rules'].values() if r['state'] == 'bound'}
+            requirements: dict[str,int] = {}
+            for name in profiles:
+                contract = PROFILES[name]
+                for timeframe, count in ((contract.trend,contract.trend_window),(contract.bias,200),('15m',contract.execution_window)):
+                    requirements[timeframe] = max(requirements.get(timeframe,0),count)
+            timeframes = set(requirements)
+            health['timeframes'] = sorted(timeframes)
             for symbol in sorted(required, key=lambda s: (s not in financial_coverage, s)):
-                for timeframe in INTERVALS:
-                    self._candles(symbol, timeframe, server_time)
+                for timeframe in sorted(timeframes):
+                    self._candles(symbol, timeframe, server_time,required=requirements[timeframe])
             self.owner.publish_prices({s: tickers[s]['last'] for s in required}, fetched_at=ticker_received)
             if self.evaluate is not None:
-                self.snapshot.update(self.evaluate(CachedMarketView(self.owner.store.venue, self.cache, tickers), universe, config))
+                self.snapshot.update(self.evaluate(CachedMarketView(self.owner.store.venue, self.cache, tickers,context={
+                    'namespace':self.owner.store.namespace,'config_version':version,
+                    'as_of':datetime.fromtimestamp(server_time,timezone.utc),
+                    'positions':observation['positions'],'position_rules':observation['position_rules']}), universe, config))
             health.update(state='ready', reason=None, last_completed_scan=iso(self.clock()), coverage=sorted(required), failures=0, retry_at=0)
             health.pop('price_refresh_failure', None)
             self.snapshot.update(universe=universe, last_scan=health['last_completed_scan'])
@@ -270,12 +286,13 @@ def observed_health(snapshot: dict[str, Any], now: float, timeout: int = Operati
         try:
             server_time = now + float(health['clock_skew_seconds'])
             for symbol in health.get('coverage', []):
-                for timeframe, (duration, _) in INTERVALS.items():
+                for timeframe in health.get('timeframes', ['4h','1h','15m']):
+                    duration, _ = INTERVALS[timeframe]
                     key = f'{snapshot["market_prices"][symbol]["venue"]}:{symbol}:{timeframe}'
                     cached = snapshot['market_cache'][key]
                     if cached['closed_at'] != int(server_time // duration) * duration:
                         raise DataQualityError('Missing latest completed candle')
-                    validated_bars(cached['rows'], timeframe, server_time)
+                    validated_bars(cached['rows'], timeframe, server_time,required=cached.get('required'))
         except (DataQualityError, KeyError, TypeError, ValueError, IndexError, OverflowError):
             health.update(execution_ready=False, state='degraded', reason='candle_stale')
     if health['execution_ready']:

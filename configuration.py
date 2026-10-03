@@ -27,6 +27,12 @@ def validated_config(values: dict[str, Any]) -> dict[str, Any]:
     if not FIELDS.issubset(values):
         raise ConfigurationError('Complete configuration required')
     result = values.copy()
+    # Existing immutable dashboard configurations retain their historical profile.
+    result.setdefault('strategy_profile','dashboard_intraday')
+    result.setdefault('strategy_version',1)
+    from strategy_profiles import PROFILES
+    if not isinstance(result['strategy_profile'],str) or result['strategy_profile'] not in PROFILES or type(result['strategy_version']) is not int or result['strategy_version'] != 1:
+        raise ConfigurationError('Unknown strategy profile/version')
     try:
         for key in NUMERIC_FIELDS | INTEGER_FIELDS:
             value = result[key]

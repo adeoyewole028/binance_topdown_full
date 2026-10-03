@@ -7,6 +7,7 @@ import os
 import pandas as pd
 from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer
 from typing import Mapping
+from strategy_profiles import PROFILES, evaluate_observation as evaluate_market_snapshot
 from operator_security import install_operator_security, configure_operator
 from runtime_environment import RuntimeEnvironment, construct_exchange, parse_boolean
 from state_store import StateStore, StateUnavailable
@@ -99,6 +100,8 @@ install_operator_security(app)
 
 # Defaults for config (used for reset)
 DEFAULT_CONFIG = {
+    'strategy_profile': 'dashboard_intraday',
+    'strategy_version': 1,
     'risk': 0.01,
     'max_positions': 5,
     'cooldown': 120,
@@ -310,32 +313,6 @@ def require_exchange_execution():
     runtime_environment.require_exchange()
     if runtime_environment.mode != 'exchange':
         raise ValueError('Restart with a reviewed exchange namespace before execution')
-def evaluate_market_snapshot(view, symbols, config):
-    """Use existing indicator/exit helpers exclusively on validated cached data."""
-    from datetime import datetime, timezone
-    status['config'] = config
-    status['open_positions'] = display_positions(state_store.positions())
-    status['live_prices'] = {s: view.fetch_ticker(s)['last'] for s in view.prices}
-    now = datetime.now(timezone.utc).isoformat()
-    signals = []
-    for symbol in symbols:
-        trend = daily_trend_check(fetch_ohlcv_df(view, symbol, '4h', 200))
-        bias = bias_check_1h(fetch_ohlcv_df(view, symbol, '1h', 200))
-        execution = execution_check_15m(fetch_ohlcv_df(view, symbol, '15m', 100))
-        if trend['bullish'] and bias['near_ma'] and bias['momentum_ok'] and execution['signal']:
-            signals.append({'symbol': symbol, 'type': execution.get('type', 'entry'),
-                            'time': now, 'trend4h': trend, 'bias1h': bias})
-    exits = []
-    rules = state_store.position_rules()
-    for position in status['open_positions']:
-        rule = rules[position['symbol']]
-        if rule['state'] != 'bound':
-            continue
-        result = compute_exit_reasons(position['symbol'], position['entry'], position['qty'], view, rule['config'])
-        if result['should_exit']:
-            exits.append({'symbol': position['symbol'], 'reasons': result['reasons'], 'price': result['price'],
-                          'pnl': (result['price'] - position['entry']) * position['qty']})
-    return {'signals': signals, 'exit_signals': exits}
 
 
 def bot_loop(owner=None) -> None:
@@ -472,6 +449,9 @@ def api_status():
         'performance': observed['performance'],
         'config': observed['config'],
         'config_version': observed['config_version'],
+        'strategy_decisions': observed.get('strategy_decisions',[]),
+        'strategy_profile': observed['config']['strategy_profile'],
+        'strategy_version': observed['config']['strategy_version'],
         'trailing_supported': False,
         'market_health': observed['market_health'],
         'market_prices': observed['market_prices'],
@@ -687,8 +667,8 @@ def dashboard():
                                         <th class="text-left py-2">Time</th>
                                         <th class="text-left py-2">Symbol</th>
                                         <th class="text-left py-2">Type</th>
-                                        <th class="text-left py-2">4h Trend</th>
-                                        <th class="text-left py-2">1h Bias</th>
+                                        <th class="text-left py-2">Trend timeframe</th>
+                                        <th class="text-left py-2">Bias timeframe</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -700,11 +680,13 @@ def dashboard():
                                             <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-medium">{{ sig['type'] }}</span>
                                         </td>
                                         <td class="py-2 space-x-1">
+                                            <span>{{ sig.get('trend_timeframe', '4h') }}</span>
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['trend4h']['bullish'] else 'bg-slate-700 text-slate-200' }}">bullish</span>
                                             <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">21/{{ 'Y' if sig['trend4h']['above21'] else 'N' }}</span>
                                             <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">HHLL/{{ 'Y' if sig['trend4h']['hhll'] else 'N' }}</span>
                                         </td>
                                         <td class="py-2 space-x-1">
+                                            <span>{{ sig.get('bias_timeframe', '1h') }}</span>
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['near_ma'] else 'bg-slate-700 text-slate-200' }}">near EMA21</span>
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['momentum_ok'] else 'bg-slate-700 text-slate-200' }}">RSI ok</span>
                                             <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">RSI {{ sig['bias1h']['rsi']|round(2) }}</span>
@@ -879,6 +861,13 @@ def dashboard():
                                 </label>
                                 <p>Execution mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }}.
                                     Mode and venue changes require isolated state and account review.</p>
+                                <label for="strategy-profile">Strategy profile (version 1)
+                                    <select id="strategy-profile" name="strategy_profile" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                        {% for name, contract in strategy_profiles.items() %}
+                                        <option value="{{ name }}" {{ 'selected' if status['config']['strategy_profile'] == name else '' }}>{{ name.replace('_',' ') }}: {{ contract.trend }} trend / {{ contract.bias }} bias / 15m execution</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
                                 <label>near_ema_pct
                                     <input name="near_ema_pct" type="number" step="0.001" min="0" value="{{ status['config']['near_ema_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
                                 </label>
@@ -1063,7 +1052,7 @@ def dashboard():
                     </script>
         </body>
         </html>
-    ''', status=g.operator_status, venue=runtime_environment.venue if runtime_environment else 'unconfigured', order_key=secrets.token_urlsafe(24), order_review=order_review_token())
+    ''', status=g.operator_status, strategy_profiles=PROFILES, venue=runtime_environment.venue if runtime_environment else 'unconfigured', order_key=secrets.token_urlsafe(24), order_review=order_review_token())
 
 if __name__ == '__main__':
     import argparse

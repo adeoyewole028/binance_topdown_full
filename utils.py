@@ -25,7 +25,7 @@ def is_higher_highs_lows(close: pd.Series) -> bool:
     except Exception:
         return False
 
-def detect_bullish_engulfing(df):
+def detect_bullish_engulfing(df: pd.DataFrame) -> bool:
     if len(df) < 2: return False
     a = df.iloc[-2]; b = df.iloc[-1]
     prev_bear = a['close'] < a['open']
@@ -33,16 +33,16 @@ def detect_bullish_engulfing(df):
     if not (prev_bear and curr_bull): return False
     prev_low, prev_high = min(a['open'],a['close']), max(a['open'],a['close'])
     curr_low, curr_high = min(b['open'],b['close']), max(b['open'],b['close'])
-    return curr_low <= prev_low and curr_high >= prev_high
+    return bool(curr_low <= prev_low and curr_high >= prev_high)
 
-def detect_hammer(df):
+def detect_hammer(df: pd.DataFrame) -> bool:
     if len(df) < 1: return False
     c = df.iloc[-1]
     body = abs(c['close'] - c['open'])
     lower_wick = min(c['open'], c['close']) - c['low']
     upper_wick = c['high'] - max(c['open'], c['close'])
     if body == 0: return False
-    return (lower_wick >= 2 * body) and (upper_wick <= 0.5 * body)
+    return bool((lower_wick >= 2 * body) and (upper_wick <= 0.5 * body))
 
 def ensure_logs(path='logs'):
     os.makedirs(path, exist_ok=True)
