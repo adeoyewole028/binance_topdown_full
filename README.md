@@ -17,3 +17,5 @@ Run the credential-cleared offline suite with `python tools/check_baseline.py`, 
 Historical research now uses explicit UTC/profile/policy inputs and versioned causal portfolio replay: [research CLI and limitations](docs/historical-replay.md). Old entry-only counts are unvalidated.
 
 Account metrics rebuild from durable full history with qualified fee/basis and equity availability: [performance contract](docs/account-performance.md).
+
+Operator status/settings, bundled assets and browser validation: [BT12 contract](docs/operator-status.md).

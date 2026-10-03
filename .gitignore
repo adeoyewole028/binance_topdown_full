@@ -34,3 +34,8 @@ dist/
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Offline dashboard asset tools
+node_modules/
+playwright-report/
+test-results/

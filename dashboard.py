@@ -1,7 +1,7 @@
 import secrets
 from itsdangerous import URLSafeSerializer, BadSignature
 
-from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response, g
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response, g
 import time
 import os
 import pandas as pd
@@ -273,7 +273,7 @@ def initialize_runtime(environment: Mapping[str, str] | None = None, *, clock=ti
 
 @app.before_request
 def refresh_durable_state():
-    if request.endpoint in {'operator_login', 'logout'} or state_store is None:
+    if request.endpoint in {'operator_login', 'logout','static'} or state_store is None:
         return None
     try:
         snapshot = state_store.snapshot(now=app.config['MARKET_CLOCK']())
@@ -297,6 +297,15 @@ def refresh_durable_state():
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; execution paused'), 503
     return None
+
+
+@app.after_request
+def dashboard_asset_type(response):
+    # Windows registry MIME mappings may report .js as text/plain. Keep
+    # nosniff protection and explicitly serve our bundled script as JavaScript.
+    if request.endpoint=='static' and request.view_args.get('filename')=='dashboard.js':
+        response.headers['Content-Type']='text/javascript; charset=utf-8'
+    return response
 
 def display_positions(positions):
     return [{'symbol': p['symbol'], 'qty': float(p['qty']),
@@ -332,16 +341,16 @@ def bot_loop(owner=None) -> None:
 @app.route('/paper/setup', methods=['POST'])
 def setup_paper():
     try:
+        expected=int(request.form['expected_config_version'])
         state_store.setup_paper(request.form.to_dict(), 'configured-operator',
-                                expected_version=int(request.form['expected_config_version']))
+                                expected_version=expected)
     except ConfigurationConflict as error:
         return jsonify(error=str(error)), 409
     except (ConfigurationError, ValueError, KeyError) as error:
         return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Paper setup was not saved; durable state unavailable'), 503
-    flash('Paper assumptions and explicit initial capital recorded', 'success')
-    return redirect('/')
+    return settings_saved(expected+1,'Paper assumptions and explicit initial capital recorded')
 
 @app.route('/paper/cancel', methods=['POST'])
 def cancel_paper():
@@ -359,15 +368,15 @@ def cancel_paper():
 @app.route('/exchange/setup', methods=['POST'])
 def setup_exchange():
     try:
-        state_store.setup_execution(dict(request.form), 'configured-operator', expected_version=int(request.form['expected_config_version']))
+        expected=int(request.form['expected_config_version'])
+        state_store.setup_execution(dict(request.form), 'configured-operator', expected_version=expected)
     except ConfigurationConflict as error:
         return jsonify(error=str(error)), 409
     except (ConfigurationError, ValueError, KeyError) as error:
         return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Exchange policy was not saved'), 503
-    flash('Exchange risk policy saved; provider reconciliation is still required', 'info')
-    return redirect('/')
+    return settings_saved(expected+1,'Exchange risk policy saved; provider reconciliation is still required')
 
 @app.route('/exchange/entries', methods=['POST'])
 def exchange_entries():
@@ -436,6 +445,8 @@ def api_status():
     # Minimal JSON for static frontends; includes signals, positions, performance, config (non-secret)
     observed = g.operator_status
     payload = {
+        'namespace':state_store.namespace,
+        'presentation':operator_presentation(observed),
         'order_review': order_review_token(),
         'last_scan': observed['last_scan'],
         'universe': observed['universe'],
@@ -469,6 +480,7 @@ def api_status():
         'fills': observed['fills'],
         'protection': observed['protection'],
     }
+    if request.args.get('view')=='1':payload['dashboard_view']=render_dashboard()
     resp = make_response(jsonify(payload), 200)
     return resp
 
@@ -500,19 +512,14 @@ def update_config():
     # Merge into status
     try:
         expected = int(form.get('expected_config_version', g.operator_status['config_version']))
-        state_store.update_config(updates, 'operator', expected_version=expected)
-        ok = True
+        version,_=state_store.update_config(updates, 'operator', expected_version=expected)
     except ConfigurationConflict as error:
-        return jsonify(error=str(error)), 409
+        return settings_error(str(error),409,form,{'expected_config_version':'Settings changed. Review the current version before saving again.'})
     except (ConfigurationError, ValueError) as error:
-        return jsonify(error=str(error)), 400
+        return settings_error(str(error),422,form,invalid_config_fields(updates))
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; configuration unchanged'), 503
-    if ok:
-        flash('Configuration saved.', 'success')
-    else:
-        flash('Failed to save configuration; using in-memory values.', 'error')
-    return redirect(url_for('dashboard'))
+    return settings_saved(version,'Configuration saved.')
 
 @app.route('/reset-config', methods=['POST'])
 def reset_config():
@@ -520,19 +527,14 @@ def reset_config():
     paper = g.operator_status['config']['paper_trading']
     try:
         expected = int(request.form.get('expected_config_version', g.operator_status['config_version']))
-        state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset', expected_version=expected)
-        ok = True
+        version,_=state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset', expected_version=expected)
     except ConfigurationConflict as error:
         return jsonify(error=str(error)), 409
     except (ConfigurationError, ValueError) as error:
         return jsonify(error=str(error)), 400
     except StateUnavailable:
         return jsonify(error='Durable state unavailable; configuration unchanged'), 503
-    if ok:
-        flash('Configuration reset to defaults.', 'success')
-    else:
-        flash('Reset failed to save; defaults applied in memory.', 'error')
-    return redirect(url_for('dashboard'))
+    return settings_saved(version,'Configuration reset to defaults.')
 
 @app.post('/change-mode')
 def change_mode():
@@ -550,522 +552,54 @@ def change_mode():
 
 @app.route('/', methods=['GET'])
 def dashboard():
-    return render_template_string('''
-        <!doctype html>
-        <html lang="en" class="h-full bg-slate-950">
-        <head>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <meta http-equiv="refresh" content="15" />
-            <title>Binance Topdown Bot Dashboard</title>
-            <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="h-full text-slate-100">
-            <header class="bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-800">
-                <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-                    <h1 class="text-xl font-semibold">Binance Topdown Bot</h1>
-                    <span>Mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }} / {{ venue }}</span>
-                    <form method="post" action="/logout">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit">Sign out</button>
-                    </form>
-                    <div class="flex items-center gap-2">
-                        <button id="soundToggle" class="px-2 py-1 rounded border border-slate-700 text-xs text-slate-200 hover:bg-slate-800">Sound: Off</button>
-                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['market_health']['execution_ready'] else 'bg-rose-600 text-white' }}">
-                            {{ status['bot_status'] }}
-                        </span>
-                    </div>
-                </div>
-            </header>
+    return render_dashboard()
 
-            <!-- Toasts root -->
-            <div id="toast-root" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
-            <main class="max-w-7xl mx-auto p-4 space-y-4">
-                <section class="grid grid-cols-1 xl:grid-cols-4 gap-4">
-                    <div class="col-span-1 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Overview</h2>
-                        <div class="text-xs text-slate-400 mt-1">Last scan: {{ status['last_scan'] }}</div>
-                        <div class="mt-3 space-y-1 text-sm">
-                            <div class="flex items-center justify-between">
-                                <span class="text-slate-400">Universe size</span>
-                                <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['universe']|length }}</span>
-                            </div>
-                            <div class="flex items-center justify-between">
-                                <span class="text-slate-400">Signals</span>
-                                <span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-slate-900' if status['signals'] else 'bg-slate-700 text-slate-200' }} text-xs">{{ status['signals']|length }}</span>
-                            </div>
-                            <div class="flex items-center justify-between">
-                                <span class="text-slate-400">Exit signals</span>
-                                <span class="px-2 py-0.5 rounded {{ 'bg-amber-500 text-slate-900' if status['exit_signals'] else 'bg-slate-700 text-slate-200' }} text-xs">{{ status['exit_signals']|length }}</span>
-                            </div>
-                        </div>
-                    </div>
+def operator_presentation(observed):
+    health=observed['market_health']
+    reason=health.get('reason')
+    ready=health['execution_ready']
+    state='ready' if ready else 'unavailable' if not health.get('last_completed_scan') else 'degraded'
+    label='Market data ready' if ready else 'Market data unavailable' if state=='unavailable' else 'Market data degraded'
+    if ready and not observed['signals']:
+        state='no_signal'
+        label='Market data ready; no entry signal'
+    explanations={'scanner_uninitialized':'Start the supervised scanner to obtain market data.',
+        'scanner_stale':'The last successful scan is too old.', 'owner_unavailable':'The execution owner is unavailable.',
+        'configuration_changed':'The scanner must observe the current settings.',
+        'candle_stale':'Completed candle data is stale.', 'price_stale':'Prices are stale.',
+        'market_budget_unavailable':'The shared market request budget is unavailable.'}
+    return {'state':state,'label':label,'detail':explanations.get(reason,'Market data needs review.' if reason else ''),
+        'scan_age_seconds':health.get('scan_age_seconds'),'last_completed_scan':health.get('last_completed_scan'),
+        'permission': 'Exchange execution permitted by server' if runtime_environment and runtime_environment.allow_exchange else 'Paper only; exchange execution is not permitted'}
 
-                    <div class="col-span-1 xl:col-span-3 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Universe</h2>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 mt-3">
-                            {% for symbol in status['universe'][:12] %}
-                            <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                                <div class="flex items-center justify-between">
-                                    <div class="font-semibold text-sm">{{ symbol }}</div>
-                                    <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['cooldowns'][symbol] }}s</span>
-                                </div>
-                                <div class="mt-2 text-sm">
-                                    {% set p = status['live_prices'][symbol] %}
-                                    {% if p == 'N/A' %}
-                                        <span class="italic text-slate-400">N/A</span>
-                                    {% else %}
-                                        <span class="text-slate-200">{{ p|round(6) }}</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </section>
 
-                <section class="grid grid-cols-1 gap-4">
-                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Open Positions</h2>
-                        <div class="overflow-x-auto mt-2">
-                            <table class="min-w-full text-sm">
-                                <thead class="text-slate-400">
-                                    <tr class="border-b border-slate-800">
-                                        <th class="text-left py-2">Symbol</th>
-                                        <th class="text-left py-2">Entry</th>
-                                        <th class="text-left py-2">Qty</th>
-                                        <th class="text-left py-2">P&L</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for pos in status['open_positions'] %}
-                                    {% set pnlpos = 'text-emerald-400' if pos['pnl'] is number and pos['pnl']>0 else ('text-rose-400' if pos['pnl'] is number and pos['pnl']<0 else 'text-slate-200') %}
-                                    <tr class="border-b border-slate-800/60">
-                                        <td class="py-2">{{ pos['symbol'] }}</td>
-                                        <td class="py-2">{{ pos['entry'] if pos['entry'] is not none else 'Basis unavailable' }}</td>
-                                        <td class="py-2">{{ pos['qty'] }}</td>
-                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) if pos['pnl'] is number else 'Unavailable' }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
+def invalid_config_fields(updates):
+    from configuration import validated_config
+    errors={}
+    for field,value in updates.items():
+        try:validated_config({**g.operator_status['config'],field:value})
+        except ConfigurationError as error:errors[field]=str(error)
+    return errors or {field:'Review this value and related settings.' for field in updates}
 
-                <section aria-label="Position protection" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                    <h2 class="text-sm font-semibold text-slate-300">Position protection</h2>
-                    {% for group in status['protection'] %}
-                    <p>{{ group['symbol'] }}: {{ group['state'] }} — {{ group.get('semantics', 'unverified') }};
-                        quantity {{ group['quantity'] }}. Stop {{ group.get('stop_price', 'unavailable') }};
-                        take profit {{ group.get('take_profit_price', 'unavailable') }}.</p>
-                    {% if group.get('next_action') %}<p role="alert">{{ group['next_action'] }}</p>{% endif %}
-                    {% endfor %}
-                    <p>Simulation is local. Exchange protection requires provider confirmation; stop execution price is not guaranteed.</p>
-                </section>
 
-                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                    <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Signals</h2>
-                        {% if status['signals'] %}
-                        <div class="overflow-x-auto mt-2">
-                            <table class="min-w-full text-sm">
-                                <thead class="text-slate-400">
-                                    <tr class="border-b border-slate-800">
-                                        <th class="text-left py-2">Time</th>
-                                        <th class="text-left py-2">Symbol</th>
-                                        <th class="text-left py-2">Type</th>
-                                        <th class="text-left py-2">Trend timeframe</th>
-                                        <th class="text-left py-2">Bias timeframe</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for sig in status['signals'] %}
-                                    <tr class="border-b border-slate-800/60">
-                                        <td class="py-2 text-slate-400">{{ sig['time'] }}</td>
-                                        <td class="py-2 font-medium">{{ sig['symbol'] }}</td>
-                                        <td class="py-2">
-                                            <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-medium">{{ sig['type'] }}</span>
-                                        </td>
-                                        <td class="py-2 space-x-1">
-                                            <span>{{ sig.get('trend_timeframe', '4h') }}</span>
-                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['trend4h']['bullish'] else 'bg-slate-700 text-slate-200' }}">bullish</span>
-                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">21/{{ 'Y' if sig['trend4h']['above21'] else 'N' }}</span>
-                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">HHLL/{{ 'Y' if sig['trend4h']['hhll'] else 'N' }}</span>
-                                        </td>
-                                        <td class="py-2 space-x-1">
-                                            <span>{{ sig.get('bias_timeframe', '1h') }}</span>
-                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['near_ma'] else 'bg-slate-700 text-slate-200' }}">near EMA21</span>
-                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['momentum_ok'] else 'bg-slate-700 text-slate-200' }}">RSI ok</span>
-                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">RSI {{ sig['bias1h']['rsi']|round(2) }}</span>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                            <div class="text-slate-400 mt-2">No signals detected on the current scan.</div>
-                        {% endif %}
-                    </div>
+def settings_error(message,code,submitted,errors):
+    if request.accept_mimetypes.best=='text/html':
+        return render_dashboard(submitted=submitted,errors=errors,message=message),code
+    return jsonify(error=message,fields=errors,current_config_version=g.operator_status['config_version']),code
 
-                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Exit Signals</h2>
-                        {% if status['exit_signals'] %}
-                        <div class="overflow-x-auto mt-2">
-                            <table class="min-w-full text-sm">
-                                <thead class="text-slate-400">
-                                    <tr class="border-b border-slate-800"><th class="text-left py-2">Symbol</th><th class="text-left py-2">Price</th><th class="text-left py-2">P&L</th><th class="text-left py-2">Reasons</th><th class="py-2"></th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for es in status['exit_signals'] %}
-                                    {% set pnlpos = 'text-emerald-400' if es['pnl']>0 else ('text-rose-400' if es['pnl']<0 else 'text-slate-200') %}
-                                    <tr class="border-b border-slate-800/60">
-                                        <td class="py-2">{{ es['symbol'] }}</td>
-                                        <td class="py-2">{{ es['price'] }}</td>
-                                        <td class="py-2 {{ pnlpos }}">{{ es['pnl']|round(2) }}</td>
-                                        <td class="py-2 space-x-1">
-                                            {% for r in es['reasons'] %}
-                                                <span class="inline-flex items-center rounded-full bg-amber-500 text-slate-900 px-2 py-0.5 text-xs font-medium">{{ r }}</span>
-                                            {% endfor %}
-                                        </td>
-                                        <td class="py-2">
-                                            <form method="post" action="/close" class="inline-flex">
-                                                <input type="hidden" name="order_review" value="{{ order_review }}">
-                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}-close-{{ loop.index }}">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <input type="hidden" name="symbol" value="{{ es['symbol'] }}">
-                                                <input type="hidden" name="qty" value="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}">
-                                                <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                            <div class="text-slate-400 mt-2">No exit signals right now.</div>
-                        {% endif %}
-                    </div>
-                </section>
 
-                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                    <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        {% set is_paper = status['config']['paper_trading'] %}
-                        <h2 class="text-sm font-semibold text-slate-300">{{ 'Paper account setup' if is_paper else 'Exchange risk setup' }}</h2>
-                        {% set policy = (status['paper_account'].get('policy') if is_paper else status['config'].get('execution_policy')) or {} %}
-                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ status['exchange_account']['state'] }}{% if status['exchange_account'].get('reason') %} — {{ status['exchange_account']['reason'] }}{% endif %}.{% endif %}</p>
-                        <form method="post" action="{{ '/paper/setup' if is_paper else '/exchange/setup' }}" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
-                            <label>Funding quote asset
-                                <select name="quote" required class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
-                                    <option value="{{ policy.get('quote', status['config']['base_quote']) }}">{{ policy.get('quote', status['config']['base_quote']) }}</option>
-                                </select>
-                            </label>
-                            {% for field, label in [('initial_cash','Initial paper cash (one-time seed)'), ('fee_fraction','Fee fraction per fill'), ('slippage_fraction','Adverse slippage fraction'), ('risk_fraction','Maximum risk fraction per trade'), ('fixed_quote','Fixed allocation in funding quote'), ('max_allocation_fraction','Maximum allocation fraction per order'), ('max_exposure_fraction','Maximum total exposure fraction'), ('max_positions','Maximum open position slots'), ('cooldown_seconds','Entry cooldown in seconds'), ('drawdown_fraction','Drawdown stop fraction')] %}
-                            {% if is_paper or field!='initial_cash' %}
-                            <label>{{ label }}
-                                <input name="{{ field }}" type="number" inputmode="decimal" step="any" min="0" required value="{{ policy.get(field, '') }}" {% if field=='initial_cash' and policy %}readonly{% endif %} class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
-                            </label>
-                            {% endif %}
-                            {% endfor %}
-                            <p>Fractions use decimals: 0.01 means 1%. {% if is_paper %}Simulation uses full fills, quote fees and weighted-average cost basis. Seed and quote cannot be replaced after setup.{% else %}Fee and slippage fractions are admission estimates. Actual provider fills and fee assets determine account effects. Funds come from reconciliation; this form adds no funds.{% endif %}</p>
-                            <button type="submit" class="px-3 py-2 rounded bg-indigo-600">{{ 'Save explicit paper setup' if is_paper else 'Save explicit exchange risk setup' }}</button>
-                        </form>
-                        {% set account = status['paper_account'] if is_paper else status['exchange_account'] %}
-                        <p>Entry block: {{ (status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) or 'none' }}. Equity: {{ (status['paper_account'].get('equity') if is_paper else status['exchange_risk'].get('equity')) or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
-                        <dl>{% for asset, balance in account['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl>
-                        {% if not is_paper %}
-                        <form method="post" action="/exchange/entries">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="{{ 'resume' if status['entry_control']['paused'] else 'pause' }}">
-                            <button type="submit" class="px-3 py-2 rounded border border-slate-700">{{ 'Clear entry pause' if status['entry_control']['paused'] else 'Pause new entries' }}</button>
-                            <p>Reductions and provider reconciliation remain available. Clearing this pause does not clear drawdown or review gates.</p>
-                        </form>
-                        {% endif %}
-                        <h2 class="text-sm font-semibold text-slate-300 mt-3">Order operations</h2>
-                        <ul>{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operation['state'] }}{% if operation['error_class'] %}: {{ operation['error_class'] }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
-                        <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
-                                    <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <input type="hidden" name="order_review" value="{{ order_review }}">
-                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}">
-                                        <label class="text-sm">Sizing
-                                            <select name="sizing" class="mt-1 rounded bg-slate-800 border border-slate-700 px-2 py-1"><option value="quantity">Explicit quantity</option><option value="fixed">Configured fixed quote allocation</option><option value="risk">Configured risk allocation</option></select>
-                                        </label>
-                                        <label class="text-sm">Symbol
-                                            {% if status['universe'] %}
-                                                <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol">
-                                                    {% for s in status['universe'] %}
-                                                        <option value="{{ s }}">{{ s }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            {% else %}
-                                                <input class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol" value="BTC/USDT" />
-                                            {% endif %}
-                                        </label>
-                            <label class="text-sm">Side
-                                <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="side">
-                                    <option value="buy">Buy</option>
-                                    <option value="sell">Sell</option>
-                                </select>
-                            </label>
-                            <label class="text-sm">Quantity
-                                <div class="flex gap-2 items-center">
-                                    <input class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="qty" id="qtyInput" type="number" step="any" value="0.01" />
-                                    <button type="button" id="riskSizeBtn" class="mt-1 px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Size by risk</button>
-                                </div>
-                                <div class="text-xs text-slate-500 mt-1">Browser estimates do not authorize spending. The server uses funded capital and explicit paper limits.</div>
-                            </label>
-                            <button type="submit" class="w-full sm:w-auto px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Submit</button>
-                        </form>
-                        <div class="mt-3 space-y-1">
-                            {% with messages = get_flashed_messages(with_categories=true) %}
-                                {% if messages %}
-                                    {% for category, message in messages %}
-                                        <div class="px-3 py-2 rounded text-sm {{ 'bg-emerald-600 text-slate-900' if category=='success' else 'bg-rose-600 text-white' }}">{{ message }}</div>
-                                    {% endfor %}
-                                {% endif %}
-                            {% endwith %}
-                        </div>
-                        <form method="post" action="/reset-config" class="mt-3">
-                            <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="px-3 py-2 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs">Reset to defaults</button>
-                        </form>
-                    </div>
+def settings_saved(version,message):
+    if request.accept_mimetypes.best=='application/json':
+        return jsonify(saved_config_version=version,message=message)
+    flash(message,'success')
+    return redirect(url_for('dashboard'))
 
-                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Performance</h2>
-                        <div class="grid grid-cols-2 gap-4 mt-2">
-                            <div>
-                                <div class="text-xs text-slate-400">Win Rate</div>
-                                <div class="text-lg font-semibold">{{ (status['performance']['win_rate']|float*100)|round(2) ~ '%' if status['performance']['win_rate'] is not none else 'Unavailable' }}</div>
-                            </div>
-                            <div>
-                                <div class="text-xs text-slate-400">Estimated account change ({{ status['performance']['currency'] or 'currency unavailable' }})</div>
-                                <div class="text-lg font-semibold">{{ status['performance']['total_profit'] if status['performance']['total_profit'] is not none else 'Unavailable' }}</div>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <div class="text-xs text-slate-400">Drawdown</div>
-                            <div class="text-base">{{ (status['performance']['drawdown']|float*100)|round(2) ~ '%' if status['performance']['drawdown'] is not none else 'Unavailable' }}</div>
-                            <p>Confirmed realized: {{ status['performance']['realized'] if status['performance']['realized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
-                            <p>Estimated unrealized: {{ status['performance']['unrealized'] if status['performance']['unrealized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
-                            <p>{{ status['performance']['state']|capitalize }}</p>
-                            {% for message in status['performance']['reason_messages'] %}<p>{{ message }}</p>{% endfor %}
-                        </div>
-                        <div class="mt-4">
-                            <h3 class="text-sm font-semibold text-slate-300">Config</h3>
-                            <form method="post" action="/update-config" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 text-sm">
-                                <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <label>risk
-                                    <input name="risk" type="number" step="0.001" min="0" max="1" value="{{ status['config']['risk'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>max_positions
-                                    <input name="max_positions" type="number" step="1" min="1" value="{{ status['config']['max_positions'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>cooldown
-                                    <input name="cooldown" type="number" step="1" min="0" value="{{ status['config']['cooldown'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <p>Execution mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }}.
-                                    Mode and venue changes require isolated state and account review.</p>
-                                <label for="strategy-profile">Strategy profile (version 1)
-                                    <select id="strategy-profile" name="strategy_profile" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
-                                        {% for name, contract in strategy_profiles.items() %}
-                                        <option value="{{ name }}" {{ 'selected' if status['config']['strategy_profile'] == name else '' }}>{{ name.replace('_',' ') }}: {{ contract.trend }} trend / {{ contract.bias }} bias / 15m execution</option>
-                                        {% endfor %}
-                                    </select>
-                                </label>
-                                <label>near_ema_pct
-                                    <input name="near_ema_pct" type="number" step="0.001" min="0" value="{{ status['config']['near_ema_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>rsi_threshold
-                                    <input name="rsi_threshold" type="number" step="1" min="0" max="100" value="{{ status['config']['rsi_threshold'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>rsi_exec_threshold
-                                    <input name="rsi_exec_threshold" type="number" step="1" min="0" max="100" value="{{ status['config']['rsi_exec_threshold'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>rsi_overbought
-                                    <input name="rsi_overbought" type="number" step="1" min="0" max="100" value="{{ status['config']['rsi_overbought'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>take_profit_pct
-                                    <input name="take_profit_pct" type="number" step="0.001" min="0" value="{{ status['config']['take_profit_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>stop_loss_pct
-                                    <input name="stop_loss_pct" type="number" step="0.001" min="0" value="{{ status['config']['stop_loss_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>Trailing protection (unavailable)
-                                    <input name="trailing_pct" disabled type="number" step="0.001" min="0" value="{{ status['config']['trailing_pct'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                    <span class="text-xs text-slate-400">Saved legacy value; trailing orders are not implemented.</span>
-                                </label>
-                                <label>universe_size
-                                    <input name="universe_size" type="number" step="1" min="1" value="{{ status['config']['universe_size'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>base_quote
-                                    <input name="base_quote" type="text" value="{{ status['config']['base_quote'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label class="flex items-center gap-2">use_dynamic_universe
-                                    <select name="use_dynamic_universe" class="mt-1 rounded border-slate-700">
-                                        <option value="true" {% if status['config']['use_dynamic_universe'] %}selected{% endif %}>Enabled</option>
-                                        <option value="false" {% if not status['config']['use_dynamic_universe'] %}selected{% endif %}>Disabled</option>
-                                    </select>
-                                </label>
-                                <label>min_quote_vol
-                                    <input name="min_quote_vol" type="number" step="1000" min="0" value="{{ status['config']['min_quote_vol'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-                                <label>equity_proxy
-                                    <input name="equity_proxy" type="number" step="0.01" min="0" value="{{ status['config']['equity_proxy'] }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
-                                </label>
-
-                                <div class="sm:col-span-2 flex items-center justify-end gap-2">
-                                    <button type="submit" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-medium">Save</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </section>
-
-                            <section>
-                                <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                                    <h2 class="text-sm font-semibold text-slate-300">Recent Trades</h2>
-                                    <div class="overflow-x-auto mt-2">
-                                        <table class="min-w-full text-sm">
-                                            <thead class="text-slate-400">
-                                                <tr class="border-b border-slate-800">
-                                                    <th class="text-left py-2">Time</th>
-                                                    <th class="text-left py-2">Symbol</th>
-                                                    <th class="text-left py-2">Side</th>
-                                                    <th class="text-left py-2">Qty</th>
-                                                    <th class="text-left py-2">Price</th>
-                                                    <th class="text-left py-2">P&L</th>
-                                                    <th class="text-left py-2">Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% for t in status['recent_trades'] %}
-                                                    {% set pnlc = 'text-emerald-400' if t['pnl']>0 else ('text-rose-400' if t['pnl']<0 else 'text-slate-200') %}
-                                                    <tr class="border-b border-slate-800/60">
-                                                        <td class="py-2 text-slate-400">{{ t['time'] }}</td>
-                                                        <td class="py-2">{{ t['symbol'] }}</td>
-                                                        <td class="py-2"><span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-slate-900' if t['side']=='buy' else 'bg-rose-600 text-white' }} text-xs">{{ t['side'] }}</span></td>
-                                                        <td class="py-2">{{ t['qty'] }}</td>
-                                                        <td class="py-2">{{ t['price'] }}</td>
-                                                        <td class="py-2 {{ pnlc }}">{{ t['pnl'] }}</td>
-                                                        <td class="py-2 text-slate-300">{{ t['status'] }}</td>
-                                                    </tr>
-                                                {% endfor %}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </section>
-
-                <section>
-                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <h2 class="text-sm font-semibold text-slate-300">Logs</h2>
-                        <div class="mt-2 max-h-64 overflow-auto rounded border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-xs">
-                            {% for log in status['logs'] %}
-                                <div>{{ log }}</div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </section>
-            </main>
-                    <script>
-                        // Persist and toggle sound preference
-                        let soundEnabled = (localStorage.getItem('soundEnabled') === '1');
-                        const toggleBtn = document.getElementById('soundToggle');
-                        function refreshSoundLabel(){ if(toggleBtn){ toggleBtn.textContent = 'Sound: ' + (soundEnabled ? 'On' : 'Off'); } }
-                        refreshSoundLabel();
-                        let audioCtx = null;
-                        function ensureAudio(){
-                            if (!soundEnabled) return;
-                            try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); } catch(e){}
-                        }
-                        function playBeep(){
-                            if (!soundEnabled) return;
-                            ensureAudio();
-                            if (!audioCtx) return;
-                            const o = audioCtx.createOscillator();
-                            const g = audioCtx.createGain();
-                            o.type = 'sine';
-                            o.frequency.value = 880;
-                            g.gain.value = 0.08; // slightly louder
-                            o.connect(g); g.connect(audioCtx.destination);
-                            o.start();
-                            setTimeout(()=>{ o.stop(); }, 250); // a bit longer
-                        }
-                        if (toggleBtn) {
-                            toggleBtn.addEventListener('click', async () => {
-                                soundEnabled = !soundEnabled;
-                                localStorage.setItem('soundEnabled', soundEnabled ? '1' : '0');
-                                refreshSoundLabel();
-                                if (soundEnabled) { try { ensureAudio(); if (audioCtx && audioCtx.state !== 'running') { await audioCtx.resume(); } playBeep(); } catch(e){} }
-                            });
-                        }
-
-                        // Re-arm audio on first user interaction after each page load (autoplay policy)
-                        if (soundEnabled) {
-                            const onFirstInput = async () => {
-                                try {
-                                    ensureAudio();
-                                    if (audioCtx && audioCtx.state !== 'running') { await audioCtx.resume(); }
-                                    playBeep();
-                                } catch(e) {}
-                                window.removeEventListener('pointerdown', onFirstInput);
-                            };
-                            window.addEventListener('pointerdown', onFirstInput, { once: true });
-                        }
-
-                        // Toast helper
-                        function showToast(message){
-                            const root = document.getElementById('toast-root');
-                            if(!root) return;
-                            const el = document.createElement('div');
-                            el.className = 'rounded border border-slate-700 bg-slate-900/90 text-slate-100 px-3 py-2 shadow-lg text-sm transform transition-all duration-300 translate-y-[-6px] opacity-0';
-                            el.innerHTML = message;
-                            root.appendChild(el);
-                            requestAnimationFrame(()=>{ el.classList.remove('translate-y-[-6px]','opacity-0'); el.classList.add('translate-y-0','opacity-100'); });
-                            setTimeout(()=>{
-                                el.classList.add('opacity-0');
-                                setTimeout(()=>{ el.remove(); }, 300);
-                            }, 6000);
-                        }
-
-                        // Diff signals vs previous to raise toasts
-                        const currentSignals = {{ status['signals'] | tojson }};
-                        const ids = currentSignals.map(s => `${s.symbol}|${s.time}|${s.type || 'entry'}`);
-                        let prev = [];
-                        try { prev = JSON.parse(localStorage.getItem('signalIds') || '[]'); } catch(e) { prev = []; }
-                        const newOnes = ids.filter(id => !prev.includes(id));
-                        if (newOnes.length > 0) {
-                            // Show each as toast and optional beep
-                            for (const id of newOnes) {
-                                const parts = id.split('|');
-                                const sym = parts[0], t = parts[1], typ = parts[2];
-                                showToast(`<span class="font-semibold">Signal</span> â€” ${sym} <span class="text-slate-400">(${typ})</span><br><span class="text-slate-400 text-xs">${t}</span>`);
-                            }
-                            playBeep();
-                        }
-                        // Update stored ids
-                        try { localStorage.setItem('signalIds', JSON.stringify(ids)); } catch(e){}
-                    </script>
-                    <script>
-                        // A browser action selects the server's sizing contract.
-                        const riskBtn = document.getElementById('riskSizeBtn');
-                        if (riskBtn) riskBtn.addEventListener('click', () => {
-                            document.querySelector('select[name="sizing"]').value = 'risk';
-                            document.getElementById('qtyInput').value = '';
-                        });
-                    </script>
-        </body>
-        </html>
-    ''', status=g.operator_status, strategy_profiles=PROFILES, venue=runtime_environment.venue if runtime_environment else 'unconfigured', order_key=secrets.token_urlsafe(24), order_review=order_review_token())
+def render_dashboard(*, submitted=None, errors=None, message=None):
+    return render_template('dashboard.html', submitted=submitted or {}, errors=errors or {}, message=message,
+        namespace=state_store.namespace,presentation=operator_presentation(g.operator_status), status=g.operator_status,
+        strategy_profiles=PROFILES, venue=runtime_environment.venue if runtime_environment else 'unconfigured',
+        order_key=secrets.token_urlsafe(24), order_review=order_review_token())
 
 if __name__ == '__main__':
     import argparse

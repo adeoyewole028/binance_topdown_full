@@ -1,0 +1,445 @@
+
+        <!doctype html>
+        <html lang="en" class="h-full bg-slate-950">
+        <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>Binance Topdown Bot Dashboard</title>
+            <link rel="stylesheet" href="{{ url_for('static',filename='dashboard.css') }}">
+            <script src="{{ url_for('static',filename='dashboard.js') }}" defer></script>
+        </head>
+        <body class="h-full text-slate-100" data-namespace="{{ namespace }}">
+            <a class="skip-link" href="#main-content">Skip to dashboard</a>
+            <header class="bg-linear-to-r from-slate-900 to-slate-800 border-b border-slate-800">
+                <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap gap-3 items-center justify-between">
+                    <h1 class="text-xl font-semibold">Binance Topdown Bot</h1>
+                    <span data-status-panel="mode">Mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }} / {{ venue }}</span>
+                    <form method="post" action="/logout">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Sign out</button>
+                    </form>
+                    <div class="flex items-center gap-2">
+                        <button type="button" aria-pressed="false" id="soundToggle" class="px-2 py-1 rounded border border-slate-700 text-xs text-slate-200 hover:bg-slate-800">Sound: Off</button>
+                        <span data-status-panel="health" class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if status['market_health']['execution_ready'] else 'bg-rose-600 text-white' }}">
+                            {{ presentation['label'] }}
+                        </span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Toasts root -->
+            <div id="toast-root" class="max-w-7xl mx-auto px-4 space-y-2" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div class="max-w-7xl mx-auto px-4 py-3">
+                <p id="connection-status" role="status" aria-live="polite" aria-atomic="true">Status loaded.</p>
+                <p id="request-error" role="alert" tabindex="-1">{{ message or '' }}</p>
+                <a id="sign-in-again" href="/login" target="_blank" rel="noopener" hidden>Sign in in a new tab, then return here to preserve your inputs</a>
+                <div data-status-panel="context">
+                    <p>Account ID: {{ namespace }}. Profile: {{ status['config']['strategy_profile'].replace('_',' ') }} v{{ status['strategy_version'] }}. Settings version {{ status['config_version'] }}.</p>
+                    <p>{{ presentation['permission'] }}. {{ presentation['detail'] }}</p>
+                    <p>Last successful scan: {{ presentation['last_completed_scan'] or 'Unavailable' }}. Data age: {{ presentation['scan_age_seconds']|round(1) if presentation['scan_age_seconds'] is not none else 'Unavailable' }} seconds.</p>
+                    {% for source in status['migration'] %}<p>Legacy {{ source['source_name'] }}: {{ 'Awaiting paper origin confirmation' if source['state']=='quarantined' else 'Reviewed paper opening; financial history incomplete' }}. Imported {{ source['imported_count'] }} records; quarantined {{ source['quarantine_count'] }}. This does not establish complete account history.</p>{% endfor %}
+                </div>
+                <button id="pollToggle" type="button" aria-pressed="false" class="rounded border border-slate-600 px-3 py-2">Pause automatic updates</button>
+                <button id="refreshStatus" type="button" class="rounded border border-slate-600 px-3 py-2">Update status now</button>
+            </div>
+
+            <main id="main-content" tabindex="-1" class="max-w-7xl mx-auto p-4 space-y-4">
+                <section class="grid grid-cols-1 xl:grid-cols-4 gap-4">
+                    <div data-status-panel="overview" class="col-span-1 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Overview</h2>
+                        <div class="text-xs text-slate-400 mt-1">Last scan: {{ status['last_scan'] }}</div>
+                        <div class="mt-3 space-y-1 text-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Universe size</span>
+                                <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['universe']|length }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Signals</span>
+                                <span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-slate-900' if status['signals'] else 'bg-slate-700 text-slate-200' }} text-xs">{{ status['signals']|length }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Exit signals</span>
+                                <span class="px-2 py-0.5 rounded {{ 'bg-amber-500 text-slate-900' if status['exit_signals'] else 'bg-slate-700 text-slate-200' }} text-xs">{{ status['exit_signals']|length }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div data-status-panel="universe" class="col-span-1 xl:col-span-3 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Universe</h2>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 mt-3">
+                            {% for symbol in status['universe'][:12] %}
+                            <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                <div class="flex items-center justify-between">
+                                    <div class="font-semibold text-sm">{{ symbol }}</div>
+                                    <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs">{{ status['cooldowns'][symbol] }}s</span>
+                                </div>
+                                <div class="mt-2 text-sm">
+                                    {% set p = status['live_prices'][symbol] %}
+                                    {% if p == 'N/A' %}
+                                        <span class="italic text-slate-400">N/A</span>
+                                    {% else %}
+                                        <span class="text-slate-200">{{ p|round(6) }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-1 gap-4">
+                    <div data-status-panel="positions" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Open Positions</h2>
+                        <div class="overflow-x-auto mt-2">
+                            <table class="min-w-full text-sm">
+                                <thead class="text-slate-400">
+                                    <tr class="border-b border-slate-800">
+                                        <th scope="col" class="text-left py-2">Symbol</th>
+                                        <th scope="col" class="text-left py-2">Entry</th>
+                                        <th scope="col" class="text-left py-2">Qty</th>
+                                        <th scope="col" class="text-left py-2">P&L</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for pos in status['open_positions'] %}
+                                    {% set pnlpos = 'text-emerald-400' if pos['pnl'] is number and pos['pnl']>0 else ('text-rose-400' if pos['pnl'] is number and pos['pnl']<0 else 'text-slate-200') %}
+                                    <tr class="border-b border-slate-800/60">
+                                        <td class="py-2">{{ pos['symbol'] }}</td>
+                                        <td class="py-2">{{ pos['entry'] if pos['entry'] is not none else 'Basis unavailable' }}</td>
+                                        <td class="py-2">{{ pos['qty'] }}</td>
+                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) if pos['pnl'] is number else 'Unavailable' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section data-status-panel="protection" aria-label="Position protection" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                    <h2 class="text-sm font-semibold text-slate-300">Position protection</h2>
+                    {% for group in status['protection'] %}
+                    <p>{{ group['symbol'] }}: {{ group['state'] }} — {{ group.get('semantics', 'unverified') }};
+                        quantity {{ group['quantity'] }}. Stop {{ group.get('stop_price', 'unavailable') }};
+                        take profit {{ group.get('take_profit_price', 'unavailable') }}.</p>
+                    {% if group.get('next_action') %}<p role="alert">{{ group['next_action'] }}</p>{% endif %}
+                    {% endfor %}
+                    <p>Simulation is local. Exchange protection requires provider confirmation; stop execution price is not guaranteed.</p>
+                </section>
+
+                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div data-status-panel="signals" class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Signals</h2><p>From the last successful scan. Retained signals may be stale when market data is degraded.</p>
+                        {% if status['signals'] %}
+                        <div class="overflow-x-auto mt-2">
+                            <table class="min-w-full text-sm">
+                                <thead class="text-slate-400">
+                                    <tr class="border-b border-slate-800">
+                                        <th scope="col" class="text-left py-2">Time</th>
+                                        <th scope="col" class="text-left py-2">Symbol</th>
+                                        <th scope="col" class="text-left py-2">Type</th>
+                                        <th scope="col" class="text-left py-2">Trend timeframe</th>
+                                        <th scope="col" class="text-left py-2">Bias timeframe</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for sig in status['signals'] %}
+                                    <tr class="border-b border-slate-800/60">
+                                        <td class="py-2 text-slate-400">{{ sig['time'] }}</td>
+                                        <td class="py-2 font-medium">{{ sig['symbol'] }}</td>
+                                        <td class="py-2">
+                                            <span class="inline-flex items-center rounded-full bg-emerald-600 text-slate-900 px-2 py-0.5 text-xs font-medium">{{ sig['type'] }}</span>
+                                        </td>
+                                        <td class="py-2 space-x-1">
+                                            <span>{{ sig.get('trend_timeframe', '4h') }}</span>
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['trend4h']['bullish'] else 'bg-slate-700 text-slate-200' }}">bullish</span>
+                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">21/{{ 'Y' if sig['trend4h']['above21'] else 'N' }}</span>
+                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">HHLL/{{ 'Y' if sig['trend4h']['hhll'] else 'N' }}</span>
+                                        </td>
+                                        <td class="py-2 space-x-1">
+                                            <span>{{ sig.get('bias_timeframe', '1h') }}</span>
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['near_ma'] else 'bg-slate-700 text-slate-200' }}">near EMA21</span>
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ 'bg-emerald-600 text-slate-900' if sig['bias1h']['momentum_ok'] else 'bg-slate-700 text-slate-200' }}">RSI ok</span>
+                                            <span class="inline-flex items-center rounded-full bg-slate-700 text-slate-200 px-2 py-0.5 text-xs font-medium">RSI {{ sig['bias1h']['rsi']|round(2) }}</span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                            <div class="text-slate-400 mt-2">{{ 'No entry signal on the last successful scan.' if status['market_health']['execution_ready'] else 'Entry signals unavailable until market data is ready.' }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div data-status-panel="exits" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Exit Signals</h2>
+                        {% if status['exit_signals'] %}
+                        <div class="overflow-x-auto mt-2">
+                            <table class="min-w-full text-sm">
+                                <thead class="text-slate-400">
+                                    <tr class="border-b border-slate-800"><th scope="col" class="text-left py-2">Symbol</th><th scope="col" class="text-left py-2">Price</th><th scope="col" class="text-left py-2">P&L</th><th scope="col" class="text-left py-2">Reasons</th><th scope="col" class="py-2">Action</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for es in status['exit_signals'] %}
+                                    {% set pnlpos = 'text-emerald-400' if es['pnl']>0 else ('text-rose-400' if es['pnl']<0 else 'text-slate-200') %}
+                                    <tr class="border-b border-slate-800/60">
+                                        <td class="py-2">{{ es['symbol'] }}</td>
+                                        <td class="py-2">{{ es['price'] }}</td>
+                                        <td class="py-2 {{ pnlpos }}">{{ es['pnl']|round(2) }}</td>
+                                        <td class="py-2 space-x-1">
+                                            {% for r in es['reasons'] %}
+                                                <span class="inline-flex items-center rounded-full bg-amber-500 text-slate-900 px-2 py-0.5 text-xs font-medium">{{ r }}</span>
+                                            {% endfor %}
+                                        </td>
+                                        <td class="py-2">
+                                            <form method="post" action="/close" class="inline-flex">
+                                                <input type="hidden" name="order_review" value="{{ order_review }}">
+                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}-close-{{ loop.index }}">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="symbol" value="{{ es['symbol'] }}">
+                                                <input type="hidden" name="qty" value="{% for pos in status['open_positions'] %}{% if pos['symbol']==es['symbol'] %}{{ pos['qty'] }}{% endif %}{% endfor %}">
+                                                <button type="submit" class="px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Close</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                            <div class="text-slate-400 mt-2">{{ 'No exit signal on the last successful scan.' if status['market_health']['execution_ready'] else 'Exit signals unavailable until market data is ready.' }}</div>
+                        {% endif %}
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        {% set is_paper = status['config']['paper_trading'] %}
+                        <h2 class="text-sm font-semibold text-slate-300">{{ 'Paper account setup' if is_paper else 'Exchange risk setup' }}</h2>
+                        {% set policy = (status['paper_account'].get('policy') if is_paper else status['config'].get('execution_policy')) or {} %}
+                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ status['exchange_account']['state'] }}{% if status['exchange_account'].get('reason') %} — {{ status['exchange_account']['reason'] }}{% endif %}.{% endif %}</p>
+                        <form method="post" action="{{ '/paper/setup' if is_paper else '/exchange/setup' }}" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="expected_config_version" value="{{ submitted.get('expected_config_version',status['config_version']) }}">
+                            <label>Funding quote asset
+                                <select name="quote" required class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                    <option value="{{ policy.get('quote', status['config']['base_quote']) }}">{{ policy.get('quote', status['config']['base_quote']) }}</option>
+                                </select>
+                            </label>
+                            {% for field, label in [('initial_cash','Initial paper cash (one-time seed)'), ('fee_fraction','Fee fraction per fill'), ('slippage_fraction','Adverse slippage fraction'), ('risk_fraction','Maximum risk fraction per trade'), ('fixed_quote','Fixed allocation in funding quote'), ('max_allocation_fraction','Maximum allocation fraction per order'), ('max_exposure_fraction','Maximum total exposure fraction'), ('max_positions','Maximum open position slots'), ('cooldown_seconds','Entry cooldown in seconds'), ('drawdown_fraction','Drawdown stop fraction')] %}
+                            {% if is_paper or field!='initial_cash' %}
+                            <label>{{ label }}
+                                <input name="{{ field }}" type="number" inputmode="decimal" step="any" min="0" required value="{{ policy.get(field, '') }}" {% if field=='initial_cash' and policy %}readonly{% endif %} class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                            <p>Fractions use decimals: 0.01 means 1%. {% if is_paper %}Simulation uses full fills, quote fees and weighted-average cost basis. Seed and quote cannot be replaced after setup.{% else %}Fee and slippage fractions are admission estimates. Actual provider fills and fee assets determine account effects. Funds come from reconciliation; this form adds no funds.{% endif %}</p>
+                            <button type="submit" class="px-3 py-2 rounded bg-indigo-600">{{ 'Save explicit paper setup' if is_paper else 'Save explicit exchange risk setup' }}</button>
+                        </form>
+                        {% set account = status['paper_account'] if is_paper else status['exchange_account'] %}
+                        <div data-status-panel="account"><p>Entry block: {{ (status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) or 'none' }}. Estimated equity: {{ (status['paper_account'].get('equity') if is_paper else status['exchange_risk'].get('equity')) or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
+                        <dl>{% for asset, balance in account['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl></div>
+                        {% if not is_paper %}
+                        <form method="post" action="/exchange/entries">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="{{ 'resume' if status['entry_control']['paused'] else 'pause' }}">
+                            <button type="submit" class="px-3 py-2 rounded border border-slate-700">{{ 'Clear entry pause' if status['entry_control']['paused'] else 'Pause new entries' }}</button>
+                            <p>Reductions and provider reconciliation remain available. Clearing this pause does not clear drawdown or review gates.</p>
+                        </form>
+                        {% endif %}
+                        <h2 class="text-sm font-semibold text-slate-300 mt-3">Order operations</h2>
+                        <ul data-status-panel="operations">{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operation['state'] }}{% if operation['error_class'] %}: {{ operation['error_class'] }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
+                        <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
+                                    <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="order_review" value="{{ order_review }}">
+                                        <input type="hidden" name="idempotency_key" value="{{ order_key }}">
+                                        <label class="text-sm">Sizing
+                                            <select name="sizing" class="mt-1 rounded bg-slate-800 border border-slate-700 px-2 py-1"><option value="quantity">Explicit quantity</option><option value="fixed">Configured fixed quote allocation</option><option value="risk">Configured risk allocation</option></select>
+                                        </label>
+                                        <label class="text-sm">Symbol
+                                            {% if status['universe'] %}
+                                                <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol">
+                                                    {% for s in status['universe'] %}
+                                                        <option value="{{ s }}">{{ s }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            {% else %}
+                                                <input class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="symbol" value="BTC/USDT" />
+                                            {% endif %}
+                                        </label>
+                            <label class="text-sm">Side
+                                <select class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="side">
+                                    <option value="buy">Buy</option>
+                                    <option value="sell">Sell</option>
+                                </select>
+                            </label>
+                            <div class="text-sm"><label for="qtyInput">Quantity</div>
+                                <div class="flex gap-2 items-center">
+                                    <input class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" name="qty" id="qtyInput" type="number" step="any" value="0.01" />
+                                    <button type="button" id="riskSizeBtn" class="mt-1 px-2 py-1 rounded border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs">Size by risk</button>
+                                </div>
+                                <div class="text-xs text-slate-400 mt-1">Browser estimates do not authorize spending. The server uses funded capital and explicit paper limits.</div>
+                            </label>
+                            <button type="submit" class="w-full sm:w-auto px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Submit</button>
+                        </form>
+                        <div class="mt-3 space-y-1">
+                            {% with messages = get_flashed_messages(with_categories=true) %}
+                                {% if messages %}
+                                    {% for category, message in messages %}
+                                        <div class="px-3 py-2 rounded text-sm {{ 'bg-emerald-600 text-slate-900' if category=='success' else 'bg-rose-600 text-white' }}">{{ message }}</div>
+                                    {% endfor %}
+                                {% endif %}
+                            {% endwith %}
+                        </div>
+                        <form method="post" action="/reset-config" class="mt-3">
+                            <input type="hidden" name="expected_config_version" value="{{ submitted.get('expected_config_version',status['config_version']) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="px-3 py-2 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs">Reset to defaults</button>
+                        </form>
+                    </div>
+
+                    <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <div data-status-panel="performance"></div><h2 class="text-sm font-semibold text-slate-300">Performance</h2>
+                        <div class="grid grid-cols-2 gap-4 mt-2">
+                            <div>
+                                <div class="text-xs text-slate-400">Win Rate</div>
+                                <div class="text-lg font-semibold">{{ (status['performance']['win_rate']|float*100)|round(2) ~ '%' if status['performance']['win_rate'] is not none else 'Unavailable' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-slate-400">Estimated account change ({{ status['performance']['currency'] or 'currency unavailable' }})</div>
+                                <div class="text-lg font-semibold">{{ status['performance']['total_profit'] if status['performance']['total_profit'] is not none else 'Unavailable' }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-xs text-slate-400">Drawdown</div>
+                            <div class="text-base">{{ (status['performance']['drawdown']|float*100)|round(2) ~ '%' if status['performance']['drawdown'] is not none else 'Unavailable' }}</div>
+                            <p>Confirmed realized: {{ status['performance']['realized'] if status['performance']['realized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
+                            <p>Estimated unrealized: {{ status['performance']['unrealized'] if status['performance']['unrealized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
+                            <p>{{ status['performance']['state']|capitalize }}</p>
+                            {% for message in status['performance']['reason_messages'] %}<p>{{ message }}</p>{% endfor %}
+                        </div>
+                        <div class="mt-4">
+                            <h3 class="text-sm font-semibold text-slate-300">Config</h3>
+                            <form method="post" action="/update-config" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 text-sm">
+                                <input type="hidden" name="expected_config_version" value="{{ submitted.get('expected_config_version',status['config_version']) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <label>Legacy signal risk fraction
+                                    <input id="settings-risk" name="risk" aria-describedby="error-risk" aria-invalid="{{ 'true' if 'risk' in errors else 'false' }}" type="number" step="0.001" min="0" max="1" value="{{ submitted.get('risk',status['config']['risk']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-risk" class="field-error">{{ errors.get('risk','') }}</span>
+                                </label>
+                                <label>Signal position limit
+                                    <input id="settings-max_positions" name="max_positions" aria-describedby="error-max_positions" aria-invalid="{{ 'true' if 'max_positions' in errors else 'false' }}" type="number" step="1" min="1" value="{{ submitted.get('max_positions',status['config']['max_positions']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-max_positions" class="field-error">{{ errors.get('max_positions','') }}</span>
+                                </label>
+                                <label>Signal cooldown (seconds)
+                                    <input id="settings-cooldown" name="cooldown" aria-describedby="error-cooldown" aria-invalid="{{ 'true' if 'cooldown' in errors else 'false' }}" type="number" step="1" min="0" value="{{ submitted.get('cooldown',status['config']['cooldown']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-cooldown" class="field-error">{{ errors.get('cooldown','') }}</span>
+                                </label>
+                                <p>Execution mode: {{ 'Paper' if status['config']['paper_trading'] else 'Exchange' }}.
+                                    Mode and venue changes require isolated state and account review.</p>
+                                <label for="strategy-profile">Strategy profile (version 1)
+                                    <select id="strategy-profile" name="strategy_profile" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                        {% for name, contract in strategy_profiles.items() %}
+                                        <option value="{{ name }}" {{ 'selected' if submitted.get('strategy_profile',status['config']['strategy_profile']) == name else '' }}>{{ name.replace('_',' ') }}: {{ contract.trend }} trend / {{ contract.bias }} bias / 15m execution</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                                <label>Distance from EMA (fraction)
+                                    <input id="settings-near_ema_pct" name="near_ema_pct" aria-describedby="error-near_ema_pct" aria-invalid="{{ 'true' if 'near_ema_pct' in errors else 'false' }}" type="number" step="0.001" min="0" value="{{ submitted.get('near_ema_pct',status['config']['near_ema_pct']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-near_ema_pct" class="field-error">{{ errors.get('near_ema_pct','') }}</span>
+                                </label>
+                                <label>Bias RSI threshold
+                                    <input id="settings-rsi_threshold" name="rsi_threshold" aria-describedby="error-rsi_threshold" aria-invalid="{{ 'true' if 'rsi_threshold' in errors else 'false' }}" type="number" step="1" min="0" max="100" value="{{ submitted.get('rsi_threshold',status['config']['rsi_threshold']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-rsi_threshold" class="field-error">{{ errors.get('rsi_threshold','') }}</span>
+                                </label>
+                                <label>Entry RSI threshold
+                                    <input id="settings-rsi_exec_threshold" name="rsi_exec_threshold" aria-describedby="error-rsi_exec_threshold" aria-invalid="{{ 'true' if 'rsi_exec_threshold' in errors else 'false' }}" type="number" step="1" min="0" max="100" value="{{ submitted.get('rsi_exec_threshold',status['config']['rsi_exec_threshold']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-rsi_exec_threshold" class="field-error">{{ errors.get('rsi_exec_threshold','') }}</span>
+                                </label>
+                                <label>Overbought RSI threshold
+                                    <input id="settings-rsi_overbought" name="rsi_overbought" aria-describedby="error-rsi_overbought" aria-invalid="{{ 'true' if 'rsi_overbought' in errors else 'false' }}" type="number" step="1" min="0" max="100" value="{{ submitted.get('rsi_overbought',status['config']['rsi_overbought']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-rsi_overbought" class="field-error">{{ errors.get('rsi_overbought','') }}</span>
+                                </label>
+                                <label>Take profit (fraction)
+                                    <input id="settings-take_profit_pct" name="take_profit_pct" aria-describedby="error-take_profit_pct" aria-invalid="{{ 'true' if 'take_profit_pct' in errors else 'false' }}" type="number" step="0.001" min="0" value="{{ submitted.get('take_profit_pct',status['config']['take_profit_pct']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-take_profit_pct" class="field-error">{{ errors.get('take_profit_pct','') }}</span>
+                                </label>
+                                <label>Stop loss (fraction)
+                                    <input id="settings-stop_loss_pct" name="stop_loss_pct" aria-describedby="error-stop_loss_pct" aria-invalid="{{ 'true' if 'stop_loss_pct' in errors else 'false' }}" type="number" step="0.001" min="0" value="{{ submitted.get('stop_loss_pct',status['config']['stop_loss_pct']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-stop_loss_pct" class="field-error">{{ errors.get('stop_loss_pct','') }}</span>
+                                </label>
+                                <label>Trailing protection (unavailable)
+                                    <input id="settings-trailing_pct" name="trailing_pct" aria-describedby="error-trailing_pct" aria-invalid="{{ 'true' if 'trailing_pct' in errors else 'false' }}" disabled type="number" step="0.001" min="0" value="{{ submitted.get('trailing_pct',status['config']['trailing_pct']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-trailing_pct" class="field-error">{{ errors.get('trailing_pct','') }}</span>
+                                    <span class="text-xs text-slate-400">Saved legacy value; trailing orders are not implemented.</span>
+                                </label>
+                                <label>Universe size
+                                    <input id="settings-universe_size" name="universe_size" aria-describedby="error-universe_size" aria-invalid="{{ 'true' if 'universe_size' in errors else 'false' }}" type="number" step="1" min="1" value="{{ submitted.get('universe_size',status['config']['universe_size']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-universe_size" class="field-error">{{ errors.get('universe_size','') }}</span>
+                                </label>
+                                <label>Quote asset
+                                    <input id="settings-base_quote" name="base_quote" aria-describedby="error-base_quote" aria-invalid="{{ 'true' if 'base_quote' in errors else 'false' }}" type="text" value="{{ submitted.get('base_quote',status['config']['base_quote']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-base_quote" class="field-error">{{ errors.get('base_quote','') }}</span>
+                                </label>
+                                <label class="flex items-center gap-2">Dynamic universe
+                                    <select name="use_dynamic_universe" class="mt-1 rounded border-slate-700">
+                                        <option value="true" {% if submitted.get('use_dynamic_universe','true' if status['config']['use_dynamic_universe'] else 'false')=='true' %}selected{% endif %}>Enabled</option>
+                                        <option value="false" {% if submitted.get('use_dynamic_universe','true' if status['config']['use_dynamic_universe'] else 'false')=='false' %}selected{% endif %}>Disabled</option>
+                                    </select>
+                                </label>
+                                <label>Minimum quote volume
+                                    <input id="settings-min_quote_vol" name="min_quote_vol" aria-describedby="error-min_quote_vol" aria-invalid="{{ 'true' if 'min_quote_vol' in errors else 'false' }}" type="number" step="1000" min="0" value="{{ submitted.get('min_quote_vol',status['config']['min_quote_vol']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-min_quote_vol" class="field-error">{{ errors.get('min_quote_vol','') }}</span>
+                                </label>
+                                <label>Legacy equity estimate (never available funds)
+                                    <input id="settings-equity_proxy" name="equity_proxy" aria-describedby="error-equity_proxy" aria-invalid="{{ 'true' if 'equity_proxy' in errors else 'false' }}" type="number" step="0.01" min="0" value="{{ submitted.get('equity_proxy',status['config']['equity_proxy']) }}" class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" /><span id="error-equity_proxy" class="field-error">{{ errors.get('equity_proxy','') }}</span>
+                                </label>
+
+                                <div class="sm:col-span-2 flex items-center justify-end gap-2">
+                                    <button type="submit" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-medium">Save</button>
+                                </div>
+                            <p id="settings-conflict" role="status">{{ errors.get('expected_config_version','') }}</p>
+                    <div id="saved-settings"></div>
+                    <button type="button" id="reviewSettings" class="rounded border border-slate-600 px-3 py-2">Show current saved settings and policy</button>
+                    <button type="button" id="acceptVersion" class="rounded border border-slate-600 px-3 py-2" hidden>Keep my draft and use the reviewed version</button></form>
+                        </div>
+                    </div>
+                </section>
+
+                            <section>
+                                <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                                    <h2 class="text-sm font-semibold text-slate-300">Recent Trades</h2>
+                                    <div class="overflow-x-auto mt-2">
+                                        <table class="min-w-full text-sm">
+                                            <thead class="text-slate-400">
+                                                <tr class="border-b border-slate-800">
+                                                    <th scope="col" class="text-left py-2">Time</th>
+                                                    <th scope="col" class="text-left py-2">Symbol</th>
+                                                    <th scope="col" class="text-left py-2">Side</th>
+                                                    <th scope="col" class="text-left py-2">Qty</th>
+                                                    <th scope="col" class="text-left py-2">Price</th>
+                                                    <th scope="col" class="text-left py-2">P&L</th>
+                                                    <th scope="col" class="text-left py-2">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for t in status['recent_trades'] %}
+                                                    {% set pnlc = 'text-emerald-400' if t['pnl']>0 else ('text-rose-400' if t['pnl']<0 else 'text-slate-200') %}
+                                                    <tr class="border-b border-slate-800/60">
+                                                        <td class="py-2 text-slate-400">{{ t['time'] }}</td>
+                                                        <td class="py-2">{{ t['symbol'] }}</td>
+                                                        <td class="py-2"><span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-slate-900' if t['side']=='buy' else 'bg-rose-600 text-white' }} text-xs">{{ t['side'] }}</span></td>
+                                                        <td class="py-2">{{ t['qty'] }}</td>
+                                                        <td class="py-2">{{ t['price'] }}</td>
+                                                        <td class="py-2 {{ pnlc }}">{{ t['pnl'] }}</td>
+                                                        <td class="py-2 text-slate-300">{{ t['status'] }}</td>
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </section>
+
+                <section>
+                    <div data-status-panel="logs" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                        <h2 class="text-sm font-semibold text-slate-300">Logs</h2>
+                        <div class="mt-2 max-h-64 overflow-auto rounded border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-xs">
+                            {% for log in status['logs'] %}
+                                <div>{{ log }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </body>
+        </html>

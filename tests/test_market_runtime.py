@@ -59,7 +59,7 @@ def test_invalid_configuration_is_rejected_atomically_instead_of_partially_saved
     with LegacySandbox() as sandbox:
         before = sandbox.client.get('/api/status').get_json()['config']
         response = sandbox.post('/update-config', data={'risk': '-2', 'max_positions': '3'})
-        assert response.status_code == 400
+        assert response.status_code == 422
         assert sandbox.client.get('/api/status').get_json()['config'] == before
 
 
@@ -74,7 +74,7 @@ def test_invalid_settings_leave_the_complete_version_unchanged(field: str, value
     with LegacySandbox() as sandbox:
         before = sandbox.client.get('/api/status').get_json()
         response = sandbox.post('/update-config', data={'cooldown': '90', field: value})
-        assert response.status_code == 400
+        assert response.status_code == 422
         after = sandbox.client.get('/api/status').get_json()
         assert after['config'] == before['config']
         assert after['config_version'] == before['config_version']
