@@ -253,3 +253,6 @@ BT10 initial frozen322fullpass228.13s at15d7fb3 preserved as evidence/bt10-initi
 ## BT10 final local acceptance (2026-10-03)
 
 All five criteria passed atab5f9a9:327fullpass/0failures/skips/xfails261.03s,type48/lint/diff/31sourcecompile,Standards0hard/0heuristic,Spec0remaining. [Criterion/review evidence](evidence/bt10-validation.md), [exact31sourcehashes](evidence/bt10-historical-replay.json), [deterministicfixture](evidence/bt10-deterministic-example.json), [contract](../../historical-replay.md). Source15d7fb3/ab5f9a9; fixedpoint9853710. Initial322pass snapshot preserved; resourceallocation/openingprotection P2 corrected and negative regressions proved. No schema migration, implicitcapital, profile redesign, realprovider/keys/trade/funding/activation/deployment/push. Publish/close/read-back#12 next; only then inspect/start BT11#13. Parent#2 remainsOPEN.
+
+
+BT10#12 CLOSED at2026-10-03T17:52:44Z; fullbody/state read-back exactly matches local mirror. Acceptance commit248d448; sourceab5f9a9. Next:inspect liveBT11#13/comments/native blocker#12 and capture clean fixedpoint before BT11 alone. Parent#2 remainsOPEN; no actualprovider/trade/activation/deployment/push.

@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** local implementation complete; all five acceptance gates passed; tracker closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** CLOSED; all five local acceptance gates passed. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce reproducible historical trade/equity results that cannot see future bars or silently omit requested data.
 **Blocked by:** [BT07 #9](https://github.com/adeoyewole028/binance_topdown_full/issues/9), [BT08 #10](https://github.com/adeoyewole028/binance_topdown_full/issues/10).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -66,7 +66,7 @@ Historical market-data purchase, profit optimization or live fill fidelity guara
 
 ## Execution record
 
-Implementation: complete at ab5f9a9ea88d622e142a284cd65be7e691b5f0fe (source15d7fb3/ab5f9a9). All five criteria satisfy explicit capture-bound UTC pagination/warmup/gap coverage, both versioned profiles/shared causal evaluator, next-open financial replay/protection and reproducible public-only/offline CLI. Full327pass/0failures/skips/xfails261.03s; strict type48, repositorylint/diff/31sourcecompilation pass; Standards0hard/0heuristic, Spec0remaining after original twoP2 corrections. [Criterion/review evidence](../evidence/bt10-validation.md), [machine hashes](../evidence/bt10-historical-replay.json), [deterministic explicit fixture](../evidence/bt10-deterministic-example.json), [research contract](../../../historical-replay.md). No schema migration, fabricated capital, actual provider/credentials/trade/activation/deployment/push. Historical/livefilter and fillfidelity not certified; laterprovider/rollout gates remain. Currentblockers:none for localBT10. Next:publish/close/read-back#12, then inspectBT11 alone.
+Implementation: complete at ab5f9a9ea88d622e142a284cd65be7e691b5f0fe (source15d7fb3/ab5f9a9). All five criteria satisfy explicit capture-bound UTC pagination/warmup/gap coverage, both versioned profiles/shared causal evaluator, next-open financial replay/protection and reproducible public-only/offline CLI. Full327pass/0failures/skips/xfails261.03s; strict type48, repositorylint/diff/31sourcecompilation pass; Standards0hard/0heuristic, Spec0remaining after original twoP2 corrections. [Criterion/review evidence](../evidence/bt10-validation.md), [machine hashes](../evidence/bt10-historical-replay.json), [deterministic explicit fixture](../evidence/bt10-deterministic-example.json), [research contract](../../../historical-replay.md). No schema migration, fabricated capital, actual provider/credentials/trade/activation/deployment/push. Historical/livefilter and fillfidelity not certified; laterprovider/rollout gates remain. Currentblockers:none for localBT10. Next:verify tracker closure/read-back, then inspectBT11 alone.
 
 ## D05 approved contract (2026-10-03)
 
