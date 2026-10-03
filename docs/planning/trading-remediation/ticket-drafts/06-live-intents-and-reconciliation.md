@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** in progress; live issue/comments inspected and native blockerBT05#7 verified CLOSED. Sole active ticket.
 **What to build:** Make each approved exchange intent traceable from submission through partial/confirmed fill and recovery from unknown outcomes.
 **Blocked by:** [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -74,3 +74,8 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 
 APPROVED on 2026-10-03: explicit operator setup for all capital/risk/fee/slippage/cooldown/drawdown inputs before paper trading; deterministic full paper fills, quote-currency fees, weighted-average cost basis, adverse slippage and gap prices, stop first when both stop/profit targets touch one candle. Exchange-supported stop-market protection; refuse unsupported symbols; re-protect confirmed remaining holdings after partial closes; failed/uncertain protection blocks entries; automatic emergency liquidation and trailing remain disabled.
 Implement only this ticket’s scope; this approval does not authorize future tickets early, account funding or live/provider/rollout actions.
+
+
+## BT06 start (2026-10-03)
+
+Live#8 OPEN, no superseding comments; native prerequisite#7 CLOSED verified. Pre-ticket fixed point `5c3ea9186400e1c8f5b8c19a9a0d63f6efa9a444`. D05 approved policy preserved; real sandbox validation remains BT15. All six criteria remain open; implement only exchange admission, durable dispatch/observations/reconciliation at the agreed authenticated HTTP/owned worker/fake provider seam. No real provider calls, credential reads, activation, source push or deployment. Next: inspect pinned CCXT/Spot contracts and implement the durable identity/fill tracer test-first.

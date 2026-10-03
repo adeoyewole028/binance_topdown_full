@@ -167,3 +167,7 @@ Only BT05#7 is active. Explicit versioned seed/policy, canonical idempotent orde
 BT05#7 all five criteria complete at12bfbdd. Full194cases192pass2strictBT06xfails,0otherfail/skips143.98s; type32/lint/diff/22sourcecompilepass. Standards0/Spec0 after submitted-review binding, exact fee accounting, pending-base MAX_POSITION, zero-format memory bound and post-fill persistent drawdown-stop corrections. [Criterion/review evidence](evidence/bt05-validation.md), [machine hashes](evidence/bt05-paper-execution.json), [runbook](../../paper-execution.md). No real funding/migration/provider/deploy/push. Publish/close/read-back#7 next; only afterward inspect live#8 and native dependency and start BT06 alone. Parent#2 stays open.
 
 BT05#7 CLOSED read-back verified2026-10-03T11:08:46Z; parent#2 OPEN; evidence commit016a1dd. Next permitted step: inspect BT06#8/comments/native blocker#7 and authoritative specification, capture pre-ticket fixed point, then implement BT06 alone within offline/provider authorization boundaries.
+
+## BT06 start (2026-10-03)
+
+BT06#8 live body/comments inspected, OPEN/no comments; native blocked-by#7 CLOSED verified. Sole active ticket. Fixedpoint `5c3ea9186400e1c8f5b8c19a9a0d63f6efa9a444`. Six criteria open. Real sandbox reservedBT15. Existing agreed seams/D05/gates preserved; no protection/closecoordination/automation/replay early. Next: pinned provider contracts and first fake-provider durable dispatch/fill HTTP tracer.
