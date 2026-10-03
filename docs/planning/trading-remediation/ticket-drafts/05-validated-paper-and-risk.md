@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** all local acceptance/check/review/commit gates complete; tracker closure pending read-back.
+**Status:** CLOSED2026-10-03T11:08:46Z; all acceptance/check/review/evidence/scoped commit gates passed; tracker read-back verified.
 **What to build:** Make a valid paper buy or sell change durable cash and holdings exactly once, and reject unsafe inputs without effects.
 **Blocked by:** [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -88,3 +88,5 @@ Current BT05 implementation and criterion mapping are in `docs/planning/trading-
 ## Final acceptance
 
 All five criteria, required offline checks, two independent reviews and scoped commits are complete. Final evidence:194cases192pass2strictBT06xfails143.98s; mypy32/Pyflakes/diff/22sourcecompile. Standards0/Spec0, worst remaining issue:none for each axis. Source12bfbdd. No actual account funding/provider/deployment/push. Tracker closure/read-back is next; parent#2 remains open.
+
+Tracker#7 CLOSED read-back verified2026-10-03T11:08:46Z; parent#2 OPEN. Evidence commit016a1dd. Next: inspect live BT06#8/native dependency before starting it.
