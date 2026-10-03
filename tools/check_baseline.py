@@ -49,12 +49,12 @@ def main() -> int:
             'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             'python': platform.python_version(),
             'dependencies': {name: version(name) for name in ('ccxt', 'pandas', 'Flask', 'gunicorn', 'python-dotenv', 'pytest', 'pyflakes', 'mypy')},
-            'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in ('dashboard.py', 'topdown_daemon.py', 'backtester.py', 'utils.py', 'operator_security.py', 'runtime_environment.py', 'wsgi.py', 'run_scanner.py', 'gunicorn.conf.py', 'state_store.py', 'execution_owner.py', 'execution_worker.py', 'state_admin.py', 'manage_state.py', 'run_worker.py', 'configuration.py', 'operations_policy.py', 'market_runtime.py', 'market_adapter.py', 'request_budget.py', 'paper_policy.py', 'paper_filters.py')},
+            'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in ('dashboard.py', 'topdown_daemon.py', 'backtester.py', 'utils.py', 'operator_security.py', 'runtime_environment.py', 'wsgi.py', 'run_scanner.py', 'gunicorn.conf.py', 'state_store.py', 'execution_owner.py', 'execution_worker.py', 'state_admin.py', 'manage_state.py', 'run_worker.py', 'configuration.py', 'operations_policy.py', 'market_runtime.py', 'market_adapter.py', 'request_budget.py', 'paper_policy.py', 'paper_filters.py', 'exchange_adapter.py', 'exchange_execution.py')},
             'fixture_sha256': hashlib.sha256((ROOT / 'tests/fixtures/legacy_strategy_v1.json').read_bytes()).hexdigest(),
             'tests': len(cases), 'passed': len(cases) - failures - len(xfails) - other_skips,
             'known_defects_expected_failure': xfails, 'failures': failures,
             'other_skips': other_skips, 'pytest_exit_code': result.returncode,
-            'boundaries': 'Fake CCXT only; socket/DNS guards; cleared credentials; temporary state; guarded writes; unmodified normal imports; explicit guarded launch checks.',
+            'boundaries': 'Fake providers and pinned CCXT with replaced raw transports only; socket/DNS guards; cleared credentials; temporary state; guarded writes; unmodified normal imports; explicit guarded launch checks.',
         }
     print(json.dumps(evidence, indent=2))
     if args.output:

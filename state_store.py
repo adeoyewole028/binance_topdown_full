@@ -230,6 +230,8 @@ class StateStore:
             self._market_budget(connection)
             self._prices(connection)
             self._paper_account(connection)
+            self._exchange_account(connection)
+            self._entry_control(connection)
             self._fills(connection)
         self.config()
         self.positions()
@@ -278,9 +280,7 @@ class StateStore:
                 amount = number(held[0])
                 quantity = decimal_text(amount)
             elif sizing != 'quantity':
-                if self.mode != 'paper':
-                    raise ConfigurationError('Exchange sizing awaits its reconciled capital implementation')
-                amount = self.size_paper(connection, symbol, sizing)
+                amount = self.size_paper(connection, symbol, sizing) if self.mode == 'paper' else self._size_order(connection, symbol, sizing, exchange=True)
                 quantity = decimal_text(amount)
             connection.execute('''INSERT INTO intents(namespace,operation_id,idempotency_key,request_hash,kind,symbol,side,
                                    requested_qty,config_version,provider_client_id) VALUES (?,?,?,?,?,?,?,?,?,?)''',
@@ -311,15 +311,26 @@ class StateStore:
 
     @financial_arithmetic
     def size_paper(self, connection: sqlite3.Connection, symbol: str, mode: str) -> Decimal:
+        return self._size_order(connection, symbol, mode, exchange=False)
+
+    @financial_arithmetic
+    def _size_order(self, connection: sqlite3.Connection, symbol: str, mode: str, *, exchange: bool) -> Decimal:
         from decimal import ROUND_FLOOR
         config = self._config(connection)[1]
-        policy = config.get('paper_policy')
+        policy = config.get('execution_policy' if exchange else 'paper_policy')
         prices = self._prices(connection)
         if not policy or symbol not in prices or symbol.split('/')[1] != policy['quote']:
             raise ConfigurationError('Explicit setup and reviewed symbol price required for sizing')
-        account = self._paper_account(connection)
+        account = self._exchange_account(connection) if exchange else self._paper_account(connection)
+        if exchange and account['state'] != 'ready':
+            raise ConfigurationError('Provider reconciliation required for sizing')
         exposure = sum((Decimal(p['qty']) * Decimal(prices[p['symbol']]['price']) for p in self._positions(connection)), Decimal(0))
         equity = Decimal(account['balances'][policy['quote']]['total']) + exposure
+        if exchange:
+            risk = self.exchange_risk(connection, now=time.time())
+            if risk.get('equity') is None or risk['entry_blocked']:
+                raise ConfigurationError('Confirmed capital and risk valuation required for sizing')
+            equity = Decimal(risk['equity'])
         price = Decimal(prices[symbol]['price']) * (1 + Decimal(policy['slippage_fraction']))
         unit_cost = price * (1 + Decimal(policy['fee_fraction']))
         budget = min(Decimal(account['balances'][policy['quote']]['available']),
@@ -467,7 +478,8 @@ class StateStore:
             for row in rows:
                 for field in ('qty', 'entry'):
                     value = Decimal(row[field])
-                    if not value.is_finite() or value <= 0:
+                    unknown_entry = field == 'entry' and row['basis_status'] == 'provider_basis_unknown' and value == 0
+                    if not value.is_finite() or (value <= 0 and not unknown_entry):
                         raise StateUnavailable('Invalid durable position')
                     row[field] = decimal_text(value)
         except InvalidOperation as error:
@@ -571,6 +583,24 @@ class StateStore:
             connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
                                (self.namespace, 'paper_setup', json.dumps({'version': version + 1, 'actor': actor, 'model': policy['model']})))
 
+    def setup_execution(self, values: dict[str, Any], actor: str, *, expected_version: int) -> None:
+        from paper_policy import validated_execution_policy
+        if self.mode != 'exchange':
+            raise ConfigurationError('Exchange policy requires an exchange namespace')
+        policy = validated_execution_policy(values)
+        with self.connection(write=True) as connection:
+            version, config = self._config(connection)
+            if version != expected_version:
+                raise ConfigurationConflict('Configuration changed; review exchange policy')
+            if config.get('execution_policy', {}).get('quote', policy['quote']) != policy['quote']:
+                raise ConfigurationConflict('Funding quote requires an isolated reviewed namespace')
+            config['execution_policy'] = policy
+            config['cooldown'] = policy['cooldown_seconds']
+            connection.execute('INSERT INTO config_versions(namespace,version,values_json,actor) VALUES (?,?,?,?)',
+                               (self.namespace, version+1, json.dumps(config,sort_keys=True), actor))
+            connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                               (self.namespace, 'exchange_policy_setup', json.dumps({'version': version+1,'actor': actor})))
+
     def cancel_paper(self, operation: str, actor: str) -> None:
         if self.mode != 'paper':
             raise ConfigurationError('Paper cancellation cannot affect exchange orders')
@@ -649,8 +679,91 @@ class StateStore:
             connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
                                (self.namespace, 'paper_entry_stop', json.dumps({'reason': 'drawdown_limit'})))
 
+    @financial_arithmetic
+    def _exchange_account(self, connection: sqlite3.Connection, *, exclude_operation: str = '') -> dict[str, Any]:
+        if self.mode != 'exchange':
+            return {'state': 'not_applicable', 'balances': {}}
+        row = connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='exchange_account_observed' ORDER BY sequence DESC LIMIT 1", (self.namespace,)).fetchone()
+        health = connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='exchange_health' ORDER BY sequence DESC LIMIT 1", (self.namespace,)).fetchone()
+        review = connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='exchange_review_required' ORDER BY sequence DESC LIMIT 1", (self.namespace,)).fetchone()
+        if row is None:
+            return {'state': 'reconciliation_required', **(json.loads(health[0]) if health else {}),
+                    **(json.loads(review[0]) if review else {}), 'balances': {}}
+        observed = json.loads(row[0])
+        balances = {}
+        assets = set(observed['balances'])
+        assets.update(r[0] for r in connection.execute('SELECT DISTINCT asset FROM balance_movements WHERE namespace=?', (self.namespace,)))
+        for asset in assets:
+            values = observed['balances'].get(asset, {'free': '0', 'locked': '0'})
+            free, locked = Decimal(values['free']), Decimal(values['locked'])
+            movement = sum((Decimal(r[0]) for r in connection.execute('SELECT amount FROM balance_movements WHERE namespace=? AND asset=? AND rowid>?', (self.namespace, asset, observed['movement_sequence']))), Decimal(0))
+            total = free + locked + movement
+            reserved = sum((Decimal(r[0]) for r in connection.execute("SELECT amount FROM reservations WHERE namespace=? AND asset=? AND state='active' AND operation_id!=?", (self.namespace, asset, exclude_operation))), Decimal(0))
+            if not total.is_finite() or not locked.is_finite() or not reserved.is_finite() or min(total, locked, reserved) < 0:
+                raise StateUnavailable('Invalid exchange accounting')
+            balances[asset] = {'total': decimal_text(total), 'locked': decimal_text(locked),
+                               'reserved': decimal_text(reserved), 'available': decimal_text(max(Decimal(0), total-max(locked,reserved)))}
+        return {**observed, **(json.loads(health[0]) if health else {'state': 'reconciliation_required'}),
+                **(json.loads(review[0]) if review else {}), 'balances': balances}
 
-    def snapshot(self) -> dict[str, Any]:
+    @financial_arithmetic
+    def exchange_risk(self, connection: sqlite3.Connection, *, now: float) -> dict[str, Any]:
+        policy = self._config(connection)[1].get('execution_policy')
+        if not policy:
+            return {'entry_blocked': True, 'reason': 'setup_required', 'equity': None}
+        account = self._exchange_account(connection)
+        if not account.get('identity'):
+            return {'entry_blocked': True, 'reason': 'reconciliation_required', 'equity': None}
+        equity = Decimal(account['balances'].get(policy['quote'], {}).get('total', '0'))
+        for asset, balance in account['balances'].items():
+            if asset == policy['quote'] or Decimal(balance['total']) == 0:
+                continue
+            row = connection.execute('SELECT price,fetched_at FROM market_prices WHERE namespace=? AND symbol=?', (self.namespace, asset+'/'+policy['quote'])).fetchone()
+            if row is None:
+                return {'entry_blocked': True, 'reason': 'valuation_unavailable', 'equity': None}
+            stamp = datetime.fromisoformat(row['fetched_at'])
+            from operations_policy import OperationsPolicy
+            if stamp.tzinfo is None or not 0 <= now-stamp.timestamp() < OperationsPolicy().price_expiry:
+                return {'entry_blocked': True, 'reason': 'valuation_stale', 'equity': None}
+            equity += Decimal(balance['total'])*Decimal(row['price'])
+        peak = equity
+        for row in connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='exchange_risk_checkpoint'", (self.namespace,)):
+            value = Decimal(json.loads(row[0])['equity'])
+            if not value.is_finite() or value < 0:
+                raise StateUnavailable('Invalid exchange risk history')
+            peak = max(peak, value)
+        halted = connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='exchange_entry_stop' LIMIT 1", (self.namespace,)).fetchone() is not None
+        drawdown = (peak-equity)/peak if peak else Decimal(0)
+        reason = 'entry_halted' if halted else 'drawdown_limit' if drawdown >= Decimal(policy['drawdown_fraction']) else (account.get('reason') or 'reconciliation_required') if account['state'] != 'ready' else 'entry_paused' if self._entry_control(connection)['paused'] else 'unfunded_account' if equity <= 0 else None
+        return {'entry_blocked': reason is not None, 'reason': reason, 'equity': decimal_text(equity),
+                'peak_equity': decimal_text(peak), 'drawdown': decimal_text(drawdown)}
+
+    def record_exchange_risk(self, connection: sqlite3.Connection, *, now: float) -> None:
+        risk = self.exchange_risk(connection, now=now)
+        if risk.get('equity') is None:
+            return
+        connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                           (self.namespace, 'exchange_risk_checkpoint', json.dumps({'equity': risk['equity']})))
+        if risk['reason'] == 'drawdown_limit':
+            connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                               (self.namespace, 'exchange_entry_stop', json.dumps({'reason': 'drawdown_limit'})))
+
+
+    def _entry_control(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        row = connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='entry_control' ORDER BY sequence DESC LIMIT 1", (self.namespace,)).fetchone()
+        values = json.loads(row[0]) if row else {'paused': False}
+        if type(values.get('paused')) is not bool:
+            raise StateUnavailable('Invalid durable entry control')
+        return values
+
+    def set_entry_pause(self, paused: bool, *, actor: str) -> None:
+        if self.mode != 'exchange' or type(paused) is not bool or not actor:
+            raise ConfigurationError('Explicit exchange entry control required')
+        with self.connection(write=True) as connection:
+            connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                               (self.namespace, 'entry_control', json.dumps({'paused': paused, 'actor': actor})))
+
+    def snapshot(self, *, now: float | None = None) -> dict[str, Any]:
         """One committed observation for an entire HTTP request, including joins."""
         with self.connection() as connection:
             connection.execute('BEGIN')
@@ -659,4 +772,6 @@ class StateStore:
                     'positions': self._positions(connection), 'operations': self._operations(connection),
                     'migration': self._migration(connection), 'ownership': self._ownership(connection),
                     'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
-                    'fills': self._fills(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection)}
+                    'fills': self._fills(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),
+                    'exchange_account': self._exchange_account(connection), 'entry_control': self._entry_control(connection),
+                    'exchange_risk': self.exchange_risk(connection, now=time.time() if now is None else now) if self.mode == 'exchange' else {'state': 'not_applicable'}}

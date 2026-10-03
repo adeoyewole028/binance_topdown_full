@@ -18,10 +18,25 @@ from execution_owner import ExecutionOwner, OwnershipUnavailable
 
 
 class ExecutionWorker(ExecutionOwner):
-    def __init__(self, store: StateStore, *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, store: StateStore, *, clock: Callable[[], float] = time.time, exchange_provider: Any = None) -> None:
         super().__init__(store)
         self.clock = clock
         self.policy = OperationsPolicy()
+        self.exchange_execution = None
+        if exchange_provider is not None:
+            if store.mode != 'exchange':
+                raise ConfigurationError('Private provider cannot attach to paper execution')
+            from exchange_execution import ExchangeExecution
+            self.exchange_execution = ExchangeExecution(self, exchange_provider)
+
+    def reconcile_exchange(self) -> None:
+        if self.exchange_execution is None:
+            raise ConfigurationError('Explicit exchange provider required')
+        self.exchange_execution.reconcile()
+
+    def poll_exchange(self) -> None:
+        if self.exchange_execution is not None:
+            self.exchange_execution.reconcile_if_due()
     def publish_scan(self, snapshot: dict[str, Any]) -> None:
         if not self.ownership_confirmed():
             raise OwnershipUnavailable('Execution ownership uncertain')
@@ -59,7 +74,10 @@ class ExecutionWorker(ExecutionOwner):
                 connection.execute('''INSERT INTO market_prices VALUES (?,?,?,?) ON CONFLICT(namespace,symbol)
                                       DO UPDATE SET price=excluded.price,fetched_at=excluded.fetched_at''',
                                    (self.store.namespace, symbol, str(parsed), now))
-            self.store.record_paper_risk(connection)
+            if self.store.mode == 'paper':
+                self.store.record_paper_risk(connection)
+            else:
+                self.store.record_exchange_risk(connection, now=self.clock())
 
     def process_pending(self) -> int:
         if not self.ownership_confirmed():
@@ -67,7 +85,7 @@ class ExecutionWorker(ExecutionOwner):
         # No provider dispatch is implemented in this foundation. Exchange
         # recovery and fills require the separately approved BT06 lifecycle.
         if self.store.mode != 'paper':
-            return 0
+            return self.exchange_execution.process_pending() if self.exchange_execution is not None else 0
         self.store.positions()  # Corrupt required projections block all dispatch.
         processed = 0
         with self.store.connection(write=True) as connection:

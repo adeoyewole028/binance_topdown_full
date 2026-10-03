@@ -102,7 +102,7 @@ class MarketRuntime:
         now = self.clock()
         if now >= self.next_reconcile:
             if self.reconcile is not None:
-                self.reconcile()  # Future BT06 callback must use this shared budget.
+                self.reconcile()
             self.next_reconcile = now + self.owner.policy.reconciliation_interval
         if now >= self.next_scan:
             self.scan_once()

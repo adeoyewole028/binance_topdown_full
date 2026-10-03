@@ -277,7 +277,7 @@ def refresh_durable_state():
     if request.endpoint in {'operator_login', 'logout'} or state_store is None:
         return None
     try:
-        snapshot = state_store.snapshot()
+        snapshot = state_store.snapshot(now=app.config['MARKET_CLOCK']())
         g.operator_status = {**status, **snapshot.pop('scan'), **snapshot}
         g.operator_status['open_positions'] = display_positions(snapshot['positions'])
         from market_runtime import observed_health
@@ -300,7 +300,9 @@ def refresh_durable_state():
     return None
 
 def display_positions(positions):
-    return [{'symbol': p['symbol'], 'qty': float(p['qty']), 'entry': float(p['entry']), 'pnl': 0} for p in positions]
+    return [{'symbol': p['symbol'], 'qty': float(p['qty']),
+             'entry': None if p['basis_status'] == 'provider_basis_unknown' else float(p['entry']),
+             'pnl': None if p['basis_status'] == 'provider_basis_unknown' else 0} for p in positions]
 
 def require_exchange_execution():
     if runtime_environment is None:
@@ -347,6 +349,7 @@ def bot_loop(owner=None) -> None:
     from market_runtime import MarketRuntime
     provider = BinancePublicMarket(construct_exchange(runtime_environment, private=False))
     scanner = MarketRuntime(owner, provider, clock=owner.clock, evaluate=evaluate_market_snapshot,
+                            reconcile=owner.poll_exchange if owner.exchange_execution is not None else None,
                             whitelist={s.strip() for s in os.getenv('WHITELIST', '').split(',') if s.strip()},
                             blacklist={s.strip() for s in os.getenv('BLACKLIST', '').split(',') if s.strip()})
     while True:
@@ -379,6 +382,34 @@ def cancel_paper():
         return jsonify(error='Cancellation was not saved; durable state unavailable'), 503
     flash('Pending paper order canceled; reservation released', 'info')
     return redirect('/')
+
+@app.route('/exchange/setup', methods=['POST'])
+def setup_exchange():
+    try:
+        state_store.setup_execution(dict(request.form), 'configured-operator', expected_version=int(request.form['expected_config_version']))
+    except ConfigurationConflict as error:
+        return jsonify(error=str(error)), 409
+    except (ConfigurationError, ValueError, KeyError) as error:
+        return jsonify(error=str(error)), 400
+    except StateUnavailable:
+        return jsonify(error='Exchange policy was not saved'), 503
+    flash('Exchange risk policy saved; provider reconciliation is still required', 'info')
+    return redirect('/')
+
+@app.route('/exchange/entries', methods=['POST'])
+def exchange_entries():
+    action = request.form.get('action')
+    if action not in {'pause', 'resume'}:
+        return jsonify(error='Choose pause or resume for new entries'), 400
+    try:
+        state_store.set_entry_pause(action == 'pause', actor='configured-operator')
+    except ConfigurationError as error:
+        return jsonify(error=str(error)), 400
+    except StateUnavailable:
+        return jsonify(error='Entry control was not saved; durable state unavailable'), 503
+    flash('New entries paused; reductions and reconciliation remain available' if action == 'pause' else 'Entry pause cleared; all risk and reconciliation gates still apply', 'info')
+    return redirect('/')
+
 
 @app.route('/trade', methods=['POST'])
 def trade():
@@ -455,6 +486,9 @@ def api_status():
         'migration': observed['migration'],
         'ownership': observed['ownership'],
         'paper_account': observed['paper_account'],
+        'exchange_account': observed['exchange_account'],
+        'entry_control': observed['entry_control'],
+        'exchange_risk': observed['exchange_risk'],
         'fills': observed['fills'],
     }
     resp = make_response(jsonify(payload), 200)
@@ -616,12 +650,12 @@ def dashboard():
                                 </thead>
                                 <tbody>
                                     {% for pos in status['open_positions'] %}
-                                    {% set pnlpos = 'text-emerald-400' if pos['pnl']>0 else ('text-rose-400' if pos['pnl']<0 else 'text-slate-200') %}
+                                    {% set pnlpos = 'text-emerald-400' if pos['pnl'] is number and pos['pnl']>0 else ('text-rose-400' if pos['pnl'] is number and pos['pnl']<0 else 'text-slate-200') %}
                                     <tr class="border-b border-slate-800/60">
                                         <td class="py-2">{{ pos['symbol'] }}</td>
-                                        <td class="py-2">{{ pos['entry'] }}</td>
+                                        <td class="py-2">{{ pos['entry'] if pos['entry'] is not none else 'Basis unavailable' }}</td>
                                         <td class="py-2">{{ pos['qty'] }}</td>
-                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) }}</td>
+                                        <td class="py-2 {{ pnlpos }}">{{ pos['pnl']|round(2) if pos['pnl'] is number else 'Unavailable' }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -716,11 +750,11 @@ def dashboard():
 
                 <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div class="xl:col-span-2 bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        {% if status['config']['paper_trading'] %}
-                        <h2 class="text-sm font-semibold text-slate-300">Paper account setup</h2>
-                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if status['paper_account']['state']=='setup_required' else 'Explicit paper simulation assumptions recorded.' }}</p>
-                        {% set policy = status['paper_account'].get('policy') or {} %}
-                        <form method="post" action="/paper/setup" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
+                        {% set is_paper = status['config']['paper_trading'] %}
+                        <h2 class="text-sm font-semibold text-slate-300">{{ 'Paper account setup' if is_paper else 'Exchange risk setup' }}</h2>
+                        {% set policy = (status['paper_account'].get('policy') if is_paper else status['config'].get('execution_policy')) or {} %}
+                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ status['exchange_account']['state'] }}{% if status['exchange_account'].get('reason') %} — {{ status['exchange_account']['reason'] }}{% endif %}.{% endif %}</p>
+                        <form method="post" action="{{ '/paper/setup' if is_paper else '/exchange/setup' }}" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="expected_config_version" value="{{ status['config_version'] }}">
                             <label>Funding quote asset
@@ -729,15 +763,25 @@ def dashboard():
                                 </select>
                             </label>
                             {% for field, label in [('initial_cash','Initial paper cash (one-time seed)'), ('fee_fraction','Fee fraction per fill'), ('slippage_fraction','Adverse slippage fraction'), ('risk_fraction','Maximum risk fraction per trade'), ('fixed_quote','Fixed allocation in funding quote'), ('max_allocation_fraction','Maximum allocation fraction per order'), ('max_exposure_fraction','Maximum total exposure fraction'), ('max_positions','Maximum open position slots'), ('cooldown_seconds','Entry cooldown in seconds'), ('drawdown_fraction','Drawdown stop fraction')] %}
+                            {% if is_paper or field!='initial_cash' %}
                             <label>{{ label }}
                                 <input name="{{ field }}" type="number" inputmode="decimal" step="any" min="0" required value="{{ policy.get(field, '') }}" {% if field=='initial_cash' and policy %}readonly{% endif %} class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
                             </label>
+                            {% endif %}
                             {% endfor %}
-                            <p>Fractions use decimals: 0.01 means 1%. Simulation uses full fills, quote fees and weighted-average cost basis. Seed and quote cannot be replaced after setup.</p>
-                            <button type="submit" class="px-3 py-2 rounded bg-indigo-600">Save explicit paper setup</button>
+                            <p>Fractions use decimals: 0.01 means 1%. {% if is_paper %}Simulation uses full fills, quote fees and weighted-average cost basis. Seed and quote cannot be replaced after setup.{% else %}Fee and slippage fractions are admission estimates. Actual provider fills and fee assets determine account effects. Funds come from reconciliation; this form adds no funds.{% endif %}</p>
+                            <button type="submit" class="px-3 py-2 rounded bg-indigo-600">{{ 'Save explicit paper setup' if is_paper else 'Save explicit exchange risk setup' }}</button>
                         </form>
-                        <p>Entry block: {{ status['paper_account'].get('entry_block_reason') or 'none' }}. Equity: {{ status['paper_account'].get('equity') or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
-                        <dl>{% for asset, balance in status['paper_account']['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl>
+                        {% set account = status['paper_account'] if is_paper else status['exchange_account'] %}
+                        <p>Entry block: {{ (status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) or 'none' }}. Equity: {{ (status['paper_account'].get('equity') if is_paper else status['exchange_risk'].get('equity')) or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
+                        <dl>{% for asset, balance in account['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl>
+                        {% if not is_paper %}
+                        <form method="post" action="/exchange/entries">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="{{ 'resume' if status['entry_control']['paused'] else 'pause' }}">
+                            <button type="submit" class="px-3 py-2 rounded border border-slate-700">{{ 'Clear entry pause' if status['entry_control']['paused'] else 'Pause new entries' }}</button>
+                            <p>Reductions and provider reconciliation remain available. Clearing this pause does not clear drawdown or review gates.</p>
+                        </form>
                         {% endif %}
                         <h2 class="text-sm font-semibold text-slate-300 mt-3">Order operations</h2>
                         <ul>{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operation['state'] }}{% if operation['error_class'] %}: {{ operation['error_class'] }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>

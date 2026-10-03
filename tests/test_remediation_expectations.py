@@ -3,9 +3,8 @@
 Never assert the insecure behavior as desirable compatibility. A later fix causes
 XPASS (suite failure), forcing that ticket to promote its expectation to a test.
 """
-import pytest
-
 from tests.legacy_sandbox import LegacySandbox
+from tests.test_exchange_execution import SpotFixture, configure
 
 
 def test_anonymous_trade_has_no_exchange_effect() -> None:
@@ -42,21 +41,33 @@ def test_missing_price_does_not_create_position() -> None:
         assert sandbox.client.get('/api/status').get_json()['open_positions'] == []
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A03 / BT06: repeated request currently creates repeated economic effect')
 def test_duplicate_operation_has_one_exchange_effect() -> None:
+    from execution_worker import ExecutionWorker
     with LegacySandbox(environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
-        sandbox.module.status['config']['paper_trading'] = False
-        request = {'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'idempotency_key': 'offline-repeat'}
-        sandbox.post('/trade', data=request)
-        sandbox.post('/trade', data=request)
-        assert sandbox.exchange.holdings.get('BTC/USDT') == 1.0
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100.0)
+        provider = SpotFixture()
+        request = {'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'idempotency_key': 'offline-repeat', 'csrf_token': sandbox.csrf}
+        with ExecutionWorker(sandbox.module.state_store, exchange_provider=provider) as owner:
+            owner.reconcile_exchange()
+            assert sandbox.client.post('/trade', data=request).status_code == 302
+            owner.process_pending()
+            assert sandbox.client.post('/trade', data=request).status_code == 302
+            owner.process_pending()
+        assert provider.balances['BTC'] == 1
+        assert len(provider.submissions) == 1
+        assert len(sandbox.client.get('/api/status').get_json()['operations']) == 1
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A02 / BT06: confirmed exchange fills currently do not update operator positions')
 def test_confirmed_exchange_fill_is_visible_to_operator() -> None:
+    from execution_worker import ExecutionWorker
     with LegacySandbox(environment={'PAPER_TRADING': 'false', 'ALLOW_EXCHANGE_EXECUTION': 'true'}) as sandbox:
-        sandbox.module.status['config']['paper_trading'] = False
-        sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1'})
+        configure(sandbox)
+        sandbox.seed_price('BTC/USDT', 100.0)
+        with ExecutionWorker(sandbox.module.state_store, exchange_provider=SpotFixture()) as owner:
+            owner.reconcile_exchange()
+            assert sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf}).status_code == 302
+            owner.process_pending()
         positions = sandbox.client.get('/api/status').get_json()['open_positions']
         assert any(position['symbol'] == 'BTC/USDT' and position['qty'] == 1.0 for position in positions)
 

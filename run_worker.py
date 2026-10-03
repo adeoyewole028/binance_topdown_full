@@ -17,7 +17,11 @@ def main() -> None:
     arguments = parser.parse_args()
     runtime = load_launcher_environment()
     store = StateStore(runtime.data_directory, os.environ.get('LOCAL_ACCOUNT_ID', 'operator-account'), runtime.venue, runtime.mode)
-    with ExecutionWorker(store) as owner:
+    provider = None
+    if runtime.mode == 'exchange':
+        from exchange_adapter import BinanceSpotOrders
+        provider = BinanceSpotOrders(runtime)
+    with ExecutionWorker(store, exchange_provider=provider) as owner:
         if arguments.scan:
             if arguments.once:
                 raise ValueError('A scanner is a persistent owner; --once is incompatible')

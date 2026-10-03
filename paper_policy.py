@@ -41,19 +41,29 @@ def number(value: Any) -> Decimal:
 
 
 def validated_policy(values: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(values, dict) or not FIELDS.issubset(values):
-        raise ConfigurationError('Complete explicit paper setup required')
-    result: dict[str, Any] = {key: decimal_text(number(values[key])) for key in DECIMAL_FIELDS}
+    return _validated_policy(values, paper=True)
+
+
+def validated_execution_policy(values: dict[str, Any]) -> dict[str, Any]:
+    return _validated_policy(values, paper=False)
+
+
+def _validated_policy(values: dict[str, Any], *, paper: bool) -> dict[str, Any]:
+    required = FIELDS if paper else FIELDS - {'initial_cash'}
+    decimals = DECIMAL_FIELDS if paper else DECIMAL_FIELDS - {'initial_cash'}
+    if not isinstance(values, dict) or not required.issubset(values):
+        raise ConfigurationError('Complete explicit operator setup required')
+    result: dict[str, Any] = {key: decimal_text(number(values[key])) for key in decimals}
     for key in INTEGER_FIELDS:
         value = number(values[key])
         if value != value.to_integral_value() or value < (1 if key == 'max_positions' else 0):
-            raise ConfigurationError('Invalid paper capacity or cooldown')
+            raise ConfigurationError('Invalid capacity or cooldown')
         result[key] = int(value)
     quote = values['quote']
     if not isinstance(quote, str) or not re.fullmatch(r'[A-Z0-9]{2,12}', quote):
         raise ConfigurationError('Canonical quote asset required')
     result['quote'] = quote
-    for key in DECIMAL_FIELDS:
+    for key in decimals:
         value = number(result[key])
         if key in {'fee_fraction', 'slippage_fraction'}:
             valid = 0 <= value < 1
@@ -62,8 +72,8 @@ def validated_policy(values: dict[str, Any]) -> dict[str, Any]:
         else:
             valid = 0 < value <= 1
         if not valid:
-            raise ConfigurationError('Paper assumptions outside supported range')
-    result['model'] = 'paper-full-fill-weighted-average-v1'
+            raise ConfigurationError('Operator assumptions outside supported range')
+    result['model'] = 'paper-full-fill-weighted-average-v1' if paper else 'spot-observed-weighted-average-v1'
     return result
 
 

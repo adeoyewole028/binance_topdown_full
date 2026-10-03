@@ -64,4 +64,7 @@ def validated_config(values: dict[str, Any]) -> dict[str, Any]:
     if 'paper_policy' in result:
         from paper_policy import validated_policy
         result['paper_policy'] = validated_policy(result['paper_policy'])
+    if 'execution_policy' in result:
+        from paper_policy import validated_execution_policy
+        result['execution_policy'] = validated_execution_policy(result['execution_policy'])
     return result
