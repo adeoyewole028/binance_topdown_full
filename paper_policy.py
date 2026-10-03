@@ -48,31 +48,50 @@ def validated_execution_policy(values: dict[str, Any]) -> dict[str, Any]:
     return _validated_policy(values, paper=False)
 
 
+class PolicyValidationError(ConfigurationError):
+    def __init__(self, fields: dict[str, str]) -> None:
+        self.fields = fields
+        super().__init__('Review the identified setup fields.')
+
+
+def policy_value(key: str, value: Any) -> Any:
+    if key == 'quote':
+        if not isinstance(value, str) or not re.fullmatch(r'[A-Z0-9]{2,12}', value):
+            raise ConfigurationError('Use a canonical quote asset of 2 to 12 uppercase letters or digits.')
+        return value
+    parsed = number(value)
+    if key in INTEGER_FIELDS:
+        minimum = 1 if key == 'max_positions' else 0
+        if parsed != parsed.to_integral_value() or parsed < minimum:
+            raise ConfigurationError(f'Enter a whole number of at least {minimum}.')
+        return int(parsed)
+    if key in {'fee_fraction', 'slippage_fraction'}:
+        valid = 0 <= parsed < 1
+        guidance = 'Enter a decimal of at least 0 and less than 1.'
+    elif key in {'initial_cash', 'fixed_quote'}:
+        valid = parsed > 0
+        guidance = 'Enter an amount greater than 0.'
+    else:
+        valid = 0 < parsed <= 1
+        guidance = 'Enter a decimal greater than 0 and at most 1.'
+    if not valid:
+        raise ConfigurationError(guidance)
+    return decimal_text(parsed)
+
+
 def _validated_policy(values: dict[str, Any], *, paper: bool) -> dict[str, Any]:
     required = FIELDS if paper else FIELDS - {'initial_cash'}
-    decimals = DECIMAL_FIELDS if paper else DECIMAL_FIELDS - {'initial_cash'}
-    if not isinstance(values, dict) or not required.issubset(values):
-        raise ConfigurationError('Complete explicit operator setup required')
-    result: dict[str, Any] = {key: decimal_text(number(values[key])) for key in decimals}
-    for key in INTEGER_FIELDS:
-        value = number(values[key])
-        if value != value.to_integral_value() or value < (1 if key == 'max_positions' else 0):
-            raise ConfigurationError('Invalid capacity or cooldown')
-        result[key] = int(value)
-    quote = values['quote']
-    if not isinstance(quote, str) or not re.fullmatch(r'[A-Z0-9]{2,12}', quote):
-        raise ConfigurationError('Canonical quote asset required')
-    result['quote'] = quote
-    for key in decimals:
-        value = number(result[key])
-        if key in {'fee_fraction', 'slippage_fraction'}:
-            valid = 0 <= value < 1
-        elif key in {'initial_cash', 'fixed_quote'}:
-            valid = value > 0
-        else:
-            valid = 0 < value <= 1
-        if not valid:
-            raise ConfigurationError('Operator assumptions outside supported range')
+    result: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    for key in sorted(required):
+        try:
+            if not isinstance(values, dict) or key not in values:
+                raise ConfigurationError('Supply this required setup value.')
+            result[key] = policy_value(key, values[key])
+        except ConfigurationError as error:
+            errors[key] = str(error)
+    if errors:
+        raise PolicyValidationError(errors)
     result['model'] = 'paper-full-fill-weighted-average-v1' if paper else 'spot-observed-weighted-average-v1'
     return result
 

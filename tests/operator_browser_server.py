@@ -28,6 +28,7 @@ def main() -> None:
                     provider=SignalMarket(clock()) if action=='scan' else MarketFixture(clock())
                     MarketRuntime(owner,provider,clock=clock,evaluate=sandbox.module.evaluate_market_snapshot).scan_once()
                 elif action=='stale':clock.value+=61
+                elif action=='process':owner.process_pending()
                 else: return jsonify(error='Unknown fixture action'),422
                 return jsonify(ok=True)
             sandbox.module.app.add_url_rule('/__browser_fixture','browser_fixture',fixture,methods=['POST'])

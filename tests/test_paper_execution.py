@@ -337,7 +337,7 @@ def test_operator_can_review_setup_and_rejected_orders_without_a_success_claim()
         sandbox.seed_price('BTC/USDT', 100.0)
         sandbox.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '100'})
         page = sandbox.client.get('/').get_data(as_text=True)
-        assert 'insufficient_paper_assets' in page
+        assert 'Insufficient paper balance' in page
         assert 'Order rejected' in page
         assert 'Order queued for the execution owner' not in page
 
@@ -491,7 +491,7 @@ def test_cancel_pending_paper_order_releases_reservation_without_effect() -> Non
 def test_invalid_setup_cannot_seed_or_change_configuration(field: str, value: str) -> None:
     with LegacySandbox(paper_setup=False) as sandbox:
         before = sandbox.client.get('/api/status').get_json()
-        assert setup(sandbox, **{field: value}) == 400
+        assert setup(sandbox, **{field: value}) == 422
         after = sandbox.client.get('/api/status').get_json()
         assert after['config_version'] == before['config_version']
         assert after['paper_account']['state'] == 'setup_required'

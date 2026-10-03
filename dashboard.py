@@ -345,9 +345,9 @@ def setup_paper():
         state_store.setup_paper(request.form.to_dict(), 'configured-operator',
                                 expected_version=expected)
     except ConfigurationConflict as error:
-        return jsonify(error=str(error)), 409
+        return settings_error(str(error),409,request.form.to_dict(),{'expected_config_version':'Review the saved version and account before retrying.'})
     except (ConfigurationError, ValueError, KeyError) as error:
-        return jsonify(error=str(error)), 400
+        return settings_error(str(error),422,request.form.to_dict(),getattr(error,'fields',{'expected_config_version':'Review the setup values and saved version.'}))
     except StateUnavailable:
         return jsonify(error='Paper setup was not saved; durable state unavailable'), 503
     return settings_saved(expected+1,'Paper assumptions and explicit initial capital recorded')
@@ -371,9 +371,9 @@ def setup_exchange():
         expected=int(request.form['expected_config_version'])
         state_store.setup_execution(dict(request.form), 'configured-operator', expected_version=expected)
     except ConfigurationConflict as error:
-        return jsonify(error=str(error)), 409
+        return settings_error(str(error),409,request.form.to_dict(),{'expected_config_version':'Review the saved version and account before retrying.'})
     except (ConfigurationError, ValueError, KeyError) as error:
-        return jsonify(error=str(error)), 400
+        return settings_error(str(error),422,request.form.to_dict(),getattr(error,'fields',{'expected_config_version':'Review the setup values and saved version.'}))
     except StateUnavailable:
         return jsonify(error='Exchange policy was not saved'), 503
     return settings_saved(expected+1,'Exchange risk policy saved; provider reconciliation is still required')
@@ -412,7 +412,7 @@ def trade():
     except StateUnavailable:
         return jsonify(error='Order was not accepted; durable state unavailable'), 503
     observed = next(o for o in state_store.operations() if o['operation_id'] == operation)
-    flash(f"Order rejected: {observed['error_class']}" if observed['state'] == 'rejected' else f'Order queued: {operation}',
+    flash(f"Order rejected: {operator_label(observed['error_class'])}" if observed['state'] == 'rejected' else f'Order queued: {operation}',
           'error' if observed['state'] == 'rejected' else 'info')
     return redirect('/')
 
@@ -436,7 +436,7 @@ def close_position():
     except StateUnavailable:
         return jsonify(error='Close was not accepted; durable state unavailable'), 503
     observed = next(o for o in state_store.operations() if o['operation_id'] == operation)
-    flash(f"Close rejected: {observed['error_class']}" if observed['state'] == 'rejected' else f'Close queued: {operation}',
+    flash(f"Close rejected: {operator_label(observed['error_class'])}" if observed['state'] == 'rejected' else f'Close queued: {operation}',
           'error' if observed['state'] == 'rejected' else 'info')
     return redirect('/')
 
@@ -585,7 +585,7 @@ def invalid_config_fields(updates):
 
 def settings_error(message,code,submitted,errors):
     if request.accept_mimetypes.best=='text/html':
-        return render_dashboard(submitted=submitted,errors=errors,message=message),code
+        return render_dashboard(submitted=submitted,errors=errors,message=message,setup=request.path.endswith('/setup')),code
     return jsonify(error=message,fields=errors,current_config_version=g.operator_status['config_version']),code
 
 
@@ -595,10 +595,38 @@ def settings_saved(version,message):
     flash(message,'success')
     return redirect(url_for('dashboard'))
 
-def render_dashboard(*, submitted=None, errors=None, message=None):
-    return render_template('dashboard.html', submitted=submitted or {}, errors=errors or {}, message=message,
+def operator_label(value):
+    labels = {
+        None: 'None', 'none': 'None', 'setup_required': 'Supply every required setup value before trading.',
+        'drawdown_limit': 'Drawdown stop reached. New entries are blocked; review account risk.',
+        'insufficient_paper_assets': 'Insufficient paper balance. Reduce the quantity or review available funds.',
+        'entry_halted': 'New entries are stopped. Review account risk before continuing.',
+        'valuation_stale': 'Prices are too old. Wait for fresh market data.',
+        'valuation_unavailable': 'Account value is unavailable. Review prices and holdings.',
+        'reconciliation_required': 'Wait for the exchange account to be reconciled.',
+        'review_required': 'Account review required before new entries.',
+        'holding_changed_review_required': 'The holding changed. Review its current quantity before retrying.',
+        'dispatch_unknown': 'Order outcome is unknown. Wait for reconciliation; do not resubmit.',
+        'uninitialized': 'Account has not been reconciled.', 'ready': 'Ready',
+        'queued': 'Queued for the execution owner', 'filled': 'Filled', 'rejected': 'Rejected',
+        'waiting_for_setup': 'Waiting for explicit setup', 'waiting_for_market_data': 'Waiting for fresh market data',
+        'dispatching': 'Being submitted', 'unknown': 'Outcome unknown; reconciliation required',
+        'processing': 'Being processed', 'canceling': 'Cancellation pending', 'canceled': 'Canceled',
+        'partially_filled': 'Partly filled', 'active': 'Protection active', 'closed': 'Closed',
+        'installing': 'Protection being installed', 'failed': 'Protection failed; review the holding',
+        'simulation': 'Local paper simulation', 'unverified': 'Awaiting verification',
+        'stop_market_oco': 'Stop market with linked take profit',
+    }
+    if value in labels: return labels[value]
+    if isinstance(value,str) and '_' not in value: return value
+    return 'Status needs operator review. Check the account and operation details before continuing.'
+
+
+def render_dashboard(*, submitted=None, errors=None, message=None, setup=False):
+    return render_template('dashboard.html', submitted={} if setup else submitted or {}, errors={} if setup else errors or {},
+        setup_submitted=(submitted or {}) if setup else {}, setup_errors=(errors or {}) if setup else {}, message=message,
         namespace=state_store.namespace,presentation=operator_presentation(g.operator_status), status=g.operator_status,
-        strategy_profiles=PROFILES, venue=runtime_environment.venue if runtime_environment else 'unconfigured',
+        operator_label=operator_label, strategy_profiles=PROFILES, venue=runtime_environment.venue if runtime_environment else 'unconfigured',
         order_key=secrets.token_urlsafe(24), order_review=order_review_token())
 
 if __name__ == '__main__':

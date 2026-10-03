@@ -1,5 +1,6 @@
 """BT12 truthful rendering and settings through the authenticated HTTP seam."""
 from tests.legacy_sandbox import LegacySandbox
+import pytest
 
 
 def test_dashboard_has_local_assets_and_distinct_unavailable_scan_state() -> None:
@@ -44,3 +45,22 @@ def test_json_settings_acknowledges_committed_version_without_weakening_mode() -
         assert current['config']['risk']==0.023
         assert current['execution_mode']=='paper'
         assert current['venue']==observed['venue']
+
+
+@pytest.mark.parametrize('paper',[True,False])
+def test_setup_validation_identifies_fields_and_preserves_html_draft(paper: bool) -> None:
+    from tests.test_paper_execution import PAPER_INPUTS
+    with LegacySandbox(paper_setup=False,environment={} if paper else {'PAPER_TRADING':'false','ALLOW_EXCHANGE_EXECUTION':'true'}) as sandbox:
+        before=sandbox.client.get('/api/status').get_json()
+        values={**PAPER_INPUTS,'fee_fraction':'1','fixed_quote':'123',
+                'csrf_token':sandbox.csrf,'expected_config_version':before['config_version']}
+        route='/paper/setup' if paper else '/exchange/setup'
+        response=sandbox.client.post(route,data=values,headers={'Accept':'application/json'})
+        assert response.status_code==422
+        assert set(response.get_json()['fields'])=={'fee_fraction'}
+        assert 'less than 1' in response.get_json()['fields']['fee_fraction']
+        html=sandbox.client.post(route,data=values,headers={'Accept':'text/html'})
+        assert html.status_code==422
+        assert 'value="123"' in html.get_data(as_text=True)
+        assert 'aria-describedby="setup-error-fee_fraction"' in html.get_data(as_text=True)
+        assert sandbox.client.get('/api/status').get_json()['config']==before['config']

@@ -156,7 +156,7 @@
             const input = form.elements.namedItem(field);
             if (input && input.type !== 'hidden') {
               input.setAttribute('aria-invalid', 'true');
-              const target = document.getElementById('error-' + field);
+              const target = document.getElementById((form.action.endsWith('/setup') ? 'setup-error-' : 'error-') + field);
               if (target) target.textContent = message;
             }
           }

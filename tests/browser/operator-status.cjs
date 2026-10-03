@@ -49,6 +49,8 @@ const crypto=require('node:crypto');
       await expect(page.locator('#connection-status')).not.toHaveAttribute('aria-busy','true');
     }
     await signIn(page);
+    await expect(page.locator('[data-status-panel=performance]')).toContainText('Performance');
+    await expect(page.locator('[data-status-panel=history]')).toContainText('Recent Trades');
     await expect(page.locator('[data-status-panel=health]')).toHaveText('Market data unavailable');
     await page.locator('#qtyInput').fill('0.2345');
     await page.locator('#settings-risk').fill('0.023');
@@ -72,6 +74,30 @@ const crypto=require('node:crypto');
     });
     await fixture('scan'); await refresh();
     expect(await page.evaluate(() => window.alertChanges)).toBe(0);
+    // Submit through authenticated HTTP and process with the real execution owner.
+    async function paperOrder(side,qty) {
+      const observed=await (await context.request.get(url+'/api/status')).json();
+      const response=await context.request.post(url+'/trade',{form:{
+        csrf_token:await page.locator('[name=csrf_token]').first().inputValue(),
+        symbol:'BTC/USDT',side,qty,order_review:observed.order_review,
+        idempotency_key:'browser-'+side, sizing:'quantity'}});
+      expect(response.ok()).toBe(true); await fixture('process');
+    }
+    await paperOrder('buy','1'); await paperOrder('sell','0.4'); await refresh();
+    const filled=await (await context.request.get(url+'/api/status')).json();
+    expect(filled.fills.length).toBe(2);
+    await expect(page.locator('[data-status-panel=history] tbody tr')).toHaveCount(2);
+    await expect(page.locator('[data-status-panel=performance]')).toContainText('Complete');
+    await page.locator('#settings-risk').focus();
+    await fixture('stale');
+    await page.waitForTimeout(16000);
+    await expect(page.locator('[data-status-panel=performance]')).toContainText('Partial');
+    await expect(page.locator('[data-status-panel=performance]')).toContainText('Estimated unrealized: Unavailable');
+    await expect(page.locator('#settings-risk')).toBeFocused();
+    await expect(page.locator('#settings-risk')).toHaveValue('0.023');
+    await expect(page.locator('#qtyInput')).toHaveValue('0.2345');
+    await fixture('scan'); await refresh();
+
     await expect(page.locator('#soundToggle')).toHaveAttribute('aria-pressed','false');
     await page.locator('#soundToggle').click();
     await expect(page.locator('#soundToggle')).toHaveAttribute('aria-pressed','true');
@@ -121,6 +147,16 @@ const crypto=require('node:crypto');
     const reset=await (await context.request.get(url+'/api/status')).json();
     expect(reset.execution_mode).toBe('paper'); expect(reset.namespace).toBe(original.namespace);
     expect(reset.config.paper_policy).toEqual(original.config.paper_policy);
+    await page.locator('#reviewSettings').click(); await page.locator('#acceptVersion').click();
+    await page.locator('#setup-fee_fraction').fill('1');
+    await page.locator('form[action="/paper/setup"] button[type=submit]').click();
+    await expect(page.locator('#setup-fee_fraction')).toHaveValue('1');
+    await expect(page.locator('#setup-fee_fraction')).toHaveAttribute('aria-invalid','true');
+    await expect(page.locator('#setup-error-fee_fraction')).toContainText('less than 1');
+    await expect(page.locator('#settings-max_positions')).toHaveAttribute('aria-invalid','false');
+    await page.locator('#setup-fee_fraction').fill('0');
+    await page.locator('form[action="/paper/setup"] button[type=submit]').click();
+    await expect(page.locator('#connection-status')).toContainText('Paper assumptions and explicit initial capital recorded');
     await page.locator('form[action="/logout"] button').click();
     // Return without navigation to preserve draft during auth interruption.
     await signIn(page);
@@ -169,7 +205,7 @@ const crypto=require('node:crypto');
       source_revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
       source_sha256:Object.fromEntries(sourceFiles.map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')])),
       polling_preserves_input_focus:true,offline_recovery:true,stale_data:true,auth_recovery:true,
-      invalid_field_preservation:true,version_conflict_review:true,candle_dedup:true,opt_in_sound:true,
+      invalid_field_preservation:true,setup_field_recovery:true,visible_performance_history_updates:true,version_conflict_review:true,candle_dedup:true,opt_in_sound:true,
       keyboard_focus:focus,css_scale_200_reflow:true,minimum_24_pixel_targets:true,page_errors:failures,
       boundary:'Actual Chromium, guarded loopback Flask/temp SQLite/owned fake public provider; no provider/deployed/device acceptance'},null,2));
     console.log('BT12 browser journeys passed:',JSON.stringify(checks));

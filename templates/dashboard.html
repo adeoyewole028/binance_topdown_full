@@ -119,7 +119,7 @@
                 <section data-status-panel="protection" aria-label="Position protection" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
                     <h2 class="text-sm font-semibold text-slate-300">Position protection</h2>
                     {% for group in status['protection'] %}
-                    <p>{{ group['symbol'] }}: {{ group['state'] }} — {{ group.get('semantics', 'unverified') }};
+                    <p>{{ group['symbol'] }}: {{ operator_label(group['state']) }} — {{ operator_label(group.get('semantics', 'unverified')) }};
                         quantity {{ group['quantity'] }}. Stop {{ group.get('stop_price', 'unavailable') }};
                         take profit {{ group.get('take_profit_price', 'unavailable') }}.</p>
                     {% if group.get('next_action') %}<p role="alert">{{ group['next_action'] }}</p>{% endif %}
@@ -218,19 +218,19 @@
                         {% set is_paper = status['config']['paper_trading'] %}
                         <h2 class="text-sm font-semibold text-slate-300">{{ 'Paper account setup' if is_paper else 'Exchange risk setup' }}</h2>
                         {% set policy = (status['paper_account'].get('policy') if is_paper else status['config'].get('execution_policy')) or {} %}
-                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ status['exchange_account']['state'] }}{% if status['exchange_account'].get('reason') %} — {{ status['exchange_account']['reason'] }}{% endif %}.{% endif %}</p>
+                        <p role="status">{{ 'Paper setup required: execution is blocked until every value is supplied.' if is_paper and not policy else 'Explicit setup required before execution.' if not policy else 'Explicit operator policy recorded.' }}{% if not is_paper %} Account: {{ operator_label(status['exchange_account']['state']) }}{% if status['exchange_account'].get('reason') %} — {{ operator_label(status['exchange_account']['reason']) }}{% endif %}.{% endif %}</p>
                         <form method="post" action="{{ '/paper/setup' if is_paper else '/exchange/setup' }}" class="grid grid-cols-1 sm:grid-cols-2 gap-3 my-3 text-sm">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="expected_config_version" value="{{ submitted.get('expected_config_version',status['config_version']) }}">
+                            <input type="hidden" name="expected_config_version" value="{{ setup_submitted.get('expected_config_version',status['config_version']) }}">
                             <label>Funding quote asset
-                                <select name="quote" required class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
-                                    <option value="{{ policy.get('quote', status['config']['base_quote']) }}">{{ policy.get('quote', status['config']['base_quote']) }}</option>
-                                </select>
+                                <select name="quote" aria-describedby="setup-error-quote" aria-invalid="{{ 'true' if 'quote' in setup_errors else 'false' }}" required class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                    <option value="{{ setup_submitted.get('quote',policy.get('quote', status['config']['base_quote'])) }}">{{ setup_submitted.get('quote',policy.get('quote', status['config']['base_quote'])) }}</option>
+                                </select><span id="setup-error-quote" class="field-error">{{ setup_errors.get('quote','') }}</span>
                             </label>
                             {% for field, label in [('initial_cash','Initial paper cash (one-time seed)'), ('fee_fraction','Fee fraction per fill'), ('slippage_fraction','Adverse slippage fraction'), ('risk_fraction','Maximum risk fraction per trade'), ('fixed_quote','Fixed allocation in funding quote'), ('max_allocation_fraction','Maximum allocation fraction per order'), ('max_exposure_fraction','Maximum total exposure fraction'), ('max_positions','Maximum open position slots'), ('cooldown_seconds','Entry cooldown in seconds'), ('drawdown_fraction','Drawdown stop fraction')] %}
                             {% if is_paper or field!='initial_cash' %}
                             <label>{{ label }}
-                                <input name="{{ field }}" type="number" inputmode="decimal" step="any" min="0" required value="{{ policy.get(field, '') }}" {% if field=='initial_cash' and policy %}readonly{% endif %} class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+                                <input id="setup-{{ field }}" name="{{ field }}" aria-describedby="setup-error-{{ field }}" aria-invalid="{{ 'true' if field in setup_errors else 'false' }}" type="number" inputmode="decimal" step="any" min="0" required value="{{ setup_submitted.get(field,policy.get(field, '')) }}" {% if field=='initial_cash' and policy %}readonly{% endif %} class="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-1"><span id="setup-error-{{ field }}" class="field-error">{{ setup_errors.get(field,'') }}</span>
                             </label>
                             {% endif %}
                             {% endfor %}
@@ -238,7 +238,7 @@
                             <button type="submit" class="px-3 py-2 rounded bg-indigo-600">{{ 'Save explicit paper setup' if is_paper else 'Save explicit exchange risk setup' }}</button>
                         </form>
                         {% set account = status['paper_account'] if is_paper else status['exchange_account'] %}
-                        <div data-status-panel="account"><p>Entry block: {{ (status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) or 'none' }}. Estimated equity: {{ (status['paper_account'].get('equity') if is_paper else status['exchange_risk'].get('equity')) or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
+                        <div data-status-panel="account"><p>Entry block: {{ operator_label(status['paper_account'].get('entry_block_reason') if is_paper else status['exchange_risk'].get('reason')) }}. Estimated equity: {{ (status['paper_account'].get('equity') if is_paper else status['exchange_risk'].get('equity')) or 'unavailable' }} {{ policy.get('quote', '') }}.</p>
                         <dl>{% for asset, balance in account['balances'].items() %}<dt>{{ asset }}</dt><dd>Available {{ balance['available'] }}; reserved {{ balance['reserved'] }}; total {{ balance['total'] }}</dd>{% endfor %}</dl></div>
                         {% if not is_paper %}
                         <form method="post" action="/exchange/entries">
@@ -249,7 +249,7 @@
                         </form>
                         {% endif %}
                         <h2 class="text-sm font-semibold text-slate-300 mt-3">Order operations</h2>
-                        <ul data-status-panel="operations">{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operation['state'] }}{% if operation['error_class'] %}: {{ operation['error_class'] }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
+                        <ul data-status-panel="operations">{% for operation in status['operations'] %}<li>{{ operation['operation_id'] }}: {{ operation['symbol'] }} {{ operation['side'] }} — {{ operator_label(operation['state']) }}{% if operation['error_class'] %}: {{ operator_label(operation['error_class']) }}{% endif %}{% if status['config']['paper_trading'] and operation['state'] in ['queued','waiting_for_setup','waiting_for_market_data'] %}<form method="post" action="/paper/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="operation_id" value="{{ operation['operation_id'] }}"><button type="submit" class="px-3 py-2 rounded border border-slate-700">Cancel pending paper order</button></form>{% endif %}</li>{% else %}<li>No submitted operations.</li>{% endfor %}</ul>
                         <h2 class="text-sm font-semibold text-slate-300">Place Trade</h2>
                                     <form method="post" action="/trade" class="mt-2 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -301,7 +301,7 @@
                     </div>
 
                     <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                        <div data-status-panel="performance"></div><h2 class="text-sm font-semibold text-slate-300">Performance</h2>
+                        <div data-status-panel="performance"><h2 class="text-sm font-semibold text-slate-300">Performance</h2>
                         <div class="grid grid-cols-2 gap-4 mt-2">
                             <div>
                                 <div class="text-xs text-slate-400">Win Rate</div>
@@ -319,6 +319,7 @@
                             <p>Estimated unrealized: {{ status['performance']['unrealized'] if status['performance']['unrealized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
                             <p>{{ status['performance']['state']|capitalize }}</p>
                             {% for message in status['performance']['reason_messages'] %}<p>{{ message }}</p>{% endfor %}
+                        </div>
                         </div>
                         <div class="mt-4">
                             <h3 class="text-sm font-semibold text-slate-300">Config</h3>
@@ -396,8 +397,8 @@
                 </section>
 
                             <section>
-                                <div class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                                    <h2 class="text-sm font-semibold text-slate-300">Recent Trades</h2>
+                                <div data-status-panel="history" class="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                                    <h2 class="text-sm font-semibold text-slate-300">Recent Trades</h2><p class="text-xs text-slate-400">Last 20 confirmed fills; fees retain their recorded asset. Account profit is shown in Performance.</p>
                                     <div class="overflow-x-auto mt-2">
                                         <table class="min-w-full text-sm">
                                             <thead class="text-slate-400">
@@ -407,21 +408,21 @@
                                                     <th scope="col" class="text-left py-2">Side</th>
                                                     <th scope="col" class="text-left py-2">Qty</th>
                                                     <th scope="col" class="text-left py-2">Price</th>
-                                                    <th scope="col" class="text-left py-2">P&L</th>
+                                                    <th scope="col" class="text-left py-2">Fee</th>
                                                     <th scope="col" class="text-left py-2">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {% for t in status['recent_trades'] %}
-                                                    {% set pnlc = 'text-emerald-400' if t['pnl']>0 else ('text-rose-400' if t['pnl']<0 else 'text-slate-200') %}
+                                                {% for t in status['fills'][-20:]|reverse %}
+
                                                     <tr class="border-b border-slate-800/60">
-                                                        <td class="py-2 text-slate-400">{{ t['time'] }}</td>
+                                                        <td class="py-2 text-slate-400">{{ t['created_at'] }}</td>
                                                         <td class="py-2">{{ t['symbol'] }}</td>
                                                         <td class="py-2"><span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-slate-900' if t['side']=='buy' else 'bg-rose-600 text-white' }} text-xs">{{ t['side'] }}</span></td>
                                                         <td class="py-2">{{ t['qty'] }}</td>
                                                         <td class="py-2">{{ t['price'] }}</td>
-                                                        <td class="py-2 {{ pnlc }}">{{ t['pnl'] }}</td>
-                                                        <td class="py-2 text-slate-300">{{ t['status'] }}</td>
+                                                        <td class="py-2">{{ t['fee_amount'] }} {{ t['fee_asset'] }}</td>
+                                                        <td class="py-2 text-slate-300">Confirmed fill</td>
                                                     </tr>
                                                 {% endfor %}
                                             </tbody>
