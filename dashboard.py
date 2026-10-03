@@ -16,11 +16,7 @@ from configuration import ConfigurationError, ConfigurationConflict
 
 def order_review_token():
     observed = g.operator_status
-    return URLSafeSerializer(app.secret_key, salt='order-review-v1').dumps({
-        'namespace': state_store.namespace, 'config_version': observed['config_version'],
-        'prices': {s: {'price': q['price'], 'fetched_at': q['fetched_at']} for s, q in observed['market_prices'].items()},
-        'holdings': {p['symbol']: p['qty'] for p in observed['positions']},
-    })
+    return URLSafeSerializer(app.secret_key, salt='order-review-v1').dumps(state_store.review_context(observed))
 
 
 def submitted_order_review():

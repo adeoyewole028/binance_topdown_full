@@ -30,6 +30,26 @@ class SignalMarket(MarketFixture):
         return rows
 
 
+@pytest.mark.parametrize('skew',[-30,30])
+def test_verified_provider_clock_boundary_matches_automatic_intake(skew: int) -> None:
+    from automation import Automation
+    from execution_worker import ExecutionWorker
+    from market_runtime import MarketRuntime
+    clock=ControlledClock()
+    clock.value+=15 if skew<0 else -15
+    with LegacySandbox(paper_setup=False) as sandbox:
+        setup(sandbox,fee_fraction='0',slippage_fraction='0',cooldown_seconds='0')
+        sandbox.module.initialize_runtime(clock=clock)
+        with ExecutionWorker(sandbox.module.state_store,clock=clock) as owner:
+            control=Automation(owner,enabled=True,sizing='fixed')
+            MarketRuntime(owner,SignalMarket(clock()+skew),clock=clock,evaluate=sandbox.module.evaluate_market_snapshot,automation=control).step()
+            state=sandbox.client.get('/api/status').get_json()
+            assert state['market_health']['execution_ready'] is True
+            assert state['signals'][0]['execution_close'] == int((clock()+skew)//900)*900000
+            assert state['operations'][0]['state'] == 'filled'
+            assert len(state['positions']) == 1
+
+
 def test_explicit_automation_uses_shared_fill_protection_and_restart_signal_dedup(tmp_path: Path) -> None:
     from automation import Automation
     from execution_worker import ExecutionWorker

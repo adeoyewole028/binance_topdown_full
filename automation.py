@@ -65,9 +65,8 @@ class Automation:
             return
         outcome: dict[str, Any] = {'state':'running','reason':None}
         held = {p['symbol']:p for p in snapshot['positions']}
-        review = {'namespace':self.store.namespace,'config_version':snapshot['config_version'],
-                  'prices':{s:{'price':q['price'],'fetched_at':q['fetched_at']} for s,q in snapshot['market_prices'].items()},
-                  'holdings':{s:p['qty'] for s,p in held.items()}}
+        review = self.store.review_context(snapshot)
+        server_now = self.owner.clock() + health['clock_skew_seconds']
         # Reductions remain admissible under entry pauses/drawdown, using the
         # entry-bound evaluator policy and a freshly reviewed confirmed holding.
         for signal in scan.get('exit_signals',[]):
@@ -75,7 +74,7 @@ class Automation:
             rule = snapshot['position_rules'].get(symbol,{})
             if symbol not in held or rule.get('state') != 'bound':
                 continue
-            if self._valid_signal(signal,rule['config'],rule['config_version']):
+            if self._valid_signal(signal,rule['config'],rule['config_version'],server_now):
                 outcome = self._submit(signal,review,closing=True)
         if self.stopped:
             return
@@ -86,7 +85,7 @@ class Automation:
         for signal in scan.get('signals',[]):
             if signal.get('symbol') in held:
                 continue
-            if self._valid_signal(signal,snapshot['config'],snapshot['config_version']):
+            if self._valid_signal(signal,snapshot['config'],snapshot['config_version'],server_now):
                 result = self._submit(signal,review,closing=False)
                 if outcome['state'] != 'blocked':
                     outcome = result
@@ -94,9 +93,9 @@ class Automation:
             return
         self._status(**outcome)
 
-    def _valid_signal(self, signal: dict[str, Any], config: dict[str, Any], version: int) -> bool:
+    def _valid_signal(self, signal: dict[str, Any], config: dict[str, Any], version: int, server_now: float) -> bool:
         profile = config['strategy_profile']
-        close = int(self.owner.clock() // 900) * 900000
+        close = int(server_now // 900) * 900000
         if (signal.get('state') != 'ready' or signal.get('config_version') != version
                 or signal.get('profile') != profile or signal.get('profile_version') != PROFILES[profile].version
                 or signal.get('execution_close') != close or not isinstance(signal.get('symbol'),str)):

@@ -319,6 +319,12 @@ class StateStore:
                                        (self.namespace, operation, 'paper_rejected', json.dumps({'reason': str(error)})))
         return operation
 
+    def review_context(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Canonical current admission review, unsigned until the HTTP adapter."""
+        return {'namespace':self.namespace,'config_version':snapshot['config_version'],
+                'prices':{s:{'price':q['price'],'fetched_at':q['fetched_at']} for s,q in snapshot['market_prices'].items()},
+                'holdings':{p['symbol']:p['qty'] for p in snapshot['positions']}}
+
     @financial_arithmetic
     def size_paper(self, connection: sqlite3.Connection, symbol: str, mode: str) -> Decimal:
         return self._size_order(connection, symbol, mode, exchange=False)
