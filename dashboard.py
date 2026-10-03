@@ -461,6 +461,7 @@ def api_status():
         'execution_mode': 'paper' if observed['config']['paper_trading'] else 'exchange',
         'venue': runtime_environment.venue if runtime_environment else 'unconfigured',
         'exchange_allowed': runtime_environment.allow_exchange if runtime_environment else False,
+        'automation': observed['automation'],
         'operations': observed['operations'],
         'positions': observed['positions'],
         'migration': observed['migration'],

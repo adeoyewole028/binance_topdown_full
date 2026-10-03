@@ -112,6 +112,12 @@ def completed_frame(rows: Sequence[Sequence[float]], timeframe: str, cutoff: flo
     return pd.DataFrame(completed[-window:], columns=['timestamp','open','high','low','close','volume'])
 
 
+def decision_identity(namespace: str, venue: str, profile: str, config_version: int,
+                      symbol: str, execution_close: int) -> str:
+    identity = [namespace,venue,profile,PROFILES[profile].version,config_version,symbol,execution_close]
+    return hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()
+
+
 def evaluate(*, namespace: str, venue: str, symbol: str, profile: str,
              config_version: int, config: Mapping[str, Any], bars: Mapping[str, Sequence[Sequence[float]]],
              as_of: datetime, position: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -119,12 +125,11 @@ def evaluate(*, namespace: str, venue: str, symbol: str, profile: str,
     if as_of.tzinfo is None:
         raise ValueError('Timezone-aware decision time required')
     cutoff = math.floor(as_of.timestamp()/900)*900
-    identity = [namespace,venue,profile,selected.version,config_version,symbol,int(cutoff*1000)]
     result: dict[str, Any] = {'state': 'unavailable', 'reason': None, 'entry': False, 'exit_reasons': [],
         'symbol': symbol, 'profile': profile, 'profile_version': selected.version,
         'config_version': config_version, 'trend_timeframe':selected.trend, 'bias_timeframe':selected.bias, 'execution_close': int(cutoff*1000),
         'time': datetime.fromtimestamp(cutoff,timezone.utc).isoformat(),
-        'signal_id': hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()}
+        'signal_id': decision_identity(namespace,venue,profile,config_version,symbol,int(cutoff*1000))}
     try:
         trend_frame = completed_frame(bars[selected.trend],selected.trend,cutoff,50,selected.trend_window)
         bias_frame = completed_frame(bars[selected.bias],selected.bias,cutoff,21,selected.bias_window)

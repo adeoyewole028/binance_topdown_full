@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-import os, signal, time, math
-from datetime import datetime
+import os, sys
 import pandas as pd
-from runtime_environment import RuntimeEnvironment, construct_exchange, load_launcher_environment, parse_boolean
+from runtime_environment import RuntimeEnvironment, construct_exchange
 from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer
 from strategy_profiles import evaluate_observation as evaluate_market_snapshot
 
 __all__ = ['evaluate_market_snapshot']
-
-running = True
-def signal_handler(sig, frame):
-    global running
-    print(f"Received signal {sig}, shutting down...")
-    running = False
 
 def make_exchange(testnet=None):
     runtime = RuntimeEnvironment.from_mapping(os.environ)
@@ -61,51 +54,11 @@ def filter_symbols(tickers, base_quote='USDT', min_quote_vol=10000000, whitelist
     symbols.sort(key=lambda x:x[1], reverse=True)
     return [s for s,_ in symbols]
 
-class Broker:
-    def __init__(self, exchange, paper=True):
-        self.exchange = exchange
-        self.paper = paper
-        self.paper_positions = {}
-
-    def fetch_quote_balance(self, quote='USDT'):
-        bal = self.exchange.fetch_balance()
-        total = bal['total'].get(quote, 0)
-        free = bal['free'].get(quote, 0)
-        return total, free
-
-    def market_buy(self, symbol, amount_quote, markets):
-        ticker = self.exchange.fetch_ticker(symbol)
-        price = ticker['last']
-        market = markets[symbol]
-        step = market['limits']['amount']['step'] or 1
-        qty = math.floor((amount_quote / price) / step) * step
-        if qty <= 0: raise ValueError("Qty too small")
-        if self.paper:
-            order = {'id': f'paper-{symbol}-{int(time.time())}', 'symbol': symbol, 'price': price, 'amount': qty}
-            self.paper_positions[symbol] = {'qty': qty, 'entry': price, 'time': datetime.utcnow().isoformat()}
-            return order
-        return self.exchange.create_order(symbol, 'market', 'buy', qty)
-
-    def place_tp_sl(self, symbol, entry_price, qty, tp_pct, sl_pct, markets):
-        tp = round(entry_price * (1 + tp_pct), 8)
-        sl = round(entry_price * (1 - sl_pct), 8)
-        if self.paper:
-            self.paper_positions[symbol].update({'tp': tp, 'sl': sl})
-            return {'tp': tp, 'sl': sl}
-        self.exchange.create_order(symbol, 'limit', 'sell', qty, tp)
-        params = {'stopPrice': sl, 'type': 'STOP_MARKET'}
-        self.exchange.create_order(symbol, 'market', 'sell', qty, params=params)
-        return {'tp': tp, 'sl': sl}
-
 def main_loop():
-    load_launcher_environment()
-    if not parse_boolean(os.getenv('AUTOMATION_ENABLED', 'false')):
-        raise ValueError('Automation is disabled by default')
-    # BT03 retires the separate CSV/in-memory writer; BT09 preserves this
-    # workflow by attaching strategy evaluation to the shared owned intake.
-    raise ValueError('Automation requires the shared execution owner integration in BT09')
+    """Compatibility launcher; profile selection remains explicit durable config."""
+    from run_worker import main
+    main(['--automate', *sys.argv[1:]])
+
 
 if __name__ == '__main__':
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
     main_loop()

@@ -238,7 +238,7 @@ class StateStore:
         self.positions()
 
     @financial_arithmetic
-    def enqueue(self, kind: str, symbol: str, side: str, quantity: str, *, idempotency_key: str | None = None, now: float | None = None, sizing: str = 'quantity', review: dict[str, Any] | None = None) -> str:
+    def enqueue(self, kind: str, symbol: str, side: str, quantity: str, *, idempotency_key: str | None = None, now: float | None = None, sizing: str = 'quantity', review: dict[str, Any] | None = None, automatic_signal: dict[str, Any] | None = None, expected_owner: tuple[str,int] | None = None) -> str:
         import hashlib
         from paper_policy import number
         if kind not in {'trade', 'close'} or side not in {'buy', 'sell'} or not isinstance(symbol, str) or not re.fullmatch(r'[A-Z0-9]{2,12}/[A-Z0-9]{2,12}', symbol):
@@ -255,6 +255,10 @@ class StateStore:
             raise ConfigurationError('Invalid idempotency key')
         request = json.dumps({'kind': kind, 'symbol': symbol, 'side': side, 'qty': quantity, 'sizing': sizing}, sort_keys=True, allow_nan=False)
         with self.connection(write=True) as connection:
+            if automatic_signal is not None:
+                owner = connection.execute('SELECT token,generation,state FROM execution_owners WHERE account=? AND venue=?', (self.account,self.venue)).fetchone()
+                if expected_owner is None or owner is None or (owner['token'],owner['generation']) != expected_owner or owner['state'] != 'ready':
+                    raise ConfigurationConflict('Automation ownership/recovery required')
             digest = hashlib.sha256(request.encode()).hexdigest()
             repeated = connection.execute('SELECT operation_id,request_hash FROM intents WHERE namespace=? AND idempotency_key=?', (self.namespace, key)).fetchone()
             if repeated is not None:
@@ -290,6 +294,10 @@ class StateStore:
             context = {**json.loads(request), 'reviewed_price': reviewed['price'] if reviewed else None,
                        'reviewed_at': reviewed['fetched_at'] if reviewed else None, 'config_version': row[0],
                        'strategy_profile':self._config(connection)[1]['strategy_profile'], 'strategy_version':1}
+            if automatic_signal is not None:
+                context.update(source='automation', signal_id=automatic_signal['signal_id'],
+                    signal_profile=automatic_signal['profile'],signal_profile_version=automatic_signal['profile_version'],
+                    signal_config_version=automatic_signal['config_version'],execution_close=automatic_signal['execution_close'])
             event = connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
                                        (self.namespace, operation, 'intent_queued', json.dumps(context)))
             connection.execute('UPDATE intents SET intake_sequence=? WHERE namespace=? AND operation_id=?',
@@ -423,7 +431,11 @@ class StateStore:
                        WHERE i.namespace=? AND i.kind!='protection' ORDER BY i.intake_sequence''', (self.namespace,))]
         for row in rows:
             values = validated_config(json.loads(row.pop('values_json')))
-            row.update(strategy_profile=values['strategy_profile'],strategy_version=values['strategy_version'])
+            row.update(strategy_profile=values['strategy_profile'],strategy_version=values['strategy_version'],source='manual')
+            event = connection.execute("SELECT payload FROM journal WHERE namespace=? AND operation_id=? AND event='intent_queued' ORDER BY sequence LIMIT 1", (self.namespace,row['operation_id'])).fetchone()
+            if event:
+                context = json.loads(event[0])
+                row.update({key:context[key] for key in ('source','signal_id','signal_profile','signal_profile_version','signal_config_version','execution_close') if key in context})
         return rows
 
     def set_price(self, symbol: str, price: str) -> None:
@@ -783,13 +795,32 @@ class StateStore:
             connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
                                (self.namespace, 'entry_control', json.dumps({'paused': paused, 'actor': actor})))
 
+    def automation(self) -> dict[str, Any]:
+        with self.connection() as connection:
+            return self._automation(connection)
+
+    def _automation(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        row = connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='automation_status' ORDER BY sequence DESC LIMIT 1", (self.namespace,)).fetchone()
+        if row is None:
+            return {'state':'disabled','enabled':False,'reason':'not_started'}
+        values = json.loads(row[0])
+        if not isinstance(values,dict) or values.get('state') not in {'disabled','waiting_for_reconciliation','blocked','running','stopped'} or type(values.get('enabled')) is not bool:
+            raise StateUnavailable('Invalid automation status')
+        owner = self._ownership(connection)
+        if values['enabled'] and values['state'] != 'stopped':
+            if owner.get('state') == 'stopped':
+                return {**values,'state':'stopped','reason':'owner_stopped'}
+            if values.get('owner_generation') != owner.get('generation'):
+                return {**values,'state':'waiting_for_reconciliation','reason':'owner_changed'}
+        return values
+
     def snapshot(self, *, now: float | None = None) -> dict[str, Any]:
         """One committed observation for an entire HTTP request, including joins."""
         with self.connection() as connection:
             connection.execute('BEGIN')
             version, config = self._config(connection)
             return {'config_version': version, 'config': config, 'scan': self._scan(connection),
-                    'positions': self._positions(connection), 'operations': self._operations(connection),
+                    'automation':self._automation(connection),'positions': self._positions(connection), 'operations': self._operations(connection),
                     'migration': self._migration(connection), 'ownership': self._ownership(connection),
                     'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
                     'fills': self._fills(connection), 'protection': self._protection(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),

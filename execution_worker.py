@@ -6,7 +6,8 @@ import json
 import math
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TYPE_CHECKING
+from types import TracebackType
 from collections.abc import Callable
 import time
 from state_store import StateStore
@@ -16,12 +17,16 @@ from paper_policy import financial_arithmetic
 
 from execution_owner import ExecutionOwner, OwnershipUnavailable
 
+if TYPE_CHECKING:
+    from automation import Automation
+
 
 class ExecutionWorker(ExecutionOwner):
     def __init__(self, store: StateStore, *, clock: Callable[[], float] = time.time, exchange_provider: Any = None) -> None:
         super().__init__(store)
         self.clock = clock
         self.policy = OperationsPolicy()
+        self.automation: Automation | None = None
         self.exchange_execution = None
         from position_protection import PaperProtection
         self.paper_protection = PaperProtection(self)
@@ -30,6 +35,14 @@ class ExecutionWorker(ExecutionOwner):
                 raise ConfigurationError('Private provider cannot attach to paper execution')
             from exchange_execution import ExchangeExecution
             self.exchange_execution = ExchangeExecution(self, exchange_provider)
+
+    def __exit__(self, error_type: type[BaseException] | None,
+                 error: BaseException | None, traceback: TracebackType | None) -> None:
+        try:
+            if self.automation is not None:
+                self.automation.stop()
+        finally:
+            super().__exit__(error_type, error, traceback)
 
     def reconcile_exchange(self) -> None:
         if self.exchange_execution is None:

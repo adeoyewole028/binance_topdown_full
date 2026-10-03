@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 import math
 import time
 import random
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from automation import Automation
 from decimal import Decimal, InvalidOperation
 
 from execution_worker import ExecutionWorker
@@ -75,7 +78,8 @@ class MarketRuntime:
     def __init__(self, owner: ExecutionWorker, provider: MarketProvider, *,
                  clock: Callable[[], float] = time.time, whitelist: set[str] | None = None,
                  blacklist: set[str] | None = None, reconcile: Callable[[], None] | None = None,
-                 evaluate: Callable[[CachedMarketView, list[str], dict[str, Any]], dict[str, Any]] | None = None) -> None:
+                 evaluate: Callable[[CachedMarketView, list[str], dict[str, Any]], dict[str, Any]] | None = None,
+                 automation: Automation | None = None) -> None:
         self.owner, self.provider, self.clock = owner, provider, clock
         self.snapshot = owner.store.scan()
         self.cache: dict[str, Any] = self.snapshot.get('market_cache', {})
@@ -85,6 +89,7 @@ class MarketRuntime:
         self.whitelist, self.blacklist = whitelist or set(), blacklist or set()
         self.reconcile = reconcile
         self.evaluate = evaluate
+        self.automation = automation
         self.next_scan = self.next_prices = self.next_reconcile = 0.0
 
     def _request(self, lane: str, weight: int, call: Callable[[], Any], *,
@@ -121,6 +126,9 @@ class MarketRuntime:
         self.snapshot['market_health'] = health
         self.owner.publish_scan(self.snapshot)
         self.owner.process_pending()
+        if self.automation is not None:
+            self.automation.tick()
+            self.owner.process_pending()
 
     def refresh_prices(self) -> None:
         coverage = self.snapshot.get('market_health', {}).get('coverage', [])
