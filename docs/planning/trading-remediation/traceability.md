@@ -87,3 +87,7 @@ All 19 audit findings and seven provider findings are accounted for; all 20 requ
 ## Review outcome
 
 No known source requirement is omitted. No implementation ticket is marked complete; no mocks, syntax checks or prior audit evidence are relabelled as provider/production acceptance. Approved breakdown coverage does **not** establish implementation readiness. D02-D07 and exact policy targets remain explicit gaps; D08 publication is verified; the skill-required seam/breakdown review is satisfied. Resolve remaining gaps by revising these same authoritative artifacts before executing affected tickets. Preserve the original audit as immutable evidence; record new findings or approved scope changes with affected requirement/ticket links.
+
+## BT04 acceptance update (2026-10-03)
+
+R06/R07/R19 map to completed BT04 local checks atd34b004:144cases142pass2strictBT06xfails; type29/lint/20sourcecompile pass; both reviews0 remaining findings. Original source completeness entries above are historical planning gates, superseded by approved D01-D04/D06-D08 records and current execution ledger. D07 operating thresholds approved; actual activation/canary/destination/access remain separate. D05 runtime explicit setup selected, remaining accounting/protection answers pending. Later provider/rollout acceptance is not satisfied by these offline results.

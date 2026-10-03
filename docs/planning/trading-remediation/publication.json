@@ -4,8 +4,7 @@
   "date": "2026-10-02",
   "implementation": "BT01-BT03 complete/closed; BT04 in progress after approved D07 targets",
   "decision_blockers": [
-    "D05",
-    "D07"
+    "D05"
   ],
   "tickets": [
     {
@@ -226,14 +225,18 @@
         "BT09",
         "BT13"
       ],
-      "decision_blockers": [
-        "D07"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT09",
         "BT13"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "open issue, required label, complete body, decisions and native blockers verified",
+      "external_activation_gates": [
+        "hosting spend/access",
+        "actual private alert destination",
+        "deployment authorization/access",
+        "live canary amount/symbol/duration and authorization"
+      ]
     },
     {
       "planning_id": "BT15",
@@ -244,13 +247,17 @@
       "blocked_by": [
         "BT14"
       ],
-      "decision_blockers": [
-        "D07"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT14"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "open issue, required label, complete body, decisions and native blockers verified",
+      "external_activation_gates": [
+        "hosting spend/access",
+        "actual private alert destination",
+        "deployment authorization/access",
+        "live canary amount/symbol/duration and authorization"
+      ]
     },
     {
       "planning_id": "BT16",
@@ -261,13 +268,17 @@
       "blocked_by": [
         "BT15"
       ],
-      "decision_blockers": [
-        "D07"
-      ],
+      "decision_blockers": [],
       "native_dependencies": [
         "BT15"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "open issue, required label, complete body, decisions and native blockers verified",
+      "external_activation_gates": [
+        "hosting spend/access",
+        "actual private alert destination",
+        "deployment authorization/access",
+        "live canary amount/symbol/duration and authorization"
+      ]
     }
   ],
   "specification": {
@@ -284,7 +295,14 @@
     "D02": "APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized",
     "D03": "APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automation, disabled by default; both use the same executor",
     "D04": "APPROVED on 2026-10-02: preserve both existing strategies as named, versioned profiles; no automatic selection",
-    "D06": "APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation"
+    "D06": "APPROVED on 2026-10-03: quarantine all legacy snapshots read-only until the operator confirms each paper-account origin; exchange holdings always come from provider reconciliation",
+    "D07": "APPROVED on 2026-10-03: scans300s/health600s, prices30s/expiry60s, reconciliation15s, backup7days/RPO15min/RTO1hour; configured operator owns private webhook alerts configured before activation. External activation gates remain separate."
   },
-  "remaining_decisions": "D05; D07 external hosting/alert/deployment/live-canary gates only"
+  "remaining_decisions": "D05; external activation gates listed separately; D07 operating targets approved",
+  "external_activation_gates": [
+    "hosting spend/access",
+    "actual private alert destination",
+    "deployment authorization/access",
+    "live canary amount/symbol/duration and authorization"
+  ]
 }
