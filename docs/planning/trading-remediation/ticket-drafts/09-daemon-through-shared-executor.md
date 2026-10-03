@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** open; BT09 implementation in progress; all acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Allow explicitly enabled automation to enter and exit safely without bypassing operator controls or duplicating ownership.
 **Blocked by:** [BT07 #9](https://github.com/adeoyewole028/binance_topdown_full/issues/9), [BT08 #10](https://github.com/adeoyewole028/binance_topdown_full/issues/10).
 **Decision blockers:** None additional; applicable choices approved by the user on 2026-10-02.
@@ -72,3 +72,8 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 ## Approved decision update
 
 APPROVED on 2026-10-02: preserve manual/advisory dashboard and explicit automation, disabled by default; both use the same executor
+
+
+## BT09 start (2026-10-03)
+
+Live#11 body/comments inspected OPEN/0comments, native#9/#10 CLOSED verified; parent#2 OPEN. Sole active ticket. Fixed review point`d4900456c4dfa6b36eb0c02e8850d3f22af576a1`. D03 explicit automation disabled by default, same evaluator/admission/risk/executor/protection; D04 both profiles preserved. No future replay/metrics/UI/release implementation early; no actual automation activation/provider/trade/funding/deployment/push. Next: approved HTTP→ownedworker→fake-market/provider→HTTP tracer for explicit signal intake and restart dedup, then lifecycle/launcher/failure gates and final review/checks.

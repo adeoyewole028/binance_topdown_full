@@ -158,7 +158,9 @@
         "BT07",
         "BT08"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified"
+      "verification": "open issue, required label, complete body, decisions and native blockers verified",
+      "implementation_status": "in_progress",
+      "review_fixed_point": "d4900456c4dfa6b36eb0c02e8850d3f22af576a1"
     },
     {
       "planning_id": "BT10",
