@@ -6,13 +6,13 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
 (async()=> {
   const evidence=path.resolve('docs/planning/trading-remediation/evidence/bt13-browser');
   fs.mkdirSync(evidence,{recursive:true});
-  const browser=await chromium.launch(),results=[];
+  let browser;const results=[];
   try {
     for (const scenario of (process.argv.length>2 ? process.argv.slice(2) : ['paper','partial','unknown','reject','expired','protection_failed','fill'])) {
       const state=fs.mkdtempSync(path.join(os.tmpdir(),'bt13-browser-'));
       const server=spawn('python',['-m','tests.operator_browser_server',state,'0',scenario],{windowsHide:true});
       let output='';server.stdout.on('data',data=>output+=data);server.stderr.on('data',data=>output+=data);
-      const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});
+      let context;
       try {
         const start=Date.now();
         while(!output.match(/ready: (http:\/\/127\.0\.0\.1:\d+)/)) {
@@ -20,6 +20,8 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
           await new Promise(resolve=>setTimeout(resolve,100));
         }
         const url=output.match(/ready: (http:\/\/127\.0\.0\.1:\d+)/)[1];
+        browser=await chromium.launch();
+        context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});
         await context.route('**/*',route=>new URL(route.request().url()).origin===url ? route.continue() : route.abort());
         const page=await context.newPage(),errors=[];
         page.on('pageerror',error=>errors.push(error.message));
@@ -180,11 +182,11 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
         await page.screenshot({path:path.join(evidence,scenario+'.png')});
         results.push({scenario,passed:true,status:await status(),axeViolations:axe.violations.length,reflow});
         console.log('Passed browser recovery:',scenario);
-      } finally {await context.close();server.kill();}
+      } finally {if(context)await context.close();if(browser)await browser.close();server.kill();}
     }
     fs.writeFileSync(path.join(evidence,'journey.json'),JSON.stringify({revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
       scope:'Offline real Chromium and owned fake-provider lifecycle; no deployed or real-provider execution',
       browser:browser.version(),results,source_sha256:Object.fromEntries(['dashboard.py','state_store.py','manual_orders.py','templates/dashboard.html',
         'static/dashboard.js','static/manual-orders.js','static/dashboard.css'].map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')]))},null,2));
-  } finally {await browser.close();}
+  } finally {if(browser)await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
