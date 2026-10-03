@@ -15,7 +15,7 @@ Production uses `APP_ENV=production`, HTTPS and `wsgi:app`. Cookies are Secure, 
 
 All mutation routes, including login/logout, require a session-bound unpredictable CSRF token. Forms include it; an authenticated same-origin client can send `X-CSRF-Token` instead. A supplied Origin must match the request origin. `/` and `/api/status` require operator authentication; account CORS is same-origin. TLS terminates at a trusted reverse proxy; the app does not trust arbitrary forwarded client addresses. No account or password details enter public API responses or routine authentication errors.
 
-`APP_ENV=development` permits non-Secure cookies only on isolated loopback HTTP. `python dashboard.py` binds to 127.0.0.1, rejects production, and disables debug/reload. Add `--scan` only to explicitly start its isolated paper scanner in that same process. `FLASK_DEBUG`, `FLASK_RUN_DEBUG`, `FLASK_RUN_RELOAD` `GUNICORN_CMD_ARGS=--reload` or `--reload` settings fail validation; the mandatory gunicorn.conf.py launcher hooks reject effective reload values from configuration and overrides. Never use the Flask CLI as a production launcher.
+`APP_ENV=development` permits non-Secure cookies only on isolated loopback HTTP. `python dashboard.py` binds to 127.0.0.1, rejects production, and disables debug/reload. BT03 retires its same-process `--scan` option; launch the separately owned scanner using `python run_worker.py --scan`. `FLASK_DEBUG`, `FLASK_RUN_DEBUG`, `FLASK_RUN_RELOAD` `GUNICORN_CMD_ARGS=--reload` or `--reload` settings fail validation; the mandatory gunicorn.conf.py launcher hooks reject effective reload values from configuration and overrides. Never use the Flask CLI as a production launcher.
 
 ## Mode, venue and server gates
 
@@ -25,7 +25,7 @@ All mutation routes, including login/logout, require a session-bound unpredictab
 | `BINANCE_VENUE` | testnet / mainnet; testnet | Explicit venue for public market data and any private client. |
 | `ALLOW_EXCHANGE_EXECUTION` | strict boolean; false | Immutable server gate; no HTTP field can enable it. |
 | `ALLOW_MAINNET_EXECUTION` | strict boolean; false | Additional mainnet gate, not rollout authorization. |
-| `AUTOMATION_ENABLED` | strict boolean; false | Explicit optional paper daemon activation; exchange automation awaits BT09. |
+| `AUTOMATION_ENABLED` | strict boolean; false | Automation remains stopped pending BT09 shared-owner integration. |
 | `BINANCE_TESTNET_API_KEY/SECRET` | optional pair | Keys belonging to Spot testnet. |
 | `BINANCE_MAINNET_API_KEY/SECRET` | optional pair | Keys belonging to Spot mainnet. |
 
@@ -37,6 +37,6 @@ Ordinary settings preserve omitted fields and cannot switch mode. Reset preserve
 
 ## Ownership and upgrade boundary
 
-Importing dashboard/daemon/backtester is inert: no background lifecycle or `.env` reads. Explicit launchers load `.env` without overriding supplied environment. The HTTP WSGI launcher never owns a scanner. `run_scanner.py` is restricted to isolated development paper mode, runs one loop in its caller, and does not advertise durable ownership. Until BT03, JSON state and process-local status retain legacy limitations; do not infer production recovery or shared scanner visibility from the HTTP launcher. Exchange automation remains disabled pending BT09. The current Render command points to `wsgi:app`; hosting/topology validation, release, backups and restore remain BT14. No active service, hosting purchase or rollout was changed by this ticket.
+Importing dashboard/daemon/backtester is inert: no background lifecycle or `.env` reads. Explicit launchers load `.env` without overriding supplied environment. The HTTP WSGI launcher never owns a scanner. BT03 requires explicitly initialized SQLite state, queues HTTP orders, and holds a kernel account/venue lock in the separately launched owner. Both HTTP workers read shared positions/configuration/scans. `run_scanner.py` remains restricted to isolated development paper mode with durable ownership. See [migration and recovery](durable-state.md). Exchange dispatch/reconciliation and automation remain future BT06/BT09 work. The current Render command points to `wsgi:app`; single-host hosting/topology validation, supervisor installation and operational backup/restore acceptance remain BT14. No active service, hosting purchase or rollout was changed.
 
 Sources checked on 2026-10-02: [Flask security](https://flask.palletsprojects.com/en/stable/web-security/), [Flask configuration](https://flask.palletsprojects.com/en/stable/config/), [Werkzeug password hashing](https://werkzeug.palletsprojects.com/en/stable/utils/), [CCXT sandbox contract](https://docs.ccxt.com/docs/manual).

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import os, signal, time, math
-from datetime import datetime, timedelta
+from datetime import datetime
 import pandas as pd
 from runtime_environment import RuntimeEnvironment, construct_exchange, load_launcher_environment, parse_boolean
-from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv
+from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer
 
 running = True
 def signal_handler(sig, frame):
@@ -95,96 +95,12 @@ class Broker:
         return {'tp': tp, 'sl': sl}
 
 def main_loop():
-    runtime = load_launcher_environment()
+    load_launcher_environment()
     if not parse_boolean(os.getenv('AUTOMATION_ENABLED', 'false')):
         raise ValueError('Automation is disabled by default')
-    if runtime.mode != 'paper':
-        # BT09 must attach the daemon to the durable reconciled execution owner.
-        raise ValueError('Exchange automation requires the shared reconciled executor')
-    cfg = {
-        'BASE_QUOTE': os.getenv('BASE_QUOTE','USDT'),
-        'UNIVERSE_SIZE': int(os.getenv('UNIVERSE_SIZE','12')),
-        'MAX_OPEN_POSITIONS': int(os.getenv('MAX_OPEN_POSITIONS','5')),
-        'POSITION_SIZING_MODE': os.getenv('POSITION_SIZING_MODE','risk'),
-        'RISK_PER_TRADE': float(os.getenv('RISK_PER_TRADE','0.01')),
-        'FIXED_ALLOCATION_USD': float(os.getenv('FIXED_ALLOCATION_USD','20')),
-        'STOP_LOSS_PCT': float(os.getenv('STOP_LOSS_PCT','0.03')),
-        'TAKE_PROFIT_PCT': float(os.getenv('TAKE_PROFIT_PCT','0.06')),
-        'MIN_24H_QUOTE_VOLUME': float(os.getenv('MIN_24H_QUOTE_VOLUME','10000000')),
-        'PAPER_TRADING': runtime.mode == 'paper',
-        'TESTNET': runtime.venue == 'testnet',
-        'COOLDOWN_MINUTES': int(os.getenv('COOLDOWN_MINUTES','120')),
-        'LOOP_INTERVAL_SECONDS': int(os.getenv('LOOP_INTERVAL_SECONDS','300')),
-        'WHITELIST': os.getenv('WHITELIST','').split(',') if os.getenv('WHITELIST') else None,
-        'BLACKLIST': set(os.getenv('BLACKLIST','').split(',')) if os.getenv('BLACKLIST') else None,
-    }
-
-    exchange = make_exchange()
-    markets = exchange.load_markets()
-    broker = Broker(exchange, paper=cfg['PAPER_TRADING'])
-
-    cooldown = {}
-    open_positions = 0
-
-    while running:
-        try:
-            tickers = exchange.fetch_tickers()
-            universe = filter_symbols(tickers, base_quote=cfg['BASE_QUOTE'], min_quote_vol=cfg['MIN_24H_QUOTE_VOLUME'], whitelist=cfg['WHITELIST'], blacklist=cfg['BLACKLIST'])[:cfg['UNIVERSE_SIZE']]
-            print(f"[{datetime.utcnow().isoformat()}] Scanning universe: {universe}")
-            total_quote, free_quote = broker.fetch_quote_balance(cfg['BASE_QUOTE'])
-            equity = total_quote if total_quote>0 else 100.0
-            for symbol in universe:
-                if open_positions >= cfg['MAX_OPEN_POSITIONS']: break
-                if symbol in cooldown and (datetime.utcnow() - cooldown[symbol]) < timedelta(minutes=cfg['COOLDOWN_MINUTES']): continue
-                try:
-                    df_daily = fetch_ohlcv_df(exchange, symbol, '1d', limit=300)
-                    df_4h = fetch_ohlcv_df(exchange, symbol, '4h', limit=200)
-                    df_15m = fetch_ohlcv_df(exchange, symbol, '15m', limit=200)
-                except Exception as e:
-                    print('fetch error', symbol, e); continue
-                trend = daily_trend_check(df_daily)
-                if not trend['bullish']:
-                    print(symbol, 'skip: daily not bullish'); continue
-                bias = bias_check_4h(df_4h)
-                if not bias['near_ma'] or not bias['momentum_ok']:
-                    print(symbol, 'skip: bias not OK'); continue
-                exec_sig = execution_check_15m(df_15m)
-                if not exec_sig['signal']:
-                    print(symbol, 'no 15m confirmation'); continue
-                last_price = float(df_15m['close'].iloc[-1])
-                if cfg['POSITION_SIZING_MODE'] == 'fixed':
-                    amount_quote = cfg['FIXED_ALLOCATION_USD']
-                else:
-                    risk_amount = equity * cfg['RISK_PER_TRADE']
-                    stop_distance = last_price * cfg['STOP_LOSS_PCT']
-                    if stop_distance <= 0:
-                        print('invalid stop distance'); continue
-                    qty = risk_amount / stop_distance
-                    step = markets[symbol]['limits']['amount']['step'] or 1
-                    qty = math.floor(qty / step) * step
-                    if qty <= 0:
-                        print('qty too small by risk sizing'); continue
-                    amount_quote = qty * last_price
-                try:
-                    order = broker.market_buy(symbol, amount_quote=amount_quote, markets=markets)
-                    entry = order.get('price') or last_price
-                    amt = order.get('amount') if order.get('amount') else qty
-                    levels = broker.place_tp_sl(symbol, entry, amt, cfg['TAKE_PROFIT_PCT'], cfg['STOP_LOSS_PCT'], markets)
-                    log_trade_csv('logs/topdown_trades.csv', [datetime.utcnow().isoformat(), symbol, 'buy', amt, entry, levels['tp'], levels['sl'], f"topdown:{exec_sig['type']}", cfg['POSITION_SIZING_MODE']])
-                    print('TRADE executed', symbol, entry, levels)
-                    open_positions += 1
-                    cooldown[symbol] = datetime.utcnow()
-                except Exception as e:
-                    print('order failed', e); continue
-            # sleep
-            total_sleep = cfg['LOOP_INTERVAL_SECONDS']
-            slept = 0
-            while slept < total_sleep and running:
-                time.sleep(1); slept += 1
-        except Exception as e:
-            print('main loop error', e)
-            time.sleep(5)
-    print('Daemon exiting gracefully.')
+    # BT03 retires the separate CSV/in-memory writer; BT09 preserves this
+    # workflow by attaching strategy evaluation to the shared owned intake.
+    raise ValueError('Automation requires the shared execution owner integration in BT09')
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)

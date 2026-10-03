@@ -1,3 +1,5 @@
+<!-- binance-topdown-trading-remediation-v1:BT03 -->
+
 # BT03: Recover isolated state under one execution owner
 
 **GitHub issue:** https://github.com/adeoyewole028/binance_topdown_full/issues/5
@@ -7,7 +9,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** in progress; prerequisite BT02 closed/read-back verified; D02/D06 approved. No dependent ticket started.
 **What to build:** Give dashboard workers and the daemon one consistent durable state namespace that survives restart without duplicate ownership.
 **Blocked by:** [BT02 #4](https://github.com/adeoyewole028/binance_topdown_full/issues/4).
 **Decision blockers:** None additional; D02 and D06 were selected by the user.
@@ -67,7 +69,9 @@ Mainnet reconciliation implementation, distributed platform or new custody model
 
 ## Execution record
 
-Implementation: not started. Checks: not run for this ticket. Acceptance evidence: none. Review: test boundaries and breakdown approved by the user on 2026-10-02. Commit: none. Current blockers: incomplete prerequisite tickets and unresolved policy decisions above, where applicable. Publication is complete; no feature code changes are authorized by the current planning task. Next permitted implementation step requires explicit implementation instruction and satisfied blockers.
+Implementation in progress on 2026-10-03, fixed point dd950b8f01565eba61b5e79e9b5beb0d2484b338. Shared namespace-qualified config, durable HTTP intake, lifetime kernel ownership, atomic paper projections/journals and shared scan snapshots are implemented. Explicit quarantine/checksum/paper-origin attestation and online backup/isolated restore candidates are exercised on disposable fixtures. Unknown prior dispatch blocks new work. Real subprocess contention/death/handover passes; failed commits retain queued intent. Missing/corrupt state fails closed; source JSON writers and independent daemon execution are retired. Read-only config/CSV remain review inputs, not fabricated history. Restore refuses older journal effects and never overwrites the current DB.
+
+Validation before review: 93 pass/4 strict future expected failures (97 cases); mypy22, repository lint and 15-source compile pass. BT03 necessarily corrected three projection preconditions (negative buy/sell and missing priced fill); those baseline regressions are ordinary passing tests, without implementing BT05 capital/risk/fees/protection policy. All six criteria remain unchecked pending two-axis review, final evidence and scoped commits. D05/D07 and provider/deployment gates remain open. No source push, real migration, provider call, active-service change or deployment. Next step is review and corrections within BT03.
 
 
 ## Approved decision update

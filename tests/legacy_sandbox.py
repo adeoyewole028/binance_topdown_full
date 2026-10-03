@@ -111,8 +111,12 @@ class LegacySandbox:
             self.stack.enter_context(patch('io.open', self._guarded_io_open))
             self.stack.enter_context(patch('os.mkdir', self._guarded_mkdir))
             self.module = self.load_module('dashboard')
+            from state_store import StateStore
+            from runtime_environment import RuntimeEnvironment
+            runtime = RuntimeEnvironment.from_mapping(os.environ)
+            store = StateStore(runtime.data_directory, os.getenv('LOCAL_ACCOUNT_ID', 'operator-account'), runtime.venue, runtime.mode)
+            store.provision(self.module.environment_defaults(os.environ))
             self.module.initialize_runtime()
-            self.module.local_broker.trade_log_path = str(self.directory / 'trades.csv')
             self.module.__dict__['exchange'] = self.exchange
             self.module.app.config['TESTING'] = True
             self.client = self.module.app.test_client()
@@ -187,12 +191,22 @@ class LegacySandbox:
         self.csrf = token[1]
 
     def post(self, route: str, *, data: dict[str, str]) -> Any:
-        return self.client.post(route, data={**data, 'csrf_token': self.csrf})
+        response = self.client.post(route, data={**data, 'csrf_token': self.csrf})
+        if route in {'/trade', '/close'} and response.status_code == 302:
+            self.run_owner()
+        return response
+
+    def run_owner(self) -> None:
+        """Explicit fake-clock consumer step at the approved end-to-end seam."""
+        from execution_worker import ExecutionWorker
+        with ExecutionWorker(self.module.state_store) as worker:
+            worker.process_pending()
 
     def seed_price(self, symbol: str, price: float) -> None:
         """Legacy fixture provisioning; assertions use HTTP/provider boundaries."""
         self.module.status['live_prices'][symbol] = price
         self.exchange.prices[symbol] = price
+        self.module.state_store.set_price(symbol, str(price))
 
     def candles(self, closes: list[float], timeframe_minutes: int = 15) -> pd.DataFrame:
         """UTC fixture bars are all completed before the fixture's decision time."""

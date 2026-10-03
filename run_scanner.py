@@ -1,4 +1,4 @@
-"""Explicit isolated development scanner; production ownership comes in BT03."""
+"""Explicit isolated development scanner holding the durable ownership lock."""
 from runtime_environment import load_launcher_environment
 
 

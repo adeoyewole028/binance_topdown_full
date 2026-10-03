@@ -21,7 +21,6 @@ def test_partial_config_preserves_paper_mode() -> None:
         assert sandbox.client.get('/api/status').get_json()['config']['paper_trading'] is True
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A07 / BT05: negative paper buys currently create negative holdings')
 def test_negative_buy_leaves_positions_unchanged() -> None:
     with LegacySandbox() as sandbox:
         sandbox.seed_price('BTC/USDT', 100.0)
@@ -29,7 +28,6 @@ def test_negative_buy_leaves_positions_unchanged() -> None:
         assert sandbox.client.get('/api/status').get_json()['open_positions'] == []
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A07 / BT05: negative sells currently increase holdings')
 def test_negative_sell_does_not_increase_holdings() -> None:
     with LegacySandbox() as sandbox:
         sandbox.seed_price('BTC/USDT', 100.0)
@@ -38,7 +36,6 @@ def test_negative_sell_does_not_increase_holdings() -> None:
         assert sandbox.client.get('/api/status').get_json()['open_positions'][0]['qty'] == 1.0
 
 
-@pytest.mark.xfail(raises=AssertionError, reason='A07 / BT05: absent market price currently fills at zero')
 def test_missing_price_does_not_create_position() -> None:
     with LegacySandbox() as sandbox:
         sandbox.post('/trade', data={'symbol': 'UNKNOWN/USDT', 'side': 'buy', 'qty': '1'})

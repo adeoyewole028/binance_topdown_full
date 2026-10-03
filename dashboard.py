@@ -2,13 +2,12 @@
 from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify, make_response
 import time
 import os
-import json
 import pandas as pd
-from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer, log_trade_csv
-from datetime import datetime
+from utils import ema, rsi, is_higher_highs_lows, detect_bullish_engulfing, detect_hammer
 from typing import Mapping
 from operator_security import install_operator_security, configure_operator
 from runtime_environment import RuntimeEnvironment, construct_exchange, parse_boolean
+from state_store import StateStore, StateUnavailable
 
 # --- Strategy helpers (mirrors topdown_daemon) ---
 def daily_trend_check(df_daily: pd.DataFrame):
@@ -119,32 +118,10 @@ status = {
     'peak_equity': 0.0
 }
 
-# --- Config persistence helpers ---
+# Configuration inputs; durable versions live in StateStore.
 DATA_DIR = os.getenv('DATA_DIR', os.path.dirname(__file__))
-CONFIG_PATH = os.path.join(DATA_DIR, 'config.json')
-POSITIONS_PATH = os.path.join(DATA_DIR, 'positions.json')
 
-def load_persisted_config(path=None):
-    path = CONFIG_PATH if path is None else path
-    try:
-        if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-    except Exception as e:
-        status['logs'].append(f"Config load error: {type(e).__name__}")
-    return {}
 
-def save_persisted_config(cfg: dict, path=None):
-    path = CONFIG_PATH if path is None else path
-    try:
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(cfg, f, indent=2)
-        return True
-    except Exception as e:
-        status['logs'].append(f"Config save error: {type(e).__name__}")
-        return False
 
 def coerce_config_types(incoming: dict) -> dict:
     # Keep a type map for safe casting
@@ -183,40 +160,6 @@ def coerce_config_types(incoming: dict) -> dict:
             # If casting fails, skip to preserve old value
             continue
     return out
-
-# Load persisted config and merge over defaults
-
-# --- Positions persistence ---
-def load_positions(path=None):
-    path = POSITIONS_PATH if path is None else path
-    try:
-        if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    # ensure numeric
-                    out = []
-                    for p in data:
-                        try:
-                            out.append({'symbol': p['symbol'], 'entry': float(p['entry']), 'qty': float(p['qty']), 'pnl': float(p.get('pnl', 0))})
-                        except Exception:
-                            continue
-                    return out
-    except Exception as e:
-        status['logs'].append(f"Positions load error: {type(e).__name__}")
-    return []
-
-def save_positions(positions: list, path=None):
-    path = POSITIONS_PATH if path is None else path
-    try:
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(positions, f, indent=2)
-        return True
-    except Exception as e:
-        status['logs'].append(f"Positions save error: {type(e).__name__}")
-        return False
-
-# Initialize positions from disk
 
 # --- Exit strategy helpers ---
 def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dict:
@@ -264,76 +207,25 @@ def compute_exit_reasons(symbol: str, entry: float, qty: float, exchange) -> dic
 
     return {'should_exit': len(reasons) > 0, 'reasons': reasons, 'price': price}
 
-class LocalBroker:
-    def __init__(self, status_ref):
-        self.status = status_ref
-        self.trade_log_path = os.path.join('logs', 'trades.csv')
-
-    def _price(self, symbol):
-        p = self.status['live_prices'].get(symbol)
-        if isinstance(p, (int, float)):
-            return float(p)
-        return None
-
-    def _find_position(self, symbol):
-        for pos in self.status['open_positions']:
-            if pos['symbol'] == symbol:
-                return pos
-        return None
-
-    def create_order(self, symbol: str, side: str, qty: float):
-        qty = float(qty)
-        price = self._price(symbol) or 0.0
-        ts = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-        pos = self._find_position(symbol)
-
-        if side.lower() == 'buy':
-            if pos:
-                new_qty = pos['qty'] + qty
-                # Weighted average entry
-                pos['entry'] = (pos['entry'] * pos['qty'] + price * qty) / max(new_qty, 1e-12)
-                pos['qty'] = new_qty
-            else:
-                self.status['open_positions'].append({'symbol': symbol, 'entry': price, 'qty': qty, 'pnl': 0})
-            trade = {'time': ts, 'symbol': symbol, 'side': 'buy', 'qty': qty, 'price': price, 'status': 'filled', 'pnl': 0}
-        else:  # sell
-            if pos:
-                sell_qty = min(qty, pos['qty'])
-                pnl = (price - pos['entry']) * sell_qty
-                pos['qty'] -= sell_qty
-                if pos['qty'] <= 1e-12:
-                    # close position fully
-                    self.status['open_positions'] = [p for p in self.status['open_positions'] if p['symbol'] != symbol]
-                trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': sell_qty, 'price': price, 'status': 'filled', 'pnl': pnl}
-            else:
-                trade = {'time': ts, 'symbol': symbol, 'side': 'sell', 'qty': 0, 'price': price, 'status': 'rejected', 'pnl': 0}
-
-        # Record trade in memory and CSV
-        self.status.setdefault('recent_trades', []).insert(0, trade)
-        self.status['recent_trades'] = self.status['recent_trades'][:20]
-        try:
-            log_trade_csv(self.trade_log_path, [trade['time'], trade['symbol'], trade['side'], trade['qty'], price, '', '', 'local', 'paper'])
-        except Exception:
-            pass
-        # Persist positions
-        try:
-            save_positions(self.status['open_positions'])
-        except Exception:
-            pass
-        return trade
-
-    def close_position(self, symbol: str, qty: float):
-        return self.create_order(symbol, 'sell', qty)
 
 exchange = None
-local_broker = LocalBroker(status)
 
 runtime_environment = None
 configured_defaults = DEFAULT_CONFIG.copy()
+state_store = None
+
+def environment_defaults(environment: Mapping[str, str]) -> dict:
+    defaults = DEFAULT_CONFIG.copy()
+    for key, current in defaults.items():
+        env_name = 'MIN_24H_QUOTE_VOLUME' if key == 'min_quote_vol' else key.upper()
+        if key != 'paper_trading' and environment.get(env_name):
+            value = environment[env_name]
+            defaults[key] = parse_boolean(value) if isinstance(current, bool) else type(current)(value)
+    return defaults
 
 def initialize_runtime(environment: Mapping[str, str] | None = None) -> Flask:
     """Explicit web startup; no scanner or exchange requests are started here."""
-    global runtime_environment, DATA_DIR, CONFIG_PATH, POSITIONS_PATH, configured_defaults
+    global runtime_environment, DATA_DIR, configured_defaults, state_store
     environment = os.environ if environment is None else environment
     runtime = RuntimeEnvironment.from_mapping(environment)
     app.config.update(DEBUG=False)
@@ -342,27 +234,33 @@ def initialize_runtime(environment: Mapping[str, str] | None = None) -> Flask:
                        environment.get('FLASK_SECRET_KEY', ''), runtime.data_directory,
                        development=runtime.development)
     DATA_DIR = str(runtime.data_directory)
-    CONFIG_PATH = str(runtime.data_directory / 'config.json')
-    POSITIONS_PATH = str(runtime.data_directory / 'positions.json')
-    local_broker.trade_log_path = str(runtime.data_directory / 'trades.csv')
     # Read strategy knobs only after the explicit launcher has loaded .env.
-    defaults = DEFAULT_CONFIG.copy()
-    for key, current in defaults.items():
-        env_name = 'MIN_24H_QUOTE_VOLUME' if key == 'min_quote_vol' else key.upper()
-        if key != 'paper_trading' and environment.get(env_name):
-            value = environment[env_name]
-            defaults[key] = parse_boolean(value) if isinstance(current, bool) else type(current)(value)
+    defaults = environment_defaults(environment)
     configured_defaults = defaults.copy()
-    status['config'] = defaults
-    status['config'].update(coerce_config_types(load_persisted_config(CONFIG_PATH)))
+    state_store = StateStore(runtime.data_directory, environment.get('LOCAL_ACCOUNT_ID', 'operator-account'), runtime.venue, runtime.mode)
+    state_store.validate()
+    status['config_version'], status['config'] = state_store.config()
     # Old persisted flags can never elevate execution mode at startup.
     status['config']['paper_trading'] = runtime.mode == 'paper'
-    status['open_positions'] = load_positions(POSITIONS_PATH)
+    status['open_positions'] = []
     if runtime.mode == 'exchange' and status['open_positions']:
         raise ValueError('Legacy exposure requires review before exchange startup')
     status['bot_status'] = 'Scanner stopped'
     runtime_environment = runtime
     return app
+
+@app.before_request
+def refresh_durable_state():
+    if request.endpoint in {'operator_login', 'logout'} or state_store is None:
+        return None
+    try:
+        status.update(state_store.scan())
+        status['config_version'], status['config'] = state_store.config()
+        status['open_positions'] = [{'symbol': p['symbol'], 'qty': float(p['qty']), 'entry': float(p['entry']), 'pnl': 0}
+                                    for p in state_store.positions()]
+    except StateUnavailable:
+        return jsonify(error='Durable state unavailable; execution paused'), 503
+    return None
 
 def require_exchange_execution():
     if runtime_environment is None:
@@ -370,14 +268,22 @@ def require_exchange_execution():
     runtime_environment.require_exchange()
     if runtime_environment.mode != 'exchange':
         raise ValueError('Restart with a reviewed exchange namespace before execution')
-def bot_loop() -> None:
+def bot_loop(owner=None) -> None:
+    if owner is None:
+        from execution_worker import ExecutionWorker
+        with ExecutionWorker(state_store) as owned_worker:
+            return bot_loop(owned_worker)
     symbols = ['ETH/USDT', 'BTC/USDT', 'SOL/USDT', 'BNB/USDT']
     global exchange
     if runtime_environment is None:
         raise RuntimeError('Explicit runtime initialization is required')
-    exchange = construct_exchange(runtime_environment, private=not status['config']['paper_trading'])
+    exchange = construct_exchange(runtime_environment, private=False)
     while True:
-        now = time.strftime('%Y-%m-%d %H:%M:%S')
+        from datetime import datetime, timezone
+        status['config_version'], status['config'] = state_store.config()
+        status['open_positions'] = [{'symbol': p['symbol'], 'qty': float(p['qty']), 'entry': float(p['entry']), 'pnl': 0}
+                                    for p in state_store.positions()]
+        now = datetime.now(timezone.utc).isoformat()
         status['last_scan'] = now
         # Dynamic universe selection from top quote volume
         if status['config']['use_dynamic_universe']:
@@ -508,6 +414,8 @@ def bot_loop() -> None:
         status['logs'].append(f"Scanned at {now}")
         if len(status['logs']) > 20:
             status['logs'] = status['logs'][-20:]
+        owner.publish_scan(status)
+        owner.process_pending()
         time.sleep(10)
 
 @app.route('/trade', methods=['POST'])
@@ -521,15 +429,10 @@ def trade():
         except ValueError:
             return jsonify(error='Exchange execution is disabled by server policy'), 403
     try:
-        if status['config']['paper_trading']:
-            order = local_broker.create_order(symbol, side, float(qty))
-        else:
-            order = exchange.create_order(symbol, 'market', side, float(qty))
-        flash(f"Trade executed: {order}", "success")
-        status['logs'].append(f"Trade executed: {order}")
-    except Exception as e:
-        flash('Trade failed; review operator status.', "error")
-        status['logs'].append(f"Trade error: {type(e).__name__}")
+        operation = state_store.enqueue('trade', symbol, side, qty)
+    except StateUnavailable:
+        return jsonify(error='Order was not accepted; durable state unavailable'), 503
+    flash(f'Order queued for the execution owner: {operation}', 'success')
     return redirect('/')
 
 @app.route('/close', methods=['POST'])
@@ -541,25 +444,15 @@ def close_position():
             require_exchange_execution()
         except ValueError:
             return jsonify(error='Exchange execution is disabled by server policy'), 403
+    # Preserve the canonical decimal boundary; display floats are estimates.
+    q = qty
+    if not q:
+        q = next((p['qty'] for p in state_store.positions() if p['symbol'] == symbol), '0')
     try:
-        q = float(qty)
-    except Exception:
-        # Fallback: find from open_positions
-        q = 0.0
-        for pos in status['open_positions']:
-            if pos['symbol'] == symbol:
-                q = float(pos['qty'])
-                break
-    try:
-        if status['config']['paper_trading']:
-            order = local_broker.close_position(symbol, q)
-        else:
-            order = exchange.create_order(symbol, 'market', 'sell', q)
-        flash(f"Closed {symbol}: {order}", 'success')
-        status['logs'].append(f"Closed {symbol}: {order}")
-    except Exception as e:
-        flash('Close failed; review operator status.', 'error')
-        status['logs'].append(f"Close error: {type(e).__name__}")
+        operation = state_store.enqueue('close', symbol, 'sell', str(q))
+    except StateUnavailable:
+        return jsonify(error='Close was not accepted; durable state unavailable'), 503
+    flash(f'Close queued for the execution owner: {operation}', 'success')
     return redirect('/')
 
 @app.route('/api/status', methods=['GET'])
@@ -577,6 +470,10 @@ def api_status():
         'execution_mode': 'paper' if status['config']['paper_trading'] else 'exchange',
         'venue': runtime_environment.venue if runtime_environment else 'unconfigured',
         'exchange_allowed': runtime_environment.allow_exchange if runtime_environment else False,
+        'operations': state_store.operations(),
+        'positions': state_store.positions(),
+        'migration': state_store.migration(),
+        'ownership': state_store.ownership(),
     }
     resp = make_response(jsonify(payload), 200)
     return resp
@@ -595,8 +492,11 @@ def update_config():
             return jsonify(error='Invalid execution mode'), 400
     coerced = coerce_config_types(updates)
     # Merge into status
-    status['config'].update(coerced)
-    ok = save_persisted_config(status['config'])
+    try:
+        status['config_version'], status['config'] = state_store.update_config(coerced, 'operator')
+        ok = True
+    except StateUnavailable:
+        return jsonify(error='Durable state unavailable; configuration unchanged'), 503
     if ok:
         flash('Configuration saved.', 'success')
     else:
@@ -607,9 +507,11 @@ def update_config():
 def reset_config():
     # Reset to DEFAULT_CONFIG and persist
     paper = status['config']['paper_trading']
-    status['config'] = configured_defaults.copy()
-    status['config']['paper_trading'] = paper
-    ok = save_persisted_config(status['config'])
+    try:
+        status['config_version'], status['config'] = state_store.update_config({**configured_defaults, 'paper_trading': paper}, 'operator-reset')
+        ok = True
+    except StateUnavailable:
+        return jsonify(error='Durable state unavailable; configuration unchanged'), 503
     if ok:
         flash('Configuration reset to defaults.', 'success')
     else:
@@ -1100,15 +1002,12 @@ if __name__ == '__main__':
     import argparse
     from runtime_environment import load_launcher_environment
     parser = argparse.ArgumentParser(description='Isolated development operator server')
-    parser.add_argument('--scan', action='store_true', help='Explicitly start the local paper scanner in this process')
+    parser.add_argument('--scan', action='store_true', help='Retired: use run_worker.py --scan')
     arguments = parser.parse_args()
     load_launcher_environment()
     initialize_runtime()
     if not runtime_environment.development:
         raise ValueError('Use the production WSGI launcher for production')
     if arguments.scan:
-        if runtime_environment.mode != 'paper':
-            raise ValueError('Development scanner requires paper mode')
-        import threading
-        threading.Thread(target=bot_loop, daemon=True).start()
+        raise ValueError('Launch the separately owned scanner with python run_worker.py --scan')
     app.run(host='127.0.0.1', port=int(os.getenv('PORT', 5000)), debug=False, use_reloader=False)

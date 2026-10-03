@@ -48,6 +48,7 @@ def test_signed_in_operator_can_trade_and_sign_out() -> None:
         assert sandbox.client.post('/trade', data={
             'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': token[1],
         }).status_code == 302
+        sandbox.run_owner()
         assert sandbox.client.get('/api/status').get_json()['open_positions'][0]['qty'] == 1.0
         assert sandbox.client.post('/logout', data={'csrf_token': token[1]}).status_code == 302
         assert sandbox.client.get('/api/status').status_code == 401
@@ -110,17 +111,20 @@ def test_partial_config_and_reset_preserve_safety_fields() -> None:
         assert sandbox.exchange.holdings == {}
 
 
-def test_closed_server_gate_blocks_persisted_or_in_memory_exchange_mode() -> None:
+def test_closed_server_gate_and_namespace_ignore_in_memory_exchange_mode() -> None:
     with LegacySandbox(authenticated=False) as sandbox:
         csrf = sign_in(sandbox)
+        sandbox.seed_price('BTC/USDT', 100.0)
         sandbox.module.status['config']['paper_trading'] = False
         for route in ('/trade', '/close'):
             assert sandbox.client.post(route, data={
                 'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': csrf,
                 'ALLOW_EXCHANGE_EXECUTION': 'true',
-            }).status_code == 403
+            }).status_code == 302
+        # BT03 reads the committed paper namespace before either request, so a
+        # process-local flag cannot elevate execution or reinterpret real holdings.
         sandbox.client.post('/reset-config', data={'csrf_token': csrf})
-        assert sandbox.client.get('/api/status').get_json()['config']['paper_trading'] is False
+        assert sandbox.client.get('/api/status').get_json()['config']['paper_trading'] is True
         assert sandbox.exchange.holdings == {}
 
 
