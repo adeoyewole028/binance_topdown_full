@@ -125,3 +125,5 @@ The same D07 start gate persisted across the BT03 completion turn and two automa
 ## Resumed goal audit (2026-10-03)
 
 The goal was reactivated after the blocked audit; a fresh blocked audit begins. Live BT04 remains OPEN with no new comments, the worktree is clean, and D07 has not been selected. The existing unresolved choice was surfaced again with the same proposed targets; it is a request for missing policy, not renewed implementation authorization. The goal is active pending the answer. This first resumed turn cannot start BT04 or mark the goal blocked again yet. The objective and strict order are unchanged.
+
+Resumed audit outcome: the D07 gate remained unchanged for three consecutive resumed turns. The previous turn was no progress, not a live-process wait. Live BT04 still explicitly marks its targets unapproved, with no new comments, and the local specification agrees. No permitted implementation can proceed; goal status is blocked again pending the presented D07 question. No additional ticket or source work started. Resume only after the choice is received and recorded.
