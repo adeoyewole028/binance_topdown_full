@@ -82,3 +82,30 @@ def decimal_text(value: Decimal) -> str:
         return '0'
     text = format(value, "f")
     return text.rstrip('0').rstrip('.') if '.' in text else text
+
+
+@financial_arithmetic
+def fill_terms(quantity: Decimal, market_price: Decimal, side: str, policy: dict[str,Any]) -> dict[str,Decimal]:
+    """Shared full-fill price/cost/quote fee; filtering precedes accounting."""
+    if side not in {'buy','sell'} or min(quantity,market_price)<=0:
+        raise ConfigurationError('Positive simulated quantity/price and valid side required')
+    price=market_price*(1+Decimal(policy['slippage_fraction'])*(1 if side=='buy' else -1))
+    cost=quantity*price
+    return {'price':price,'cost':cost,'fee':cost*Decimal(policy['fee_fraction'])}
+
+
+@financial_arithmetic
+def entry_quantity(*, cash: Decimal, equity: Decimal, exposure: Decimal, market_price: Decimal,
+                   policy: dict[str,Any], config: dict[str,Any], mode: str) -> Decimal:
+    """Same currency-qualified capital/allocation/stop-risk sizing in all paths."""
+    if mode not in {'fixed','risk'} or market_price<=0 or min(cash,equity,exposure)<0:
+        raise ConfigurationError('Valid capital, price and fixed/risk sizing required')
+    price=market_price*(1+Decimal(policy['slippage_fraction']))
+    unit_cost=price*(1+Decimal(policy['fee_fraction']))
+    budget=min(cash,equity*Decimal(policy['max_allocation_fraction']),equity*Decimal(policy['max_exposure_fraction'])-exposure)
+    if mode=='fixed':budget=min(budget,Decimal(policy['fixed_quote']))
+    quantity=budget/unit_cost
+    if mode=='risk':
+        loss=price*(Decimal(str(config['stop_loss_pct']))+2*Decimal(policy['fee_fraction'])+Decimal(policy['slippage_fraction']))
+        quantity=min(quantity,equity*min(Decimal(policy['risk_fraction']),Decimal(str(config['risk'])))/loss)
+    return quantity

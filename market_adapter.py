@@ -65,3 +65,13 @@ class BinancePublicMarket:
     def candles(self, symbol: str, timeframe: str, limit: int) -> list[list[float]]:
         rows = self._get('public_get_klines', {'symbol': self.symbols[symbol], 'interval': timeframe, 'limit': limit})
         return [[float(value) for value in row[:6]] for row in rows]
+
+    def candles_range(self, symbol: str, timeframe: str, start: int, end: int,
+                      limit: int) -> list[list[float]]:
+        from strategy_profiles import DURATIONS
+        if (timeframe not in DURATIONS or type(start) is not int or type(end) is not int
+                or not 0 <= start < end or type(limit) is not int or not 1 <= limit <= 1000):
+            raise ValueError('Explicit UTC range and bounded page required')
+        rows=self._get('public_get_klines', {'symbol':self.symbols[symbol],'interval':timeframe,
+            'startTime':start,'endTime':end-1,'limit':limit,'timeZone':'0'})
+        return [[float(value) for value in row[:6]] for row in rows]

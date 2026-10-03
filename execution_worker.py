@@ -13,7 +13,7 @@ import time
 from state_store import StateStore
 from operations_policy import OperationsPolicy
 from configuration import ConfigurationError
-from paper_policy import financial_arithmetic
+from paper_policy import financial_arithmetic, fill_terms
 
 from execution_owner import ExecutionOwner, OwnershipUnavailable
 
@@ -187,9 +187,8 @@ class ExecutionWorker(ExecutionOwner):
             if operation['side'] != 'sell' or protective_price <= 0:
                 raise ValueError('Invalid protective reduction')
             price = protective_price
-        price *= 1 + Decimal(policy['slippage_fraction']) * (1 if operation['side'] == 'buy' else -1)
-        cost = requested * price
-        fee = cost * Decimal(policy['fee_fraction'])
+        terms = fill_terms(requested,price,operation['side'],policy)
+        price,cost,fee = terms['price'],terms['cost'],terms['fee']
         base, quote = symbol.split('/')
         if quote != policy['quote']:
             raise ValueError('Symbol quote differs from paper funding asset')

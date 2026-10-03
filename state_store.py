@@ -347,17 +347,10 @@ class StateStore:
             if risk.get('equity') is None or risk['entry_blocked']:
                 raise ConfigurationError('Confirmed capital and risk valuation required for sizing')
             equity = Decimal(risk['equity'])
-        price = Decimal(prices[symbol]['price']) * (1 + Decimal(policy['slippage_fraction']))
-        unit_cost = price * (1 + Decimal(policy['fee_fraction']))
-        budget = min(Decimal(account['balances'][policy['quote']]['available']),
-                     equity * Decimal(policy['max_allocation_fraction']),
-                     equity * Decimal(policy['max_exposure_fraction']) - exposure)
-        if mode == 'fixed':
-            budget = min(budget, Decimal(policy['fixed_quote']))
-        quantity = budget / unit_cost
-        if mode == 'risk':
-            loss = price * (Decimal(str(config['stop_loss_pct'])) + 2 * Decimal(policy['fee_fraction']) + Decimal(policy['slippage_fraction']))
-            quantity = min(quantity, equity * min(Decimal(policy['risk_fraction']), Decimal(str(config['risk']))) / loss)
+        from paper_policy import entry_quantity
+        quantity = entry_quantity(cash=Decimal(account['balances'][policy['quote']]['available']),
+            equity=equity,exposure=exposure,market_price=Decimal(prices[symbol]['price']),
+            policy=policy,config=config,mode=mode)
         metadata = self._scan(connection).get('market_metadata', {})
         try:
             market = next(s for s in metadata['symbols'] if s['baseAsset'] + '/' + s['quoteAsset'] == symbol)
