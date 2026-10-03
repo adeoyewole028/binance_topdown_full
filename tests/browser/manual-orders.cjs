@@ -80,7 +80,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
         }
         await page.locator('#qtyInput').fill('1');await review();
         expect((await status()).operations).toEqual([]);
-        const originalKey=await page.locator('#manual-order [name=idempotency_key]').inputValue();
+        let originalKey=await page.locator('#manual-order [name=idempotency_key]').inputValue();
         if(scenario==='paper') {
           await fixture('mark');await page.locator('#confirm-order').click();
           await expect(page.locator('#order-message')).toContainText('changed');
@@ -88,10 +88,17 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cryp
           await expect(page.locator('#qtyInput')).toHaveValue('1');
           await expect(page.locator('#manual-order [name=idempotency_key]')).toHaveValue(originalKey);
           await review();
+          expect((await status()).operations).toEqual([]);
+          // A separate fresh, unsent draft proves first-attempt response loss.
+          await page.evaluate(()=>sessionStorage.removeItem('manual-order:'+document.body.dataset.namespace));
+          await page.reload();await page.locator('#qtyInput').fill('1');await review();
+          originalKey=await page.locator('#manual-order [name=idempotency_key]').inputValue();
+          await expect(page.locator('#new-order')).toBeVisible();
           // Lose the actual response after committed intake; do not fake a fill.
           await page.route('**/orders/confirm',async route=>{await route.fetch();await route.abort();});
           await page.locator('#confirm-order').click();
           await expect(page.locator('#order-message')).toHaveAttribute('role','alert');
+          await expect(page.locator('#new-order')).toBeHidden();
           expect((await status()).operations).toHaveLength(1);
           await page.unroute('**/orders/confirm');await page.reload();
           await expect(page.locator('#qtyInput')).toHaveValue('1');

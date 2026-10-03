@@ -51,6 +51,7 @@
   }
   function showOperation(operation) {
     saved.can_close=['filled','rejected','canceled','expired'].includes(operation.state);
+    saved.can_start_another=operation.can_start_another;
     persist();
     display([['Operation',operation.operation_id],['Venue / mode',operation.venue+' / '+operation.mode],
       ['Order',operation.side+' '+operation.symbol],['State',operation.state_label],['Reported reason',operation.error_message],
@@ -99,6 +100,7 @@
     act(async()=> {
       const requestedDraft=draft();
       saved={draft:requestedDraft,attempted:saved?.attempted}; persist();
+      confirm.hidden=true;
       const data=new FormData(form);
       const result=await call('/orders/review',data);
       if (JSON.stringify(draft())!==JSON.stringify(requestedDraft)) {
@@ -112,12 +114,14 @@
   });
   confirm.addEventListener('click',()=>act(async()=> {
     if (!saved?.review_token) return;
+    const attemptedBefore=saved.attempted;
     saved.submitted=true; saved.attempted=true;
     if (!persist()) {
       saved.submitted=false;
+      saved.attempted=attemptedBefore;
       throw new Error('Browser draft storage is unavailable. Enable storage before confirmation so refresh can retain this intent');
     }
-    freezeDraft(true);
+    fresh.hidden=true; lookup.hidden=false; freezeDraft(true);
     const data=new FormData();
     data.set('csrf_token',form.elements.namedItem('csrf_token').value);
     data.set('review_token',saved.review_token);
@@ -145,7 +149,7 @@
     }
   }));
   fresh.addEventListener('click',()=> {
-    if (saved?.submitted && fresh.hidden) return;
+    if (saved?.attempted && !saved.can_start_another) return;
     saved=null; try { sessionStorage.removeItem(key); } catch (_) {}
     freezeDraft(false); form.elements.namedItem('idempotency_key').value=crypto.randomUUID();
     form.elements.namedItem('kind').value='trade';
