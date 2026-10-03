@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; approved breakdown; implementation not started. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** open; BT12 sole active implementation ticket; six local acceptance gates open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Give the operator stable forms, clear mode/health/metrics and usable recovery from stale, offline or invalid configuration.
 **Blocked by:** [BT11 #13](https://github.com/adeoyewole028/binance_topdown_full/issues/13).
 **Decision blockers:** None additional; D01 was approved by the user on 2026-10-02.
@@ -72,3 +72,8 @@ Implementation: not started. Checks: not run for this ticket. Acceptance evidenc
 ## Approved decision D01
 
 The user selected one configured operator with a password, secure session and CSRF protection on 2026-10-02. Use password hashing and login throttling; no registration/password-reset product or upstream identity substitution. Prerequisite tickets and required verification still apply.
+
+
+## BT12 start (2026-10-03)
+
+Live#14OPEN/0comments/native#13CLOSED verified; BT11closed; fixedpointaa5b434b49439b804088a56e10fad818de39d6f9. Existing HTTP/ownedfakeprovider seam plus mandatory real browser acceptance. R16/R17/R07: preserve existinglayout/typedforms/focus; same-origin statuspolling, truthful namespace/mode/venue/health/age/availability, versionedsettings/errors, candleidentity opt-in sound, semantic/native accessible controls, self-hosted bundledstyles. SelectedWCAG2.2AA gates:1.3.1,1.4.3,1.4.4,1.4.10,1.4.11,2.1.1,2.1.2,2.4.7,2.4.11,2.5.8,3.3.1/2/3,4.1.2/3. W3C primaryguidance checked2026-10-03. No visualredesign/futureorder-review/risk-reduction controls, realprovider/credentials/trade/funding/activation/deployment/push. Next:first authenticated rendering/invalid-field tracer, then targetedpolling/assets and actual guarded local browserjourneys; allsix criteria open.

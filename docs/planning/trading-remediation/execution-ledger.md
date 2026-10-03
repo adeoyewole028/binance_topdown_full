@@ -279,3 +279,8 @@ Allfive criteria pass at2d8b08cbf279f190b3b844ce02428c65966958e8:344fullpass/0fa
 
 
 BT11#13 CLOSED at2026-10-03T19:08:05Z; complete body/state read-back exactly matches local mirror. Acceptance commit6b2641a; source2d8b08c. Next permitted step:inspect liveBT12#14/comments/native blocker#13 and capture clean fixedpoint before BT12 alone. Parent#2 remainsOPEN; no actualprovider/trade/activation/deployment/push.
+
+
+## BT12 start (2026-10-03)
+
+Live#14OPEN/0comments/native#13CLOSED verified; BT12soleactive/sixcriteriaopen; fixedpointaa5b434b49439b804088a56e10fad818de39d6f9. UIroot selected fixing-accessibility, native controls/minimaltargeted changes; W3C WCAG2.2AA/ARIAalert primary guidance checked. Preserve recognizabledashboardlayout, status/typedsettingsfocus/versions/offline-auth recovery/candlealerts/selfhostedassets. Real localbrowser mandatory beyond HTTP/source checks. No BT13order-review/risk-reduction work or actualprovider/credentials/trade/funding/activation/deploy/push.
