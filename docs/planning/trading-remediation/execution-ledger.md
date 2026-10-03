@@ -208,3 +208,8 @@ BT07#9 CLOSED read-back verified2026-10-03T14:19:47Z; parent#2 OPEN; acceptance 
 ## BT08 start (2026-10-03)
 
 Live#10 OPEN/0comments/native#6 CLOSED verified; BT07 closed. Sole active ticket, five criteria open. Fixed review point`feed17e1c8f499ee990ff3e08335ec1ab164e748`. D04 both named/versioned profiles retained; pure completed-bar/config/position evaluator seam. Next: first golden/causal tracer, integration adapters, full validation/review. No future automation/replay implementation or actual provider/activation.
+
+
+## BT08 final acceptance (2026-10-03)
+
+All five local criteria complete at933c9f9. Full271pass/0fail/skips/xfail235.30s; type40/lint/diff/27source compilation pass. Standards0/Spec0 after fixed daily thresholds and catalog bias-window corrections; incomplete300s aggregate run recorded and complete600s-budget run supersedes it without changing individual safety/timing gates. [Criterion/review evidence](evidence/bt08-validation.md), [machine hashes](evidence/bt08-versioned-strategies.json), [contract](../../strategy-profiles.md). No actual provider/funding/trade/migration/deployment/push. Publish/close/read-back#10 next; only then inspect/start BT09#11. Parent#2 remains open.

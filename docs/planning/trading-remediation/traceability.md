@@ -108,3 +108,8 @@ R03/R08/R10 map to owned exchange admission/pause, reconciled capital sizing and
 ## BT07 local completion trace
 
 R11/R03/R09 map to completed owned protection/serialized close lifecycle at18b1b3f. Confirmed native list+leg ownership, base-fee net quantity, isolated deterministic paper exits, budget/prepare failure recovery, cancel-fill/duplicate-close races, partial entry/remainder reprotection and pause/graceful-stop preservation are covered by20 focused protection cases within249fullpass. Standards0/Spec0 and type38/lint/26source compilation pass. Evidence:`evidence/bt07-validation.md` and`evidence/bt07-position-protection.json`. Provider certification, deployed journeys, external alert activation and initiative closure remain separate later gates.
+
+
+## BT08 local completion trace
+
+R12/R06 map to versioned pure causal profiles/runtime adapters at933c9f9. Original indicator/pivot/pattern math and profile windows/fixed daily thresholds preserved; completed UTC as-of/gap/warmup/future isolation, position exit precedence, shared adapter parity, restart-stable identity and immutable intent config/profile provenance covered by22newversioned cases within271fullpass. Type40/lint/27source compile, Standards0/Spec0. Evidence:`evidence/bt08-validation.md` and`evidence/bt08-versioned-strategies.json`. Automatic-intake dedup/lifecycle remainsBT09; real replay/coverageBT10; deployed/provider/closure gates remain later owners.

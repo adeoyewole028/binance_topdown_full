@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** open; BT08 implementation in progress; all acceptance gates remain open. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
+**Status:** implementation complete; all five local acceptance gates passed; tracker closure/read-back pending. The ready-for-agent label is triage only: resolve the prerequisites and decision blockers before execution.
 **What to build:** Produce reproducible strategy signals from the same as-of inputs across runtime and replay.
 **Blocked by:** [BT04 #6](https://github.com/adeoyewole028/binance_topdown_full/issues/6).
 **Decision blockers:** None additional; applicable choices approved by the user on 2026-10-02.
@@ -30,11 +30,11 @@ Shared deterministic evaluator, indicator definitions/config profiles, dashboard
 
 ## Acceptance criteria
 
-- [ ] Selected profile signal/reason outputs match characterized valid legacy fixtures at identical as-of completed-bar inputs.
-- [ ] Future bars or forming-candle changes cannot alter previously emitted decision; insufficient/gapped history returns explicit unavailable state.
-- [ ] Daily/4h/1h/15m roles, EMA/rolling-RSI/close-pivot semantics and RSI-cross/candlestick branches are documented and versioned.
-- [ ] Same namespace/profile/config/symbol/execution candle yields stable signal identity across scans and restart.
-- [ ] No strategy evaluator invokes network, mutates state or depends on global mutable config.
+- [x] Selected profile signal/reason outputs match characterized valid legacy fixtures at identical as-of completed-bar inputs.
+- [x] Future bars or forming-candle changes cannot alter previously emitted decision; insufficient/gapped history returns explicit unavailable state.
+- [x] Daily/4h/1h/15m roles, EMA/rolling-RSI/close-pivot semantics and RSI-cross/candlestick branches are documented and versioned.
+- [x] Same namespace/profile/config/symbol/execution candle yields stable signal identity across scans and restart.
+- [x] No strategy evaluator invokes network, mutates state or depends on global mutable config.
 
 ## Testing and validation
 
@@ -77,3 +77,8 @@ APPROVED on 2026-10-02: preserve both existing strategies as named, versioned pr
 ## BT08 start (2026-10-03)
 
 BT07#9 CLOSED and parent#2 OPEN read-back verified. Live#10/comments inspected (OPEN/0comments), native prerequisite#6 CLOSED. Sole active ticket. Fixed review point`feed17e1c8f499ee990ff3e08335ec1ab164e748`. Approved D04 preserves both named/versioned profiles without automatic selection; pure evaluator and completed-bar seam preserved. No automation intake/replay implementation early; no actual provider/trade/deployment/push. Next: golden/causal pure-evaluator tracer, runtime/daemon adapters, focused/full checks and required two-axis review.
+
+
+## BT08 final acceptance (2026-10-03)
+
+All five criteria passed at933c9f9. Full271passed,0failures/skips/xfails,235.30s; type40/lint/diff/27source compilation pass. Standards0/Spec0 remaining findings after fixed daily bias and shared-window corrections. The full runner retains default300s and provides explicit bounded resource-budget override; the completed run used600s without changing individual timing/safety assertions. [Criterion/review evidence](../evidence/bt08-validation.md), [machine evidence](../evidence/bt08-versioned-strategies.json), [profile contract](../../../strategy-profiles.md). Source8dbfd76/52b5c65; harness933c9f9. No schema/data migration, actual provider/trade/funding/deployment/push. Automation remains disabled untilBT09; replayBT10; real sandboxBT15. Next permitted step after closure/read-back: inspect BT09#11 and native blockers#9/#10, then start it alone.
