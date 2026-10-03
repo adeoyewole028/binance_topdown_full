@@ -422,7 +422,8 @@ def test_budget_deferred_protection_has_no_dispatch_and_allows_reduction_after_r
         assert len(provider.submissions) == 2
 
 
-def test_budget_deferred_cancel_retains_active_pair_and_retries_after_recovery() -> None:
+@pytest.mark.parametrize('minute_second',[1,59])
+def test_budget_deferred_cancel_retains_active_pair_and_retries_after_recovery(minute_second: int) -> None:
     from execution_worker import ExecutionWorker
     from market_runtime import MarketRuntime
     from tests.test_market_runtime import MarketFixture
@@ -442,9 +443,17 @@ def test_budget_deferred_cancel_retains_active_pair_and_retries_after_recovery()
         configure(sandbox)
         sandbox.seed_price('BTC/USDT', 100)
         provider = ExhaustedCancel()
-        tick = [float(int(time.time()))]
-        if tick[0] % 60 == 0:
-            tick[0] += 1
+        tick = [float(int(time.time())//60*60+minute_second)]
+        # The real-wall-clock public fixture can advance into another server
+        # budget window while the owned clock is frozen. Align the external
+        # clock/bar observations explicitly; retain all expiry/budget gates.
+        metadata = sandbox.exchange.metadata
+        def aligned_metadata() -> dict[str,Any]:
+            return {**metadata(),'serverTime':int(tick[0]*1000)}
+        def aligned_candles(symbol: str, timeframe: str, limit: int) -> list[list[float]]:
+            return MarketFixture(tick[0]).candles(symbol,timeframe,limit)
+        sandbox.exchange.metadata = aligned_metadata  # type: ignore[method-assign]
+        sandbox.exchange.candles = aligned_candles  # type: ignore[method-assign]
         with ExecutionWorker(sandbox.module.state_store, clock=lambda: tick[0], exchange_provider=provider) as owner:
             owner.reconcile_exchange()
             sandbox.client.post('/trade', data={'symbol': 'BTC/USDT', 'side': 'buy', 'qty': '1', 'csrf_token': sandbox.csrf})
