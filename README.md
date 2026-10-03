@@ -15,3 +15,5 @@ Ordinary application imports do not read .env, load financial snapshots, start t
 Run the credential-cleared offline suite with `python tools/check_baseline.py`, type checks with `python -m mypy` and lint with `python -m pyflakes .`. Strict expected failures identify remaining ticket defects and become passing ordinary tests under their owners. Approved rollout/provider gates remain open; no deployment or live trading is implied by these commands.
 
 Historical research now uses explicit UTC/profile/policy inputs and versioned causal portfolio replay: [research CLI and limitations](docs/historical-replay.md). Old entry-only counts are unvalidated.
+
+Account metrics rebuild from durable full history with qualified fee/basis and equity availability: [performance contract](docs/account-performance.md).

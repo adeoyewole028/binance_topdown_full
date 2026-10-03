@@ -693,7 +693,7 @@ class StateStore:
                                      'available': decimal_text(total - reserved.get(asset, Decimal(0)))} for asset, total in totals.items()}}
 
     @financial_arithmetic
-    def record_paper_risk(self, connection: sqlite3.Connection) -> None:
+    def record_paper_risk(self, connection: sqlite3.Connection, *, now: float | None=None) -> None:
         account = self._paper_account(connection)
         if account.get('equity') is None:
             return
@@ -702,6 +702,7 @@ class StateStore:
         if account.get('entry_block_reason') == 'drawdown_limit':
             connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
                                (self.namespace, 'paper_entry_stop', json.dumps({'reason': 'drawdown_limit'})))
+        self.record_performance(connection,now=time.time() if now is None else now)
 
     @financial_arithmetic
     def _exchange_account(self, connection: sqlite3.Connection, *, exclude_operation: str = '') -> dict[str, Any]:
@@ -778,6 +779,7 @@ class StateStore:
         if risk['reason'] == 'drawdown_limit':
             connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
                                (self.namespace, 'exchange_entry_stop', json.dumps({'reason': 'drawdown_limit'})))
+        self.record_performance(connection,now=now)
 
 
     def _entry_control(self, connection: sqlite3.Connection) -> dict[str, Any]:
@@ -818,13 +820,48 @@ class StateStore:
         with self.connection() as connection:
             connection.execute('BEGIN')
             version, config = self._config(connection)
-            return {'config_version': version, 'config': config, 'scan': self._scan(connection),
+            observed = {'config_version': version, 'config': config, 'scan': self._scan(connection),
                     'automation':self._automation(connection),'positions': self._positions(connection), 'operations': self._operations(connection),
                     'migration': self._migration(connection), 'ownership': self._ownership(connection),
                     'market_prices': self._prices(connection), 'market_budget': self._market_budget(connection),
                     'fills': self._fills(connection), 'protection': self._protection(connection), 'position_rules': self._position_rules(connection), 'paper_account': self._paper_account(connection),
                     'exchange_account': self._exchange_account(connection), 'entry_control': self._entry_control(connection),
                     'exchange_risk': self.exchange_risk(connection, now=time.time() if now is None else now) if self.mode == 'exchange' else {'state': 'not_applicable'}}
+            observed['performance']=self._performance(connection,observed,now=time.time() if now is None else now)
+            return observed
+
+    def _performance(self, connection: sqlite3.Connection, snapshot: dict[str,Any], *, now: float) -> dict[str,Any]:
+        from account_performance import project
+        if self.mode=='paper':
+            row=connection.execute("SELECT amount FROM balance_movements WHERE namespace=? AND event='paper_seed'",(self.namespace,)).fetchone()
+            opening={'equity':row[0]} if row else {}
+        else:
+            row=connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='performance_opening' ORDER BY sequence LIMIT 1",(self.namespace,)).fetchone()
+            opening=json.loads(row[0]) if row else {}
+        checkpoints=[json.loads(row[0]) for row in connection.execute("SELECT payload FROM journal WHERE namespace=? AND event='performance_equity' ORDER BY sequence",(self.namespace,))]
+        imported=any(source['state']=='reviewed-paper' and source['record_count']>0 for source in self._migration(connection))
+        if self.mode=='exchange':
+            imported=imported or any(json.loads(row[0]).get('ids') for row in connection.execute(
+                "SELECT payload FROM journal WHERE namespace=? AND event='exchange_history_baseline'",(self.namespace,)))
+        return project(snapshot=snapshot,mode=self.mode,now=now,opening=opening,checkpoints=checkpoints,imported=imported)
+
+    def record_performance(self, connection: sqlite3.Connection, *, now: float) -> None:
+        snapshot: dict[str,Any]={'config':self._config(connection)[1],'positions':self._positions(connection),
+                  'fills':self._fills(connection),'market_prices':self._prices(connection),
+                  'paper_account':self._paper_account(connection),'exchange_account':self._exchange_account(connection)}
+        result=self._performance(connection,snapshot,now=now)
+        if result['equity'] is None or any('stale' in reason or 'conversion_unavailable' in reason for reason in result['reasons']):
+            return
+        if self.mode=='exchange':
+            if snapshot['exchange_account'].get('state')!='ready':return
+            row=connection.execute("SELECT 1 FROM journal WHERE namespace=? AND event='performance_opening' LIMIT 1",(self.namespace,)).fetchone()
+            if row is None:
+                connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+                    (self.namespace,'performance_opening',json.dumps({'equity':result['equity'],'currency':result['currency'],'as_of':now,
+                        'balances':snapshot['exchange_account']['balances'],'history_fill_count':len(snapshot['fills'])})))
+        connection.execute('INSERT INTO journal(namespace,event,payload) VALUES (?,?,?)',
+            (self.namespace,'performance_equity',json.dumps({'equity':result['equity'],'currency':result['currency'],'as_of':now,
+                                                          'prices':snapshot['market_prices'],'history_fill_count':len(snapshot['fills'])})))
 
     def _protection(self, connection: sqlite3.Connection) -> list[dict[str, Any]]:
         groups = []

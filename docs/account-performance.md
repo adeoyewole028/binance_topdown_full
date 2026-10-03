@@ -1,0 +1,23 @@
+# Full-history account performance (BT11)
+
+Authenticated `/api/status` includes a rebuildable `performance` projection. `/api/performance?offset=0&limit=20` returns the same full-history metrics with a page of confirmed fills, total count, offset and limit. Offset is nonnegative; limit is1–1000 (default20 display records). Invalid query values return422; anonymous access returns401. Pagination never changes the metric inputs. GET performs no financial writes and has no balance editor or projection-cache mutation.
+
+## Basis and completed positions
+
+Every namespace-qualified durable fill contributes exactly once by fill ID. Fee-inclusive weighted-average entry basis and realized exit arithmetic are shared with replay and paper execution. Quote-asset purchase fees increase cost basis; quote-asset sale fees reduce proceeds. Base-asset fees reduce received quantity on buys and increase consumed quantity on sells. Partial close profits accumulate into one completed-position cycle; win rate counts only fully exited positions and is null when no position has fully exited. Realized and unrealized values are separate, with explicit reporting currency. `fees_by_asset` preserves confirmed native fee units; `realized_by_currency` carries native-currency results and an explicit completeness status.
+
+A third-asset fee does not have an invented historical quote conversion. Missing historical fee conversion, imported incomplete history or unknown basis keeps aggregate net realized/win rate unavailable, preserving native fee units and qualified partial results. Current prices cannot retrospectively certify historical fee values. Historical/live tax treatment is out of scope.
+
+## Actual equity and durable drawdown
+
+Equity values actual total cash and asset-qualified balances using fresh direct asset/reporting-currency prices. It does not use display-only equity_proxy or profit-relative drawdown. Valuation sources expose symbol, observed price/time, age and fresh/stale/unavailable state; missing/stale conversions withhold aggregate equity and affected unrealized figures. Exchange account observations must be reconciled and fresh. Reservations and locked balances are not additional holdings: total assets are counted once.
+
+Paper capital comes from its immutable journaled seed. Exchange opening equity is recorded from the first freshly valued, reconciled account before recorded fills, with opening asset balances. An initial observation made after historical fills cannot manufacture starting equity. Missing initial equity is explicitly unavailable. A reviewed legacy opening remains incomplete; quarantined records are not imported by this reporting work.
+
+Owner-controlled price/fill/reconciliation observations record `performance_equity` journal checkpoints with currency, as-of time, observed prices and fill count. Exchange origin is recorded in `performance_opening`. All public reporting rebuilds from confirmed fills, seed/opening observations and ordered checkpoints in the same committed database snapshot. No new schema or mutable cache is required. Peak-to-trough maximum equity loss starts at positive initial capital, so an initial loss is counted and a recovery does not erase past drawdown. Histories that predate qualified checkpoints leave historical drawdown unavailable rather than declaring a false zero. Their confirmed fill totals can remain available independently.
+
+Reconstructed movements must agree with observed balances; mismatch is visible, affected equity/return is withheld, and confirmed fill history is preserved. Unknown imported basis and missing conversions are explicit reasons, never fabricated totals. `state` is complete, partial or unavailable; incomplete values are JSON null. Display clearly labels confirmed realized profit, estimated unrealized value and estimated account change, with currency and data reasons.
+
+## Validation and operational boundary
+
+Offline tests use explicit test capital and fake public/private providers through the existing authenticated HTTP and owned-worker seam, plus the approved pure portfolio projection seam. Coverage includes more than20 completed positions,48confirmed fills, pagination/restart/rebuild, initial-loss/rebound drawdown, partial closes, native/third-asset fees, duplicate observations, stale prices, unknown/imported histories, seed immutability and balance consistency. Replay/paper regressions must retain exact tiny-fee/large-capital arithmetic: derived ledger values use finite Decimal precision rather than reapplying operator-input precision limits. No real provider, financial funding, trade, deployment or activation is proved by these checks. Full browser/operational/provider acceptance remains in later tickets.

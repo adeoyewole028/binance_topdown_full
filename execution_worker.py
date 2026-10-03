@@ -55,7 +55,7 @@ class ExecutionWorker(ExecutionOwner):
     def publish_scan(self, snapshot: dict[str, Any]) -> None:
         if not self.ownership_confirmed():
             raise OwnershipUnavailable('Execution ownership uncertain')
-        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'performance', 'cooldowns', 'market_health', 'market_cache', 'market_metadata', 'strategy_decisions', 'strategy_profile', 'strategy_version'}
+        allowed = {'last_scan', 'universe', 'live_prices', 'signals', 'exit_signals', 'logs', 'cooldowns', 'market_health', 'market_cache', 'market_metadata', 'strategy_decisions', 'strategy_profile', 'strategy_version'}
         values = {key: value for key, value in snapshot.items() if key in allowed}
         now = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
         with self.store.connection(write=True) as connection:
@@ -90,7 +90,7 @@ class ExecutionWorker(ExecutionOwner):
                                       DO UPDATE SET price=excluded.price,fetched_at=excluded.fetched_at''',
                                    (self.store.namespace, symbol, str(parsed), now))
             if self.store.mode == 'paper':
-                self.store.record_paper_risk(connection)
+                self.store.record_paper_risk(connection,now=self.clock())
             else:
                 self.store.record_exchange_risk(connection, now=self.clock())
 
@@ -201,7 +201,8 @@ class ExecutionWorker(ExecutionOwner):
         quantity = requested
         if operation['side'] == 'buy':
             resulting = held + quantity
-            entry = (held * entry + cost + fee) / resulting
+            from account_performance import weighted_entry
+            entry = weighted_entry(held,entry,quantity,cost+fee)
             connection.execute('''INSERT INTO positions VALUES (?,?,?,?,?)
                                   ON CONFLICT(namespace,symbol) DO UPDATE SET qty=excluded.qty,entry=excluded.entry''',
                                (namespace, symbol, str(resulting), str(entry), policy['model']))
@@ -229,4 +230,4 @@ class ExecutionWorker(ExecutionOwner):
         connection.execute("UPDATE intents SET state='filled',error_class=NULL WHERE namespace=? AND operation_id=?", (namespace, operation['operation_id']))
         connection.execute('INSERT INTO journal(namespace,operation_id,event,payload) VALUES (?,?,?,?)',
                            (namespace, operation['operation_id'], 'paper_fill', json.dumps({'qty': str(quantity), 'price': str(price), 'profile': policy['model'], 'fee_amount': str(fee), 'fee_asset': quote})))
-        self.store.record_paper_risk(connection)
+        self.store.record_paper_risk(connection,now=self.clock())

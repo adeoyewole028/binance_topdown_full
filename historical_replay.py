@@ -13,6 +13,7 @@ from historical_data import validate_history
 from paper_policy import validated_policy, number, decimal_text, financial_arithmetic, fill_terms, entry_quantity
 from position_protection import exit_price
 from strategy_profiles import evaluate, PROFILES, DURATIONS
+from account_performance import weighted_entry, realized_exit
 
 
 @financial_arithmetic
@@ -100,12 +101,12 @@ def replay(dataset: dict[str,Any], *, config: dict[str,Any], policy: dict[str,An
         terms=fill_terms(amount,price,side,policy)
         cost,fee=terms['cost'],terms['fee']
         if side=='buy':
-            basis=(quantity*basis+cost+fee)/(quantity+amount)
+            basis=weighted_entry(quantity,basis,amount,cost+fee)
             cash-=cost+fee
             quantity+=amount
             last_entry=at
         else:
-            profit=cost-fee-amount*basis
+            profit=realized_exit(amount,basis,cost-fee)
             realized+=profit
             cash+=cost-fee
             quantity-=amount

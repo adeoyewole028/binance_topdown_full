@@ -472,6 +472,18 @@ def api_status():
     resp = make_response(jsonify(payload), 200)
     return resp
 
+@app.route('/api/performance', methods=['GET'])
+def api_performance():
+    try:
+        offset=int(request.args.get('offset','0'))
+        limit=int(request.args.get('limit','20'))
+        if offset<0 or not 1<=limit<=1000:raise ValueError('Invalid history page')
+    except (ValueError,TypeError):
+        return jsonify(error='Offset must be nonnegative and limit between 1 and 1000'),422
+    observed=g.operator_status
+    return jsonify(performance=observed['performance'],fills=observed['fills'][offset:offset+limit],
+                   history_total=len(observed['fills']),offset=offset,limit=limit)
+
 @app.route('/update-config', methods=['POST'])
 def update_config():
     # Build dict from form fields, then coerce types
@@ -831,16 +843,19 @@ def dashboard():
                         <div class="grid grid-cols-2 gap-4 mt-2">
                             <div>
                                 <div class="text-xs text-slate-400">Win Rate</div>
-                                <div class="text-lg font-semibold">{{ status['performance']['win_rate']*100|round(2) }}%</div>
+                                <div class="text-lg font-semibold">{{ (status['performance']['win_rate']|float*100)|round(2) ~ '%' if status['performance']['win_rate'] is not none else 'Unavailable' }}</div>
                             </div>
                             <div>
-                                <div class="text-xs text-slate-400">Total Profit</div>
-                                <div class="text-lg font-semibold">{{ status['performance']['total_profit'] }}</div>
+                                <div class="text-xs text-slate-400">Estimated account change ({{ status['performance']['currency'] or 'currency unavailable' }})</div>
+                                <div class="text-lg font-semibold">{{ status['performance']['total_profit'] if status['performance']['total_profit'] is not none else 'Unavailable' }}</div>
                             </div>
                         </div>
                         <div class="mt-3">
                             <div class="text-xs text-slate-400">Drawdown</div>
-                            <div class="text-base">{{ status['performance']['drawdown'] }}</div>
+                            <div class="text-base">{{ (status['performance']['drawdown']|float*100)|round(2) ~ '%' if status['performance']['drawdown'] is not none else 'Unavailable' }}</div>
+                            <p>Confirmed realized: {{ status['performance']['realized'] if status['performance']['realized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
+                            <p>Estimated unrealized: {{ status['performance']['unrealized'] if status['performance']['unrealized'] is not none else 'Unavailable' }} {{ status['performance']['currency'] or '' }}</p>
+                            <p>{{ status['performance']['state'] }}{% if status['performance']['reasons'] %}: {{ status['performance']['reasons']|join(', ') }}{% endif %}</p>
                         </div>
                         <div class="mt-4">
                             <h3 class="text-sm font-semibold text-slate-300">Config</h3>

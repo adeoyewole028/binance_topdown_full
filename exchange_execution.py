@@ -181,6 +181,7 @@ class ExchangeExecution:
                                                        'as_of': self.owner.clock(), 'owner_generation': self.owner.generation})
             connection.execute('UPDATE execution_owners SET state=? WHERE token=? AND generation=?',
                                ('recovering' if unresolved or review else 'ready', self.owner.token, self.owner.generation))
+            self.store.record_performance(connection,now=self.owner.clock())
 
     def _account_identity(self, account: dict[str, Any]) -> str | None:
         if not account.get('uid') or account.get('canTrade') is not True or account.get('accountType') != 'SPOT' or 'SPOT' not in account.get('permissions', []):
