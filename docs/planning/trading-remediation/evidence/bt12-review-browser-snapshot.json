@@ -1,0 +1,46 @@
+{
+  "browser": "145.0.7632.6",
+  "checks": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    },
+    {
+      "width": 320,
+      "violations": []
+    }
+  ],
+  "source_revision": "fc15894791019d6f1891594f1a20d8885fcf1ebb",
+  "source_sha256": {
+    "dashboard.py": "c61bf5b4e9991a0f565e126822272a43cf86c1a66c6b0653f84d0b8f2a73dee6",
+    "templates/dashboard.html": "cd1633f3ae70f394ff3da75d6c26d435b1a0b75d519e2e5f9b81260e51ff837a",
+    "static/dashboard.js": "190a5d2234a69f36bdf51902a3f547cdf969178a67123fdacaed49b8dca58e82",
+    "static/dashboard.css": "7eb4c73b9ab379275043e2de24e283b983dd183029d9da2708e9fe34a5093f51",
+    "assets/dashboard.css": "4716a2ca1f2400d7c8d75ba2f9440ba04a1a283de5a2a5bfbc6a46894a3b1bd4",
+    "package.json": "2088420b44699a155044fd075fcfa936e06e1f396796369ce0d31f28ce275630",
+    "package-lock.json": "42a861c69f643384e5bd47d5123cce5784d54231ad2af9379a106a3e5ed881f5"
+  },
+  "polling_preserves_input_focus": true,
+  "offline_recovery": true,
+  "stale_data": true,
+  "auth_recovery": true,
+  "invalid_field_preservation": true,
+  "setup_field_recovery": true,
+  "visible_performance_history_updates": true,
+  "version_conflict_review": true,
+  "candle_dedup": true,
+  "opt_in_sound": true,
+  "keyboard_focus": {
+    "outline": "solid",
+    "width": "3px",
+    "visible": true
+  },
+  "css_scale_200_reflow": true,
+  "minimum_24_pixel_targets": true,
+  "page_errors": [],
+  "boundary": "Actual Chromium, guarded loopback Flask/temp SQLite/owned fake public provider; no provider/deployed/device acceptance"
+}

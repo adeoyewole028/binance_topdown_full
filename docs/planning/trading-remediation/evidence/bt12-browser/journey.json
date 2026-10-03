@@ -1,0 +1,48 @@
+{
+  "browser": "145.0.7632.6",
+  "checks": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    },
+    {
+      "width": 320,
+      "violations": []
+    }
+  ],
+  "source_revision": "fc47de9c25008722ad3d95e47f0cb694731fac85",
+  "source_sha256": {
+    "dashboard.py": "e7525b49a0e80b6078f8221953d37fe11f9bf051e23cfbf4e0f415209889f18b",
+    "templates/dashboard.html": "e91e51831cb3a6403696b11db2fd998e7ddf3a7e5cd796d34e040f7c5053cbd0",
+    "static/dashboard.js": "190a5d2234a69f36bdf51902a3f547cdf969178a67123fdacaed49b8dca58e82",
+    "static/dashboard.css": "7eb4c73b9ab379275043e2de24e283b983dd183029d9da2708e9fe34a5093f51",
+    "assets/dashboard.css": "4716a2ca1f2400d7c8d75ba2f9440ba04a1a283de5a2a5bfbc6a46894a3b1bd4",
+    "package.json": "2088420b44699a155044fd075fcfa936e06e1f396796369ce0d31f28ce275630",
+    "package-lock.json": "42a861c69f643384e5bd47d5123cce5784d54231ad2af9379a106a3e5ed881f5"
+  },
+  "polling_preserves_input_focus": true,
+  "offline_recovery": true,
+  "stale_data": true,
+  "auth_recovery": true,
+  "invalid_field_preservation": true,
+  "setup_field_recovery": true,
+  "initial_setup_banner_recovery": true,
+  "visible_performance_history_updates": true,
+  "qualified_position_equity_updates": true,
+  "version_conflict_review": true,
+  "candle_dedup": true,
+  "opt_in_sound": true,
+  "keyboard_focus": {
+    "outline": "solid",
+    "width": "3px",
+    "visible": true
+  },
+  "css_scale_200_reflow": true,
+  "minimum_24_pixel_targets": true,
+  "page_errors": [],
+  "boundary": "Actual Chromium, guarded loopback Flask/temp SQLite/owned fake public provider; no provider/deployed/device acceptance"
+}
