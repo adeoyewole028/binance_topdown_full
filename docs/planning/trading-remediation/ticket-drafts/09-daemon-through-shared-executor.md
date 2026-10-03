@@ -66,7 +66,7 @@ Selecting autonomous mainnet authorization, opportunistic strategy redesign.
 
 ## Execution record
 
-Implementation: shared explicit automation/launcher/admission/protection/recovery complete at4f83d79. Validation:296fullpassed/0failures/skips/xfails217.77s; type43/lint/diff/28source compilation pass. Review:Standards0/Spec0 after provider-clock boundary and canonical review-context corrections, plus necessary controlled external regression-fixture correction. Evidence:[criterion/review record](../evidence/bt09-validation.md),[exact revision/hashes](../evidence/bt09-automation.json),[runbook](../../automation.md). Source commits a542148/e889870/4f83d79. No current local blockers. Actual provider/deployment/activation gates belong to later tickets; no real provider/funding/trade/migration/deploy/push. Next:publish/close/read-back#11, then inspectBT10#12 and its live blockers before starting it alone.
+Implementation: shared explicit automation/launcher/admission/protection/recovery complete at4f83d79. Validation:296fullpassed/0failures/skips/xfails217.77s; type43/lint/diff/28source compilation pass. Review:Standards0/Spec0 after provider-clock boundary and canonical review-context corrections, plus necessary controlled external regression-fixture correction. Evidence:[criterion/review record](../evidence/bt09-validation.md),[exact revision/hashes](../evidence/bt09-automation.json),[runbook](../../../automation.md). Source commits a542148/e889870/4f83d79. No current local blockers. Actual provider/deployment/activation gates belong to later tickets; no real provider/funding/trade/migration/deploy/push. Next:publish/close/read-back#11, then inspectBT10#12 and its live blockers before starting it alone.
 
 
 ## Approved decision update
