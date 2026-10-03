@@ -308,3 +308,53 @@ def test_missing_or_unknown_explicit_replay_contract_is_rejected(bad: str) -> No
     elif bad=='unknown_version':data['profile_version']=2
     else:del settings['policy']['fee_fraction']
     with pytest.raises((KeyError,ValueError,ConfigurationError)):replay(data,**settings)
+
+
+@pytest.mark.parametrize(('opening','high','low','closing','reason','price'),[
+    (130,131,129,130,'take_profit','111.08889'),
+    (70,72,69,70,'stop_loss','69.3'),
+    (100,110,70,100,'indicator_exit','99'),
+])
+def test_opening_protection_precedes_queued_exit_without_using_later_intrabar_prices(
+    opening: int,high: int,low: int,closing: int,reason: str,price: str,
+) -> None:
+    from historical_replay import replay
+    data=golden_dataset()
+    settings=inputs()
+    settings['config'].update(stop_loss_pct=0.2,take_profit_pct=0.1)
+    settings['policy']['risk_fraction']='1'
+    for row in data['bars']['15m'][-5:]:row[1:5]=[100,101,99,100]
+    data['bars']['15m'][-4][1:5]=[100,101,90,95]
+    data['bars']['15m'][-3][1:5]=[opening,high,low,closing]
+    result=replay(data,**settings)
+    assert result['decisions'][2]['exit_reasons']
+    assert result['fills'][1]['at']==BASE+2*900000
+    assert result['fills'][1]['reason']==reason
+    assert result['fills'][1]['price']==price
+
+
+
+def test_empty_history_reports_broad_range_without_enumerating_expected_timestamps() -> None:
+    from historical_data import validate_history
+    end=int((datetime(9999,1,1,tzinfo=timezone.utc)-datetime(1970,1,1,tzinfo=timezone.utc)).total_seconds()*1000)
+    result=validate_history({},symbol='BTC/USDT',venue='testnet',profile='daemon_daily',start=0,end=end,as_of=end)
+    assert result['state']=='incomplete'
+    assert result['bars']=={'1d':[],'4h':[],'15m':[]}
+    assert result['coverage']['15m']['expected']==end//900000+200
+    assert result['coverage']['15m']['missing']==result['coverage']['15m']['expected']
+
+
+
+def test_fetch_outputs_cannot_overwrite_shared_trading_state(tmp_path: Any) -> None:
+    import json
+    from backtester import main
+    settings=inputs()
+    (tmp_path/'config.json').write_text(json.dumps(settings['config']),encoding='utf-8')
+    (tmp_path/'policy.json').write_text(json.dumps(settings['policy']),encoding='utf-8')
+    with pytest.raises(ValueError,match='outside the shared trading state'):
+        main(['--fetch','--state-directory',str(tmp_path/'state'),'--account','operator','--state-mode','paper',
+            '--config',str(tmp_path/'config.json'),'--policy',str(tmp_path/'policy.json'),
+            '--symbol','BTC/USDT','--venue','testnet','--profile','dashboard_intraday',
+            '--start','2026-10-03','--end','2026-10-04','--sizing','fixed','--quantity-step','0.001',
+            '--config-version','1','--output',str(tmp_path/'state'/'state-identity.json')])
+    assert not (tmp_path/'state').exists()

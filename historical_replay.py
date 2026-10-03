@@ -124,6 +124,15 @@ def replay(dataset: dict[str,Any], *, config: dict[str,Any], policy: dict[str,An
         at=int(bar[0])
         opened,high,low,closed=(number(v) for v in bar[1:5])
         mark(at,opened)
+        # Existing protection observes the opening event before queued actions.
+        # Later highs/lows cannot override an indicator close already filled here.
+        if quantity:
+            opening_hit=exit_price(basis*(1-number(config['stop_loss_pct'])),
+                basis*(1+number(config['take_profit_pct'])),opened=opened,high=opened,low=opened)
+            if opening_hit:
+                reason,price=opening_hit
+                fill('sell',quantity,price,at,reason,None)
+                pending=None
         if pending:
             if pending['side']=='sell' and quantity:
                 fill('sell',quantity,opened,at,'indicator_exit',pending['signal'])

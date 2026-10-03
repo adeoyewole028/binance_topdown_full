@@ -16,7 +16,7 @@ def utc_milliseconds(value: str) -> int:
     if len(value)==10:date=date.replace(tzinfo=timezone.utc)
     if date.tzinfo is None or date.utcoffset()!=timezone.utc.utcoffset(date):
         raise ValueError('UTC dates or explicitly UTC timestamps required')
-    return int(date.timestamp()*1000)
+    return int((date-datetime(1970,1,1,tzinfo=timezone.utc)).total_seconds()*1000)
 
 
 def main(argv: list[str] | None=None) -> int:
@@ -47,6 +47,10 @@ def main(argv: list[str] | None=None) -> int:
            *([args.save_data] if args.save_data else [])]
     if len({path.resolve() for path in paths})!=len(paths):
         raise ValueError('Input/output paths must be distinct')
+    if args.fetch and args.state_directory is not None and any(
+            path.resolve().is_relative_to(args.state_directory.resolve())
+            for path in (args.output,args.save_data) if path is not None):
+        raise ValueError('Research outputs must stay outside the shared trading state directory')
     config=validated_config({**config,'paper_policy':policy})
     if args.fetch:
         if args.state_directory is None or not args.account or not args.state_mode:

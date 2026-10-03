@@ -1,7 +1,7 @@
 """Explicit bounded UTC historical coverage; incomplete data is not a result."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -19,7 +19,7 @@ class HistoricalSource(Protocol):
 def requirements(profile: str, start: int, end: int) -> dict[str, tuple[int,int]]:
     if profile not in PROFILES or type(start) is not int or type(end) is not int or not 0 <= start < end:
         raise ValueError('Explicit profile and increasing UTC millisecond range required')
-    datetime.fromtimestamp(end/1000,timezone.utc)
+    datetime(1970,1,1,tzinfo=timezone.utc)+timedelta(milliseconds=end)
     selected=PROFILES[profile]
     return {timeframe:(start//(DURATIONS[timeframe]*1000)*(DURATIONS[timeframe]*1000)-count*DURATIONS[timeframe]*1000,
                        end//(DURATIONS[timeframe]*1000)*(DURATIONS[timeframe]*1000))
@@ -33,7 +33,7 @@ def validate_history(bars: dict[str,Any], *, symbol: str, venue: str, profile: s
         raise ValueError('Explicit venue and canonical Spot symbol required')
     if type(as_of) is not int or as_of < 0:
         raise ValueError('Explicit UTC millisecond capture time required')
-    datetime.fromtimestamp(as_of/1000,timezone.utc)
+    datetime(1970,1,1,tzinfo=timezone.utc)+timedelta(milliseconds=as_of)
     coverage: dict[str,Any]={}
     retained: dict[str,Any]={}
     for timeframe,(lower,upper) in requirements(profile,start,end).items():
@@ -56,7 +56,7 @@ def validate_history(bars: dict[str,Any], *, symbol: str, venue: str, profile: s
             timestamps=[r[0] for r in rows]
             if timestamps != sorted(set(timestamps)):
                 raise ValueError('unordered_or_duplicate_history')
-            missing=expected-len(set(timestamps)&set(range(lower,upper,duration)))
+            missing=expected-len(timestamps)
             reason='missing_history' if missing else None
             if not missing:
                 completed_frame(rows,timeframe,end/1000,expected,expected)
