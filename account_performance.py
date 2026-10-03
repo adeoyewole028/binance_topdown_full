@@ -90,13 +90,17 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
             return None
         return ledger_value(row['price'])
     account=snapshot['paper_account' if mode=='paper' else 'exchange_account']
+    account_fresh=True
     if mode=='exchange':
-        if account.get('state')!='ready':reasons.add('reconciliation_required')
+        if account.get('state')!='ready':
+            reasons.add('reconciliation_required')
+            account_fresh=False
         stamp=account.get('observed_at')
-        if not isinstance(stamp,(int,float)) or not 0<=now-stamp<OperationsPolicy().price_expiry:
+        if isinstance(stamp,bool) or not isinstance(stamp,(int,float)) or not 0<=now-stamp<OperationsPolicy().price_expiry:
             reasons.add('account_observation_stale')
+            account_fresh=False
     equity=Decimal(0)
-    equity_known=bool(account.get('balances'))
+    equity_known=bool(account.get('balances')) and account_fresh
     for asset,values in account.get('balances',{}).items():
         quantity=ledger_value(values['total'])
         if not quantity:continue
@@ -177,7 +181,7 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
             result['equity']=None
             reasons.add('balance_history_mismatch')
     unrealized=Decimal(0)
-    unrealized_known=True
+    unrealized_known=account_fresh
     for position in snapshot['positions']:
         symbol=position['symbol']
         base,quote=symbol.split('/')
@@ -194,7 +198,7 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
             result['positions'].append({'symbol':symbol,'quantity':decimal_text(quantity),'unrealized':None,'currency':currency})
             continue
         rate=conversion(base)
-        if rate is None or quote!=currency:
+        if rate is None or quote!=currency or not account_fresh:
             unrealized_known=False
             value=None
         else:
@@ -209,7 +213,12 @@ def project(*,snapshot: dict[str,Any],mode: str,now: float,
         if equity_known and seed is not None and seed>0:
             result['total_profit']=decimal_text(equity-seed)
             result['return_fraction']=decimal_text((equity-seed)/seed)
-    historical_equity_known=not snapshot['fills'] or bool(checkpoints) and checkpoints[0].get('history_fill_count')==0
+    # Every confirmed fill prefix needs a qualified observation. A batch-final
+    # observation cannot prove the equity path between its individual fills.
+    counts=[checkpoint.get('history_fill_count') for checkpoint in checkpoints]
+    valid_counts=[count for count in counts if isinstance(count,int) and not isinstance(count,bool) and 0<=count<=len(seen)]
+    historical_equity_known=not seen or (len(valid_counts)==len(counts) and
+        valid_counts==sorted(valid_counts) and set(valid_counts)==set(range(len(seen)+1)))
     if not historical_equity_known:reasons.add('historical_equity_incomplete')
     if seed is not None and seed>0 and historical_equity_known:
         peak=seed

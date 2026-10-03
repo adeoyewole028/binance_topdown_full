@@ -120,7 +120,9 @@ def test_pure_partial_fills_and_duplicate_observations_count_once() -> None:
     values=[fill('1','buy','1','100','1','USDT'),fill('2','sell','0.4','44','0.44','USDT'),
             fill('3','sell','0.6','66','0.66','USDT')]
     snapshot=pure_snapshot(values+values,'1007.9')
-    result=project(snapshot=snapshot,mode='paper',now=0,opening={'equity':'1000'},checkpoints=[{'equity':'1000','history_fill_count':0}],imported=False)
+    result=project(snapshot=snapshot,mode='paper',now=0,opening={'equity':'1000'},
+        checkpoints=[{'equity':'1000','history_fill_count':0},{'equity':'999','history_fill_count':1},
+                     {'equity':'1008.56','history_fill_count':2},{'equity':'1007.9','history_fill_count':3}],imported=False)
     assert result['state']=='complete'
     assert result['realized']=='7.9'
     assert result['fees_by_asset']=={'USDT':'2.1'}
@@ -134,7 +136,9 @@ def test_base_asset_fees_consume_actual_quantity_and_weighted_basis_once() -> No
     values=[fill('1','buy','1','100','0.01','BTC'),fill('2','sell','0.4','44','0.001','BTC'),
             fill('3','sell','0.588','64.68','0.001','BTC')]
     result=project(snapshot=pure_snapshot(values,'1008.68'),mode='paper',now=0,
-        opening={'equity':'1000'},checkpoints=[{'equity':'1000','history_fill_count':0}],imported=False)
+        opening={'equity':'1000'},checkpoints=[{'equity':'1000','history_fill_count':0},
+            {'equity':'999','history_fill_count':1},{'equity':'1008.79','history_fill_count':2},
+            {'equity':'1008.68','history_fill_count':3}],imported=False)
     assert result['state']=='complete'
     assert abs(float(result['realized'])-8.68)<1e-12
     assert result['fees_by_asset']=={'BTC':'0.012'}
@@ -254,3 +258,44 @@ def test_missing_fill_cost_is_partial_with_native_fees_preserved() -> None:
     assert result['realized'] is None
     assert result['fees_by_asset']=={'USDT':'1'}
     assert 'fill_cost_unknown' in result['reasons']
+
+
+def test_exchange_stale_or_unresolved_account_withholds_current_valuation() -> None:
+    from account_performance import project
+    from datetime import datetime,timezone
+    now=datetime(2026,10,3,12,tzinfo=timezone.utc).timestamp()
+    values=[fill('1','buy','1','100','1','USDT'),fill('2','sell','0.4','44','0.44','USDT')]
+    for state,observed_at,reason in [('ready',now-60,'account_observation_stale'),
+                                     ('reconciling',now,'reconciliation_required')]:
+        snapshot=pure_snapshot(values,'942.56')
+        config=snapshot['config']
+        assert isinstance(config,dict)
+        config['execution_policy']=config['paper_policy']
+        snapshot['exchange_account']={'state':state,'observed_at':observed_at,
+            'balances':{'USDT':{'total':'942.56'},'BTC':{'total':'0.6'}}}
+        snapshot['positions']=[{'symbol':'BTC/USDT','qty':'0.6','basis_status':'confirmed-fills'}]
+        snapshot['market_prices']={'BTC/USDT':{'price':'110','fetched_at':'2026-10-03T12:00:00+00:00'}}
+        result=project(snapshot=snapshot,mode='exchange',now=now,
+            opening={'equity':'1000','balances':{'USDT':{'total':'1000'}},'history_fill_count':0},
+            checkpoints=[{'equity':'1000','history_fill_count':0},{'equity':'999','history_fill_count':1},
+                         {'equity':'1008.56','history_fill_count':2}],imported=False)
+        assert result['state']=='partial'
+        assert reason in result['reasons']
+        for metric in ('equity','total_profit','return_fraction','drawdown','unrealized'):
+            assert result[metric] is None,metric
+        assert result['positions'][0]['unrealized'] is None
+        assert result['realized']=='3.16'
+        assert result['fees_by_asset']=={'USDT':'1.44'}
+
+
+def test_missing_intermediate_fill_valuation_withholds_historical_drawdown() -> None:
+    from account_performance import project
+    values=[fill('1','buy','1','100','1','USDT'),fill('2','sell','1','110','1.1','USDT')]
+    result=project(snapshot=pure_snapshot(values,'1007.9'),mode='paper',now=0,
+        opening={'equity':'1000'},checkpoints=[{'equity':'1000','history_fill_count':0},
+                                             {'equity':'1007.9','history_fill_count':2}],imported=False)
+    assert result['state']=='partial'
+    assert result['drawdown'] is None
+    assert 'historical_equity_incomplete' in result['reasons']
+    assert result['realized']=='7.9'
+    assert result['equity']=='1007.9'
