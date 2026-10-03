@@ -7,7 +7,7 @@
 [Implementation specification #2](https://github.com/adeoyewole028/binance_topdown_full/issues/2)
 
 
-**Status:** local implementation and all six acceptance criteria complete; final verification and independent reviews passed. Closure publication/read-back pending.
+**Status:** CLOSED; read-back verified2026-10-03T12:59:45Z. All local criteria/checks/reviews/evidence passed; evidence commit10e2cd8.
 **What to build:** Make each approved exchange intent traceable from submission through partial/confirmed fill and recovery from unknown outcomes.
 **Blocked by:** [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7).
 **Decision blockers:** none for the selected D05 policy; explicit runtime setup/provider acceptance remain required as applicable.
@@ -94,3 +94,6 @@ Source review commit998698be36430cabec2b5783d967c4228808bdbd. Full228cases228pas
 ## Final acceptance (supersedes historical planning/progress records)
 
 All six criteria complete at69716fb6bf89e014b2dbf402ca21d6dc86059285. Full229cases229passed,0failures/skips/xfails,124.02seconds; type35/lint/diff/24source compilation pass. Standards0/Spec0 after real FULL timestamp and sparse/delayed history corrections. Scoped source commits998698b/69716fb. [Criterion/review evidence](../evidence/bt06-validation.md), [machine evidence](../evidence/bt06-exchange-execution.json), [operator runbook](../../../exchange-execution.md). No real provider/funding/migration/trade/deploy/push. Actual provider/load acceptance remains BT15; protection stays BT07. Parent#2 remains open. Publish/close/read-back next before starting dependent work.
+
+
+Closure read-back2026-10-03T12:59:45Z: GitHub#8 CLOSED; parent#2 OPEN. Evidence commit10e2cd8. No real provider/trade/activation/deployment/push. Only now may the next ticket#9 be inspected and begun after its live prerequisite check.

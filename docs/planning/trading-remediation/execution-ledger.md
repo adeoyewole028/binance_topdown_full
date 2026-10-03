@@ -186,3 +186,6 @@ Source review commit998698be36430cabec2b5783d967c4228808bdbd. Full228cases228pas
 ## BT06 final acceptance (2026-10-03)
 
 All six local criteria complete at69716fb6bf89e014b2dbf402ca21d6dc86059285. Full229passed,0failures/skips/xfails,124.02s; type35/lint/diff/24source compilation pass; Standards0/Spec0 after endpoint-timestamp and sparse/delayed history corrections. [Criterion/review evidence](evidence/bt06-validation.md), [machine hashes](evidence/bt06-exchange-execution.json), [runbook](../../exchange-execution.md). Scoped source998698b/69716fb. No real provider/funding/migration/trade/deploy/push. Closure publication/read-back#8 is next, then inspect#9/native prerequisite before BT07 alone. No future source started; parent#2 remains open.
+
+
+BT06#8 CLOSED/read-back verified2026-10-03T12:59:45Z; parent#2 OPEN. Evidence commit10e2cd8. Next permitted step: inspect liveBT07#9/comments/native blocker#8, capture fixed point and implementBT07 alone. All D05 selections remain approved. No real provider/trade/activation/deployment/push; no future-ticket code started.
