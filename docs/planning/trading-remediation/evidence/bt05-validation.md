@@ -1,4 +1,4 @@
-# BT05 validation in progress
+# BT05 completed local acceptance
 
 Sole active ticket: [BT05 #7](https://github.com/adeoyewole028/binance_topdown_full/issues/7). Review fixed point `2b77b6dbb786fbd6e7162b84d4c4e0c1d7b8d6bf`. D05 selections are approved; no runtime account was funded outside temporary fixtures.
 
@@ -23,3 +23,18 @@ Standards: zero hard/actionable violations; one optional duplicated-code observa
 
 
 Re-review found and fixed a P2 extreme-zero intermediate formatting allocation (zero returns canonical0 before fixed formatting) and a P1 post-fill drawdown latch gap (fee/slippage-induced crossings now persist a risk checkpoint/entry stop within the fill transaction). The fee-crossing/rebound HTTP case failed before correction, then passed. The extreme-zero HTTP case passed without dangerous pre-fix allocation. The full pre-correction run exceeded the runner's120-second bound at roughly75%; it produced no final evidence and is not counted as passing. The growing authenticated suite now has a bounded300-second runner allowance; final elapsed/output remains required.
+
+
+## Final acceptance (2026-10-03; supersedes preliminary status)
+
+All five BT05 criteria passed at source `12bfbddc1a81b1093920dfefad7844491689c02b`. Scoped source commits64cad41/257fa1e/0828391/45387bf/12bfbdd. Final full suite194cases:192passes,2 strict future BT06 expected failures,zero other failures/skips,143.98seconds. Machine evidence above now records this source and exact hashes. Mypy32sources, repository Pyflakes, whitespace check and22-source compilation without executing imports passed. Authenticated paper50cases are part of the full applicable suite. No separate frontend build applies to this Flask template application; authenticated renders and source compilation are verified.
+
+## Standards
+
+Final independent review at12bfbdd: zero actionable findings. Shared filter-price logic resolved the optional duplication; canonical zero formatting resolved the P2 allocation flaw. Atomic checkpoint and bounded validation-runner corrections conform to existing seams/scope. Worst remaining Standards issue:none.
+
+## Spec
+
+Final independent review: zero actionable findings. Signed operator review, exact small-fee conservation, confirmed-plus-reserved MAX_POSITION and post-fill persistent drawdown stops resolve all four original/correction findings. Independent rebound/restart/reduction and failed-fill-commit checks passed. Worst remaining Spec issue:none.
+
+Total findings remaining: Standards0; Spec0. All five acceptance gates are satisfied by the criterion map plus final evidence. Actual operator funding, public/private provider transport, sandbox certification, browser/AT/device acceptance, deployment/activation and source push remain unperformed later gates; none is relabelled as local BT05 success. Parent#2 remains open. Next permitted step: publish evidence/close#7 with read-back, then inspect live BT06#8 comments and native prerequisite before beginning BT06 alone.

@@ -78,8 +78,9 @@
       "native_dependencies": [
         "BT04"
       ],
-      "verification": "Prerequisite6 closed/native verified and D05 policy approved; in progress",
-      "review_fixed_point": "2b77b6dbb786fbd6e7162b84d4c4e0c1d7b8d6bf"
+      "verification": "All five local acceptance/check/review gates passed at12bfbdd; evidence recorded; tracker closure pending",
+      "review_fixed_point": "2b77b6dbb786fbd6e7162b84d4c4e0c1d7b8d6bf",
+      "source_revision": "12bfbddc1a81b1093920dfefad7844491689c02b"
     },
     {
       "planning_id": "BT06",

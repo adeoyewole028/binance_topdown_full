@@ -160,3 +160,8 @@ User “use both proposed rules” completes D05. BT04#6 CLOSED/native blocker v
 ## BT05 pre-review handoff (2026-10-03)
 
 Only BT05#7 is active. Explicit versioned seed/policy, canonical idempotent order intake, quote/base/slot reservations, fee/slippage/weighted-average accounting, server sizing, immutable price/config review, risk/cooldown/drawdown guards and truthful HTTP controls are implemented. Initial full suite175cases173pass2strictBT06xfails,0otherfail/skips; later focused40+equal-seed-spelling regression/type32/lint/22-source compilation pass. [Criterion mapping](evidence/bt05-validation.md), [initial machine evidence](evidence/bt05-paper-execution.json), [paper runbook](../../paper-execution.md). All criteria remain open until two-axis review/corrections and final full validation. No future ticket, actual migration/funding/provider/deployment/push. Next: scoped local review commit, Standards/Spec against2b77b6d, fix findings, refresh checks/evidence beforeclosure.
+
+
+## BT05 final acceptance (2026-10-03)
+
+BT05#7 all five criteria complete at12bfbdd. Full194cases192pass2strictBT06xfails,0otherfail/skips143.98s; type32/lint/diff/22sourcecompilepass. Standards0/Spec0 after submitted-review binding, exact fee accounting, pending-base MAX_POSITION, zero-format memory bound and post-fill persistent drawdown-stop corrections. [Criterion/review evidence](evidence/bt05-validation.md), [machine hashes](evidence/bt05-paper-execution.json), [runbook](../../paper-execution.md). No real funding/migration/provider/deploy/push. Publish/close/read-back#7 next; only afterward inspect live#8 and native dependency and start BT06 alone. Parent#2 stays open.
