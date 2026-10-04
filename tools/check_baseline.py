@@ -35,7 +35,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix='bt01-report-') as directory:
         report = Path(directory) / 'junit.xml'
         result = subprocess.run(
-            [sys.executable, '-m', 'pytest', '-q', f'--junitxml={report}'],
+            [sys.executable, '-m', 'pytest', '-q', '--maxfail=1', f'--junitxml={report}'],
             cwd=ROOT, env=environment, check=False, timeout=args.timeout,
         )
         suites = ET.parse(report).getroot()
@@ -49,6 +49,7 @@ def main() -> int:
         other_skips = sum(case.find('skipped') is not None for case in cases) - len(xfails)
         evidence = {
             'suite_timeout_seconds': args.timeout,
+            'failure_policy': 'Stop at the first failed check; only a zero exit with no failures or skips establishes full-suite acceptance',
             'ticket': args.ticket, 'scope': 'offline behavior and safety checks; not deployed/provider acceptance',
             'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             'python': platform.python_version(),
