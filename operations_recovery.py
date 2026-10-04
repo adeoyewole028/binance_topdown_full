@@ -15,6 +15,16 @@ from state_admin import backup_state
 from state_store import StateStore, StateUnavailable
 
 
+def sync_directory(path: Path) -> None:
+    """Persist Linux directory entries as well as their already-synced files."""
+    if os.name != 'nt':
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
 class BackupSchedule:
     """Only the service supervisor calls step, independently of scanner work.
 
@@ -39,6 +49,7 @@ class BackupSchedule:
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
+        sync_directory(path.parent)
 
     def _verified(self, candidate: Path) -> tuple[float, str]:
         if (candidate.is_symlink() or candidate.resolve().parent != self.directory.resolve()
@@ -99,14 +110,11 @@ class BackupSchedule:
             for file in staging.iterdir():
                 with file.open('rb+') as handle:
                     os.fsync(handle.fileno())
+            sync_directory(staging)
+            sync_directory(self.directory.parent)
             published = self.directory / ('snapshot-' + identity)
             staging.rename(published)
-            if os.name != 'nt':
-                descriptor = os.open(self.directory, os.O_RDONLY)
-                try:
-                    os.fsync(descriptor)
-                finally:
-                    os.close(descriptor)
+            sync_directory(self.directory)
             cutoff = now - self.policy.backup_retention_days * 86400
             for candidate, stamp in snapshots:
                 if stamp < cutoff:

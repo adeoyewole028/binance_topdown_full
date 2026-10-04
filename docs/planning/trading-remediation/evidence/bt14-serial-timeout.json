@@ -1,0 +1,17 @@
+{
+  "ticket": "BT14",
+  "source_revision": "40f9ab8",
+  "python": "3.11.17",
+  "platform": "Windows",
+  "collected_tests": 396,
+  "suite_timeout_seconds": 600,
+  "full_run_completed": false,
+  "passed": null,
+  "observed_failure_markers": 1,
+  "last_console_progress_percent": 72,
+  "failure_identity": "by collection order: existing separate HTTP process check; final traceback unavailable before timeout",
+  "runner_exit_code": 1,
+  "outcome": "second serial subprocess.TimeoutExpired at unchanged600s budget",
+  "follow_up": "first-failure diagnostic reporting at5088f03; original aggregate and individual budgets unchanged",
+  "scope": "offline fake-provider checks only; no deployment/provider acceptance"
+}

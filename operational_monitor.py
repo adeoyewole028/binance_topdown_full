@@ -14,7 +14,7 @@ import uuid
 
 from operational_health import observations
 from operations_policy import OperationsPolicy
-from operations_recovery import BackupSchedule
+from operations_recovery import BackupSchedule, sync_directory
 from tools.http_transport import NoRedirect
 from runtime_environment import parse_boolean
 from state_store import StateStore, StateUnavailable
@@ -56,6 +56,8 @@ class Monitor:
                 raise StateUnavailable('Incident outbox unavailable')
             self.outbox.mkdir(exist_ok=True)
             self.delivered.mkdir(exist_ok=True)
+            sync_directory(self.outbox)
+            sync_directory(self.outbox.parent)
             saved = json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else {}
             if saved.get('fingerprint') != fingerprint:
                 saved = {'fingerprint': fingerprint, 'delivered': False,
@@ -80,7 +82,7 @@ class Monitor:
                         (record['event_id'] == saved['event_id'] and record.get('destination_revision') != self.destination_revision)):
                     queued.append((candidate, record))
                 else:
-                    candidate.replace(self.delivered / candidate.name)
+                    self._archive(candidate)
             if (current_delivered.is_file() and saved.get('delivered') is True
                     and saved.get('destination_revision') != self.destination_revision):
                 queued.append((current_delivered, saved))
@@ -101,11 +103,16 @@ class Monitor:
                     self._save(record, candidate)
                     if record['event_id'] == saved['event_id']:
                         self._save(record)
-                    candidate.replace(self.delivered / candidate.name)
+                    self._archive(candidate)
                 except Exception:
                     print(json.dumps({'event': 'alert_delivery_unavailable', 'event_id': record['event_id']}), flush=True)
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise StateUnavailable('Operational incident persistence unavailable') from error
+
+    def _archive(self, candidate: Path) -> None:
+        candidate.replace(self.delivered / candidate.name)
+        sync_directory(self.delivered)
+        sync_directory(self.outbox)
 
     def _save(self, value: dict[str, Any], path: Path | None = None) -> None:
         destination = self.path if path is None else path
@@ -115,3 +122,4 @@ class Monitor:
             output.flush()
             os.fsync(output.fileno())
         temporary.replace(destination)
+        sync_directory(destination.parent)

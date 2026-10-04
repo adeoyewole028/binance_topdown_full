@@ -1,0 +1,16 @@
+{
+  "ticket": "BT14",
+  "source_revision": "5088f03",
+  "python": "3.11.17",
+  "platform": "Windows",
+  "collected_tests": 396,
+  "suite_timeout_seconds": 600,
+  "full_run_completed": false,
+  "passed": null,
+  "observed_failure_markers": 0,
+  "last_console_progress_percent": 72,
+  "outcome": "third attempt exceeded unchanged600s; earlier separate HTTP check passed; no complete JUnit/summary",
+  "full_acceptance": false,
+  "follow_up": "required pinned Linux full CI and OS recovery proof remain unavailable; no further identical local retry without a changed condition",
+  "scope": "offline fake-provider checks only"
+}
