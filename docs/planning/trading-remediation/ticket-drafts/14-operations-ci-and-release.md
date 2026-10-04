@@ -69,6 +69,14 @@ Spending/hosting activation without approval, customer custody/hyperscale infras
 
 Implementation started 2026-10-03 after live issue/comments and native BT09#11/BT13#15 closure verification. Clean fixed point: 4619f3d9227a1a496c635c48138185e49d5b0600. All six acceptance gates remain open. Strict sequential implementation authorization carried forward. Local packaging, supervision, readiness, backup/restore drills and release preparation are authorized. Actual host budget/access, private alert destination and deployment/activation remain external gates. No source push, hosting purchase, real notification or provider action. Next: supported topology and offline recovery preparation, then focused/full validation and two-axis review before closure.
 
+## Local operations checkpoint (2026-10-04)
+
+Current source12600a641c96bbbeb7eea45d38fa2302c7056451, committed locally on main; source has not been pushed. Both proposed D05 rules remain approved and preserved. Local single-host supervisor/readiness, verified backup/retention, durable redacted incident outbox, exact-revision release guard and runbook prepared. Clean isolated Windows Python3.11.17 installation has46 compatible pinned packages. Focused operations/release25passed66.23s; expanded safe imports passed; strict63-source types, project lint/68-file compile and CSS build passed. Independent final Standards0 actionable/Spec0 remaining.
+
+Three full396-test Windows attempts exceeded the unchanged600s aggregate budget; no full-suite acceptance. Earlier repeated marker at the separate-HTTP case passed in isolation and in the final diagnostic, but no complete report establishes the original cause. No individual deadline relaxed. Linux clean CI/browser/process-group/durability proof remains required. Actual host/monthly cap/capacity, private alert destination and authorized delivery, independent off-host recovery, initial mounted-disk provisioning, protected release configuration/legacy trigger retirement and rollout authorization remain unresolved. All six criteria remain unchecked; BT14 sole active, BT15/BT16 unstarted. No provider/notification/trade/spend/deployment action.
+
+Durable local evidence (not source-published): docs/planning/trading-remediation/evidence/bt14-validation.md, bt14-runtime.json, bt14-focused.json, bt14-intermediate-timeout.json, bt14-serial-timeout.json and bt14-diagnostic-timeout.json; docs/operations-runbook.md. Budget/intended-host question pending. Next: required authorized Linux/hosted verification and secure external configuration; keep this issue OPEN until every gate passes.
+
 ## Approved decision update
 
 APPROVED on 2026-10-02: one host with transactional SQLite and one supervised execution owner; hosting purchase/activation is not authorized
