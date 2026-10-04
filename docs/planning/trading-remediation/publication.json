@@ -253,13 +253,18 @@
         "BT09",
         "BT13"
       ],
-      "verification": "open issue, required label, complete body, decisions and native blockers verified",
+      "verification": "open state and complete checkpoint body read-back exactly verified; all six criteria remain unchecked",
       "external_activation_gates": [
         "hosting spend/access",
         "actual private alert destination",
         "deployment authorization/access",
         "live canary amount/symbol/duration and authorization"
-      ]
+      ],
+      "implementation_status": "OPEN: local checkpoint recorded; full-suite/Linux/external acceptance gates unresolved",
+      "last_source_commit": "12600a641c96bbbeb7eea45d38fa2302c7056451",
+      "last_checkpoint_commit": "9a220b7",
+      "body_characters": 7483,
+      "body_sha256": "e378427081158284bef6bb3be945a4ef50b13826b777156e47e5cf4c47625eb7"
     },
     {
       "planning_id": "BT15",
